@@ -513,6 +513,7 @@ async function refreshAll() {
     const daily = await api('/api/daily', commonParams());
     const headlinePack = await refreshHeadline();
     await Promise.all([
+      refreshPlanUsage(),
       refreshSparklines(daily),
       refreshRoi(headlinePack.cache),
       refreshDailyChart(daily),
@@ -530,6 +531,138 @@ async function refreshAll() {
   } finally {
     document.body.classList.remove('loading');
   }
+}
+
+// ─── claude.ai plan usage ──────────────────────────────────
+
+const GAUGE_COLORS = {
+  safe: '#34c759',
+  caution: '#ff9500',
+  critical: '#ff3b30',
+};
+
+function gaugeColor(pct) {
+  if (pct == null) return GAUGE_COLORS.safe;
+  if (pct >= 85) return GAUGE_COLORS.critical;
+  if (pct >= 60) return GAUGE_COLORS.caution;
+  return GAUGE_COLORS.safe;
+}
+
+function fmtRelative(iso) {
+  if (!iso) return '';
+  const ms = Date.parse(iso) - Date.now();
+  if (!Number.isFinite(ms)) return '';
+  if (ms <= 0) return 'resets now';
+  const m = Math.floor(ms / 60000);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `resets in ${d}d ${h % 24}h`;
+  if (h > 0) return `resets in ${h}h ${m % 60}m`;
+  return `resets in ${m}m`;
+}
+
+function ringSvg(pct, color) {
+  const r = 38;
+  const C = 2 * Math.PI * r;
+  const dash = pct == null ? 0 : Math.max(0, Math.min(100, pct)) / 100 * C;
+  return `
+    <svg viewBox="0 0 96 96">
+      <circle cx="48" cy="48" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="8"/>
+      <circle cx="48" cy="48" r="${r}" fill="none"
+        stroke="${color}" stroke-width="8" stroke-linecap="round"
+        stroke-dasharray="${dash} ${C - dash}" />
+    </svg>`;
+}
+
+function gaugeHtml({ label, metric }) {
+  if (!metric) return '';
+  const pct = metric.pct;
+  const color = gaugeColor(pct);
+  return `
+    <div class="plan-gauge">
+      <div class="ring">
+        ${ringSvg(pct, color)}
+        <div class="pct">${pct == null ? '—' : pct.toFixed(0) + '%'}</div>
+      </div>
+      <div class="label">${escapeHtml(label)}</div>
+      <div class="reset">${escapeHtml(fmtRelative(metric.resetsAt))}</div>
+    </div>`;
+}
+
+async function refreshPlanUsage() {
+  const data = await api('/api/usage');
+  const status = document.getElementById('plan-status');
+  const gauges = document.getElementById('plan-gauges');
+  const extra = document.getElementById('plan-extra-usage');
+  const install = document.getElementById('plan-install');
+
+  if (!data.ingested) {
+    status.textContent = 'Not synced — install the bookmarklet to sync from claude.ai';
+    gauges.innerHTML = '';
+    extra.innerHTML = '';
+    await renderBookmarkletInstall();
+    install.hidden = false;
+    return;
+  }
+
+  const plan = data.plan ?? {};
+  const ago = fmtAgo(data.ingestedAt);
+  const orgName = data.org?.name ?? data.org?.uuid ?? '';
+  status.textContent = `Synced ${ago}${orgName ? ` · ${orgName}` : ''}`;
+
+  const gaugeDefs = [
+    { label: 'Session (5h)', metric: plan.fiveHour },
+    { label: 'All models (7d)', metric: plan.sevenDay },
+    { label: 'Sonnet (7d)', metric: plan.sevenDaySonnet },
+    { label: 'Opus (7d)', metric: plan.sevenDayOpus },
+    { label: 'Claude Design', metric: plan.sevenDayOmelette },
+  ].filter((g) => g.metric);
+  gauges.innerHTML = gaugeDefs.map(gaugeHtml).join('') ||
+    `<div class="empty">no gauges in this snapshot</div>`;
+
+  if (plan.extraUsage && plan.extraUsage.enabled) {
+    const e = plan.extraUsage;
+    extra.innerHTML = `
+      <div class="item">
+        <span class="label">Extra usage</span>
+        <span class="value">${fmtUSD(e.usedDollars)} <span class="muted">of ${fmtUSD(e.limitDollars)}</span></span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.max(0, Math.min(100, e.pct ?? 0))}%"></div>
+      </div>
+      <div class="item">
+        <span class="label">Cap</span>
+        <span class="value">${e.pct == null ? '—' : e.pct.toFixed(1) + '%'}</span>
+      </div>`;
+  } else {
+    extra.innerHTML = '';
+  }
+
+  await renderBookmarkletInstall();
+  install.hidden = false;
+}
+
+let _bookmarkletInstalled = false;
+async function renderBookmarkletInstall() {
+  if (_bookmarkletInstalled) return;
+  const link = document.getElementById('bookmarklet-link');
+  const data = await api('/api/bookmarklet');
+  link.setAttribute('href', data.href);
+  _bookmarkletInstalled = true;
+}
+
+function fmtAgo(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
 }
 
 function bindControls() {

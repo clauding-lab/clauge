@@ -483,3 +483,118 @@ main {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* ─── claude.ai plan usage card ─────────────────────────── */
+
+.plan-card .plan-gauges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 18px;
+  margin-top: 4px;
+}
+.plan-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+}
+.plan-gauge .ring {
+  position: relative;
+  width: 96px;
+  height: 96px;
+}
+.plan-gauge .ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.plan-gauge .ring .pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  font-feature-settings: var(--tnum);
+  letter-spacing: -0.01em;
+}
+.plan-gauge .label {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.plan-gauge .reset {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-feature-settings: var(--tnum);
+}
+
+.plan-extra {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 18px;
+  align-items: center;
+}
+.plan-extra:empty { display: none; }
+.plan-extra .item .label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  display: block;
+}
+.plan-extra .item .value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  font-feature-settings: var(--tnum);
+}
+.plan-extra .bar-track {
+  height: 8px;
+  background: var(--border-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.plan-extra .bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--bar-1), var(--bar-2));
+  border-radius: 2px;
+}
+
+.plan-install {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.plan-install summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.plan-install ol { margin: 12px 0 0 20px; padding: 0; line-height: 1.7; }
+.plan-install ol > li { margin-bottom: 6px; }
+.bookmarklet-link {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 12px;
+  cursor: grab;
+}
+.bookmarklet-link:hover { color: white; background: var(--accent); }

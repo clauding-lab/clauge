@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Clauge Sync",
+  "version": "0.1.0",
+  "description": "Auto-sync claude.ai plan usage (session %, weekly %, Sonnet, extra usage) to your local Clauge dashboard.",
+  "homepage_url": "https://github.com/clauding-lab/clauge",
+  "author": "clauding-lab",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "Clauge Sync"
+  },
+  "permissions": ["alarms", "storage"],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  }
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        width: 360px;
+        background: #11161c;
+        color: #e8ecf0;
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        font-size: 13px;
+        padding: 18px;
+      }
+      h1 { font-size: 14px; font-weight: 600; margin: 0 0 14px; letter-spacing: 0.02em; }
+      label { display: block; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #98a2b0; margin: 12px 0 4px; }
+      input {
+        width: 100%;
+        background: #0d1217;
+        color: #e8ecf0;
+        border: 1px solid #232c36;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-family: inherit;
+        font-size: 13px;
+      }
+      button {
+        margin-top: 14px;
+        appearance: none;
+        background: #1f3a5a;
+        color: #5fb1ff;
+        border: 1px solid #378add;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover { background: #378add; color: white; }
+      .saved { color: #34c759; font-size: 12px; margin-left: 10px; }
+      .muted { color: #98a2b0; font-size: 11px; margin-top: 16px; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <h1>Clauge Sync — settings</h1>
+    <label for="port">Local Clauge port</label>
+    <input type="number" id="port" min="1" max="65535" placeholder="3456" />
+    <label for="interval">Sync interval (minutes)</label>
+    <input type="number" id="interval" min="1" max="60" placeholder="5" />
+    <div>
+      <button id="save">Save</button>
+      <span class="saved" id="saved-msg"></span>
+    </div>
+    <div class="muted">
+      The extension polls claude.ai's usage API at this interval and POSTs the snapshot to <code>http://localhost:{port}/api/usage/ingest</code>. Sessions are read from your authenticated browser cookies — no manual key paste needed.
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>

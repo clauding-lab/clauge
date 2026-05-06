@@ -37,6 +37,28 @@
     </header>
 
     <main>
+      <!-- claude.ai plan usage (V2) -->
+      <section class="card plan-card" id="plan-section">
+        <header>
+          <h2>claude.ai plan usage</h2>
+          <span class="muted" id="plan-status">Not synced — install the bookmarklet</span>
+        </header>
+        <div class="plan-gauges" id="plan-gauges"></div>
+        <div class="plan-extra" id="plan-extra-usage"></div>
+        <div class="plan-install" id="plan-install" hidden>
+          <details>
+            <summary>How to sync claude.ai usage</summary>
+            <ol>
+              <li>Drag this link to your bookmarks bar: <a class="bookmarklet-link" id="bookmarklet-link" href="#">Sync Clauge</a></li>
+              <li>Open <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> in any tab — make sure you're logged in.</li>
+              <li>Click the bookmark. A confirmation says <em>Synced</em> and this card fills with your plan usage.</li>
+              <li>Re-click anytime you want a fresh snapshot.</li>
+            </ol>
+            <p class="muted">claude.ai sits behind Cloudflare's bot challenge, so server-side fetch can't reach it. The bookmarklet runs in your already-authenticated tab and POSTs back here.</p>
+          </details>
+        </div>
+      </section>
+
       <!-- Headline strip — CodeBurn-style dense top stats -->
       <section class="card headline-strip" aria-label="Headline stats">
         <div class="hl-stat hl-primary">

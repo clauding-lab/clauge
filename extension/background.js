@@ -1,0 +1,147 @@
+/**
+ * Clauge Sync — background service worker.
+ *
+ * Periodically fetches claude.ai plan usage from the user's authenticated
+ * session and POSTs the snapshot to the local Clauge instance running at
+ * http://localhost:{port}/api/usage/ingest.
+ *
+ * The fetch happens from the extension's privileged origin which has
+ * host_permissions for claude.ai — so cookies (sessionKey, __cf_bm) are
+ * automatically included by the browser, and Cloudflare allows the call
+ * because it's coming from a real, authenticated browser context.
+ */
+
+const ALARM_NAME = 'clauge-sync';
+const DEFAULT_PORT = 3456;
+const DEFAULT_INTERVAL_MIN = 5;
+const STORAGE_KEYS = {
+  port: 'cl_port',
+  intervalMin: 'cl_interval_min',
+  lastResult: 'cl_last_result',
+};
+
+async function getSettings() {
+  const all = await chrome.storage.local.get([
+    STORAGE_KEYS.port,
+    STORAGE_KEYS.intervalMin,
+  ]);
+  return {
+    port: Number(all[STORAGE_KEYS.port] ?? DEFAULT_PORT),
+    intervalMin: Number(all[STORAGE_KEYS.intervalMin] ?? DEFAULT_INTERVAL_MIN),
+  };
+}
+
+async function setLastResult(record) {
+  await chrome.storage.local.set({ [STORAGE_KEYS.lastResult]: record });
+}
+
+async function setBadge(text, color) {
+  try {
+    await chrome.action.setBadgeText({ text: text || '' });
+    if (color) await chrome.action.setBadgeBackgroundColor({ color });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function syncOnce() {
+  const startedAt = new Date().toISOString();
+  const { port } = await getSettings();
+  const ingestUrl = `http://localhost:${port}/api/usage/ingest`;
+
+  let result;
+  try {
+    const orgsRes = await fetch('https://claude.ai/api/organizations', {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    if (!orgsRes.ok) throw new Error(`orgs ${orgsRes.status}`);
+    const orgs = await orgsRes.json();
+    if (!Array.isArray(orgs) || orgs.length === 0) throw new Error('no orgs');
+    const org = orgs[0];
+
+    const usageRes = await fetch(
+      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/usage`,
+      { credentials: 'include', cache: 'no-store' }
+    );
+    if (!usageRes.ok) throw new Error(`usage ${usageRes.status}`);
+    const usage = await usageRes.json();
+
+    const post = await fetch(ingestUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org: { uuid: org.uuid, name: org.name }, usage }),
+    });
+    if (!post.ok) throw new Error(`ingest ${post.status}`);
+
+    const sessionPct = usage?.five_hour?.utilization;
+    result = {
+      ok: true,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      orgName: org.name ?? null,
+      orgUuid: org.uuid ?? null,
+      sessionPct: typeof sessionPct === 'number' ? sessionPct : null,
+    };
+    if (result.sessionPct != null) {
+      await setBadge(`${Math.round(result.sessionPct)}%`, '#34c759');
+    } else {
+      await setBadge('OK', '#34c759');
+    }
+  } catch (err) {
+    result = {
+      ok: false,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      error: String(err?.message ?? err),
+    };
+    await setBadge('!', '#ff3b30');
+  }
+
+  await setLastResult(result);
+  return result;
+}
+
+async function ensureAlarm() {
+  const { intervalMin } = await getSettings();
+  const existing = await chrome.alarms.get(ALARM_NAME);
+  if (!existing || existing.periodInMinutes !== intervalMin) {
+    chrome.alarms.create(ALARM_NAME, {
+      delayInMinutes: 0.1,
+      periodInMinutes: intervalMin,
+    });
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await ensureAlarm();
+  syncOnce();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await ensureAlarm();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_NAME) syncOnce();
+});
+
+// Popup or options page can request an immediate sync.
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'CLAUGE_SYNC_NOW') {
+    syncOnce().then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'CLAUGE_GET_LAST') {
+    chrome.storage.local
+      .get([STORAGE_KEYS.lastResult, STORAGE_KEYS.port, STORAGE_KEYS.intervalMin])
+      .then((all) =>
+        sendResponse({
+          last: all[STORAGE_KEYS.lastResult] ?? null,
+          port: all[STORAGE_KEYS.port] ?? DEFAULT_PORT,
+          intervalMin: all[STORAGE_KEYS.intervalMin] ?? DEFAULT_INTERVAL_MIN,
+        })
+      );
+    return true;
+  }
+});

@@ -15,6 +15,8 @@ import 'dotenv/config';
 import open from 'open';
 
 import { SessionStore } from './lib/session-store.js';
+import { UsageStore, normalizeUsage as normalizePlanUsage } from './lib/usage-store.js';
+import { bookmarkletHref, bookmarkletSource } from './lib/bookmarklet.js';
 import { loadPriceTable, envFallbackRates } from './lib/cost-calculator.js';
 import { filterSessions, isValidPeriod } from './lib/period.js';
 import {
@@ -42,6 +44,8 @@ const priceTable = await loadPriceTable();
 console.log(`[Clauge] Pricing source: ${priceTable.source}`);
 
 const store = new SessionStore({ claudeDir: CLAUDE_DIR, priceTable, envFallback });
+const usageStore = new UsageStore();
+await usageStore.load();
 
 function parseFilters(c) {
   const period = c.req.query('period') ?? '7d';
@@ -87,6 +91,43 @@ function totalTokens(t) {
 }
 
 const app = new Hono();
+
+// CORS for the ingest endpoint.
+//   - claude.ai (bookmarklet)
+//   - chrome-extension://* (the Clauge Sync extension)
+const STATIC_INGEST_ORIGINS = new Set([
+  'https://claude.ai',
+  'https://www.claude.ai',
+]);
+function isAllowedIngestOrigin(origin) {
+  if (!origin) return false;
+  if (STATIC_INGEST_ORIGINS.has(origin)) return true;
+  if (origin.startsWith('chrome-extension://')) return true;
+  if (origin.startsWith('moz-extension://')) return true;
+  return false;
+}
+
+app.use('/api/usage/ingest', async (c, next) => {
+  const origin = c.req.header('origin');
+  const allow = isAllowedIngestOrigin(origin) ? origin : '';
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': allow,
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '600',
+        Vary: 'Origin',
+      },
+    });
+  }
+  await next();
+  if (allow) {
+    c.res.headers.set('Access-Control-Allow-Origin', allow);
+    c.res.headers.set('Vary', 'Origin');
+  }
+});
 
 app.get('/api/health', (c) =>
   c.json({
@@ -346,6 +387,47 @@ app.get('/api/config', (c) =>
     claudeDir: CLAUDE_DIR,
     subscriptionCost: SUBSCRIPTION_COST,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
+  })
+);
+
+app.post('/api/usage/ingest', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body !== 'object' || !body.usage) {
+    return c.json({ error: 'expected { org, usage }' }, 400);
+  }
+  const record = await usageStore.save({
+    org: body.org ?? null,
+    raw: body.usage,
+    normalized: normalizePlanUsage(body.usage),
+  });
+  return c.json({ ok: true, ingestedAt: record.ingestedAt });
+});
+
+app.get('/api/usage', async (c) => {
+  const record = await usageStore.load();
+  if (!record) return c.json({ ingested: false }, 200);
+  return c.json({
+    ingested: true,
+    ingestedAt: record.ingestedAt,
+    org: record.org,
+    plan: record.normalized,
+  });
+});
+
+app.delete('/api/usage', async (c) => {
+  await usageStore.clear();
+  return c.json({ cleared: true });
+});
+
+app.get('/api/bookmarklet', (c) =>
+  c.json({
+    href: bookmarkletHref(PORT),
+    source: bookmarkletSource(PORT),
   })
 );
 

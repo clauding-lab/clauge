@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        width: 280px;
+        background: #11161c;
+        color: #e8ecf0;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        font-size: 13px;
+        padding: 14px 16px 16px;
+      }
+      .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+      .icon { width: 28px; height: 28px; border-radius: 6px; }
+      .name { font-weight: 600; font-size: 14px; }
+      .muted { color: #98a2b0; font-size: 11.5px; letter-spacing: 0.02em; }
+      .ok { color: #34c759; }
+      .err { color: #ff3b30; }
+      hr { border: none; border-top: 1px solid #232c36; margin: 10px 0; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; font-size: 12px; }
+      .grid b { color: #98a2b0; font-weight: 500; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; display: block; }
+      button {
+        appearance: none;
+        background: #1f3a5a;
+        color: #5fb1ff;
+        border: 1px solid #378add;
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        font-family: inherit;
+        width: 100%;
+      }
+      button:hover { background: #378add; color: white; }
+      .open-link { color: #5fb1ff; text-decoration: none; }
+      .open-link:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <img class="icon" src="icons/icon-48.png" />
+      <div>
+        <div class="name">Clauge Sync</div>
+        <div class="muted">Auto-syncs claude.ai to your local dashboard</div>
+      </div>
+    </div>
+    <hr />
+    <div class="grid">
+      <div>
+        <b>Status</b>
+        <span id="status">checking…</span>
+      </div>
+      <div>
+        <b>Last sync</b>
+        <span id="last">—</span>
+      </div>
+      <div>
+        <b>Org</b>
+        <span id="org">—</span>
+      </div>
+      <div>
+        <b>Session</b>
+        <span id="session">—</span>
+      </div>
+    </div>
+    <hr />
+    <button id="sync-now">Sync now</button>
+    <hr />
+    <div class="muted" style="text-align:center">
+      <a class="open-link" id="open-dashboard" href="#" target="_blank">Open dashboard</a>
+      <span style="margin: 0 6px;">·</span>
+      <a class="open-link" id="open-options" href="#">Settings</a>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
