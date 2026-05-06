@@ -569,22 +569,97 @@ main {
   border-radius: 2px;
 }
 
-.plan-install {
-  margin-top: 14px;
-  padding-top: 14px;
+/* Onboarding CTA when no sync has happened yet */
+.plan-onboard {
+  margin-top: 18px;
+  padding: 22px 24px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(217, 119, 87, 0.30);
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(217,119,87,0.10), transparent 60%),
+    var(--surface-2);
+}
+.plan-onboard-head h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.plan-onboard-head p {
+  margin: 0 0 16px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 18px;
+  background: var(--bar-1);
+  color: #1a0c00;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 24px -8px rgba(217, 119, 87, 0.5);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 32px -8px rgba(217, 119, 87, 0.7);
+}
+.btn-primary .btn-meta {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  padding-left: 12px;
+  border-left: 1px solid rgba(26, 12, 0, 0.25);
+}
+.onboard-fineprint {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.onboard-fineprint a { color: var(--text-dim); }
+
+.plan-alternates {
+  margin-top: 18px;
+  padding-top: 16px;
   border-top: 1px solid var(--border-soft);
   font-size: 12.5px;
   color: var(--text-dim);
 }
-.plan-install summary {
+.plan-alternates summary {
   cursor: pointer;
   color: var(--text);
   font-weight: 500;
   font-size: 12px;
   letter-spacing: 0.02em;
 }
-.plan-install ol { margin: 12px 0 0 20px; padding: 0; line-height: 1.7; }
-.plan-install ol > li { margin-bottom: 6px; }
+.plan-alternates h4 {
+  margin: 14px 0 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.plan-alternates ol { margin: 0 0 0 20px; padding: 0; line-height: 1.7; }
+.plan-alternates ol > li { margin-bottom: 4px; }
+.plan-alternates code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
 .bookmarklet-link {
   display: inline-block;
   padding: 4px 10px;

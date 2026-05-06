@@ -41,20 +41,35 @@
       <section class="card plan-card" id="plan-section">
         <header>
           <h2>claude.ai plan usage</h2>
-          <span class="muted" id="plan-status">Not synced — install the bookmarklet</span>
+          <span class="muted" id="plan-status">Checking sync…</span>
         </header>
         <div class="plan-gauges" id="plan-gauges"></div>
         <div class="plan-extra" id="plan-extra-usage"></div>
-        <div class="plan-install" id="plan-install" hidden>
-          <details>
-            <summary>How to sync claude.ai usage</summary>
+
+        <!-- Big CTA when nothing has synced yet -->
+        <div class="plan-onboard" id="plan-onboard" hidden>
+          <div class="plan-onboard-head">
+            <h3>Enable claude.ai auto-sync</h3>
+            <p>One-time setup. The extension polls your already-authenticated claude.ai tab every minute and feeds usage back here automatically.</p>
+          </div>
+          <a class="btn-primary" id="install-extension" href="#" target="_blank" rel="noopener">
+            <span class="btn-label">Install Clauge Sync extension</span>
+            <span class="btn-meta" id="install-meta">Chrome Web Store</span>
+          </a>
+          <p class="onboard-fineprint">
+            Works on Chrome, Edge, Brave, Arc, and Vivaldi. Make sure you're
+            signed in to <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> in the same browser profile.
+          </p>
+          <details class="plan-alternates">
+            <summary>Other ways to sync</summary>
+            <h4>Developer-mode install (no Chrome Web Store needed)</h4>
             <ol>
-              <li>Drag this link to your bookmarks bar: <a class="bookmarklet-link" id="bookmarklet-link" href="#">Sync Clauge</a></li>
-              <li>Open <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> in any tab — make sure you're logged in.</li>
-              <li>Click the bookmark. A confirmation says <em>Synced</em> and this card fills with your plan usage.</li>
-              <li>Re-click anytime you want a fresh snapshot.</li>
+              <li>Clone or download <a href="https://github.com/clauding-lab/clauge" target="_blank" rel="noopener">github.com/clauding-lab/clauge</a></li>
+              <li>Open <code>chrome://extensions</code> and toggle <strong>Developer mode</strong></li>
+              <li>Click <strong>Load unpacked</strong> and pick the <code>extension/</code> folder</li>
             </ol>
-            <p class="muted">claude.ai sits behind Cloudflare's bot challenge, so server-side fetch can't reach it. The bookmarklet runs in your already-authenticated tab and POSTs back here.</p>
+            <h4>One-shot bookmarklet (no extension)</h4>
+            <p>Drag <a class="bookmarklet-link" id="bookmarklet-link" href="#">Sync Clauge</a> to your bookmarks bar, open claude.ai, and click the bookmark whenever you want a fresh snapshot.</p>
           </details>
         </div>
       </section>

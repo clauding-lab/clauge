@@ -584,26 +584,35 @@ function gaugeHtml({ label, metric }) {
     </div>`;
 }
 
+// CWS URL — left empty until the extension is approved. When empty, the
+// install button expands the "alternates" section instead of navigating.
+const CWS_URL = '';
+
 async function refreshPlanUsage() {
   const data = await api('/api/usage');
   const status = document.getElementById('plan-status');
   const gauges = document.getElementById('plan-gauges');
   const extra = document.getElementById('plan-extra-usage');
-  const install = document.getElementById('plan-install');
+  const onboard = document.getElementById('plan-onboard');
+
+  const isStale = data.ingested
+    ? Date.now() - Date.parse(data.ingestedAt) > 10 * 60_000
+    : true;
 
   if (!data.ingested) {
-    status.textContent = 'Not synced — install the bookmarklet to sync from claude.ai';
+    status.textContent = 'Not synced — install the auto-sync extension below';
     gauges.innerHTML = '';
     extra.innerHTML = '';
-    await renderBookmarkletInstall();
-    install.hidden = false;
+    onboard.hidden = false;
+    await renderInstallPanel();
     return;
   }
 
   const plan = data.plan ?? {};
   const ago = fmtAgo(data.ingestedAt);
   const orgName = data.org?.name ?? data.org?.uuid ?? '';
-  status.textContent = `Synced ${ago}${orgName ? ` · ${orgName}` : ''}`;
+  const staleNote = isStale ? ' · last sync was a while ago' : '';
+  status.textContent = `Synced ${ago}${orgName ? ` · ${orgName}` : ''}${staleNote}`;
 
   const gaugeDefs = [
     { label: 'Session (5h)', metric: plan.fiveHour },
@@ -633,17 +642,37 @@ async function refreshPlanUsage() {
     extra.innerHTML = '';
   }
 
-  await renderBookmarkletInstall();
-  install.hidden = false;
+  // Hide the onboarding panel when sync is fresh.
+  onboard.hidden = !isStale;
+  if (!onboard.hidden) await renderInstallPanel();
 }
 
-let _bookmarkletInstalled = false;
-async function renderBookmarkletInstall() {
-  if (_bookmarkletInstalled) return;
+let _installPanelReady = false;
+async function renderInstallPanel() {
+  if (_installPanelReady) return;
+  const installBtn = document.getElementById('install-extension');
+  const installMeta = document.getElementById('install-meta');
+  if (CWS_URL) {
+    installBtn.setAttribute('href', CWS_URL);
+    installBtn.setAttribute('target', '_blank');
+    installMeta.textContent = 'Chrome Web Store';
+  } else {
+    installMeta.textContent = 'see install options below';
+    installBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const details = document.querySelector('.plan-alternates');
+      if (details) {
+        details.open = true;
+        details.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  }
   const link = document.getElementById('bookmarklet-link');
-  const data = await api('/api/bookmarklet');
-  link.setAttribute('href', data.href);
-  _bookmarkletInstalled = true;
+  if (link) {
+    const data = await api('/api/bookmarklet');
+    link.setAttribute('href', data.href);
+  }
+  _installPanelReady = true;
 }
 
 function fmtAgo(iso) {
