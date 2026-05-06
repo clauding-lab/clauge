@@ -340,6 +340,10 @@ main {
   align-self: center;
 }
 
+.balance-cell {
+  text-align: center;
+  align-items: center;
+}
 .balance-cell .val {
   font-family: var(--mono);
   font-size: 22px;
@@ -348,11 +352,16 @@ main {
   color: var(--text);
   display: block;
 }
+.balance-cell .lbl {
+  align-self: stretch;
+}
 .balance-cell .meta {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 12px;
   font-size: 10.5px;
   color: var(--text-3);
+  align-self: stretch;
 }
 .balance-cell .reload-on { color: var(--ok); }
 .balance-cell .reload-off { color: var(--text-3); }

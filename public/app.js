@@ -19,7 +19,8 @@ const fmtUSD = (n) =>
     : new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
-        maximumFractionDigits: 0,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       }).format(n);
 const fmtUSDLong = fmtUSD;
 
