@@ -1,9 +1,18 @@
-# Clauge
+<p align="center">
+  <img src="docs/icons/clauge-icon-512.svg" alt="Clauge" width="128" height="128" />
+</p>
 
-[![npm version](https://img.shields.io/npm/v/clauge.svg)](https://www.npmjs.com/package/clauge)
-[![license](https://img.shields.io/npm/l/clauge.svg)](LICENSE)
+<h1 align="center">Clauge</h1>
 
-Token analytics and subscription value dashboard for **Claude Code**. Local Node.js + HTML, npx-installable.
+<p align="center">
+  Token analytics and subscription value dashboard for <strong>Claude Code</strong>.<br/>
+  Local Node.js + HTML, <code>npx</code>-installable.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/clauge"><img src="https://img.shields.io/npm/v/clauge.svg" alt="npm version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/clauge.svg" alt="license" /></a>
+</p>
 
 ![Clauge dashboard](docs/dashboard.png)
 

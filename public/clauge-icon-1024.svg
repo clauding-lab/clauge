@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="mask"><rect width="1024" height="1024" rx="224"/></clipPath>
+  </defs>
+  <g clip-path="url(#mask)">
+    <rect width="1024" height="1024" fill="#141413"/>
+    <circle cx="512" cy="496" r="340" fill="none" stroke="#faf9f5" stroke-opacity="0.04" stroke-width="84"/>
+    <circle cx="512" cy="496" r="340" fill="none" stroke="#d97757" stroke-width="84" stroke-linecap="round"
+      stroke-dasharray="1602.2" stroke-dashoffset="433.5" transform="rotate(135 512 496)"/>
+    <circle cx="512" cy="496" r="230" fill="none" stroke="#faf9f5" stroke-opacity="0.04" stroke-width="12"/>
+    <circle cx="512" cy="496" r="230" fill="none" stroke="#6a9bcc" stroke-opacity="0.45" stroke-width="12" stroke-linecap="round"
+      stroke-dasharray="1085" stroke-dashoffset="780" transform="rotate(135 512 496)"/>
+    <polygon points="692,260 504,480 520,504" fill="#faf9f5" opacity="0.88"/>
+    <circle cx="512" cy="496" r="28" fill="#141413" stroke="#faf9f5" stroke-width="5" stroke-opacity="0.7"/>
+    <circle cx="512" cy="496" r="10" fill="#faf9f5" opacity="0.85"/>
+  </g>
+</svg>
