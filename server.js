@@ -20,8 +20,11 @@ import { filterSessions, isValidPeriod } from './lib/period.js';
 import {
   rollupByProject,
   rollupByDay,
+  rollupByHour,
+  rollupByTask,
   topExpensiveSessions,
 } from './lib/aggregator.js';
+import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
@@ -103,6 +106,29 @@ app.get('/api/summary', async (c) => {
   const total = sumSessionCosts(sessions);
   const sessionCount = sessions.length;
   const avgCostPerSession = sessionCount === 0 ? 0 : total / sessionCount;
+  let messageCount = 0;
+  let toolCallCount = 0;
+  let subagentTurnCount = 0;
+  let assistantTurnCount = 0;
+  let primaryModel = null;
+  let primaryModelTokens = 0;
+  const modelTokens = new Map();
+  for (const s of sessions) {
+    messageCount += s.messageCount ?? 0;
+    toolCallCount += s.toolCallCount ?? 0;
+    subagentTurnCount += s.subagentTurnCount ?? 0;
+    assistantTurnCount += s.turnCount ?? 0;
+    for (const m of s.byModel ?? []) {
+      const t = totalTokens(m.tokens);
+      modelTokens.set(m.model, (modelTokens.get(m.model) ?? 0) + t);
+    }
+  }
+  for (const [model, t] of modelTokens) {
+    if (t > primaryModelTokens) {
+      primaryModel = model;
+      primaryModelTokens = t;
+    }
+  }
   return c.json({
     period,
     project,
@@ -111,6 +137,12 @@ app.get('/api/summary', async (c) => {
     totalTokens: totalTokens(tokens),
     cost: total,
     avgCostPerSession,
+    messageCount,
+    toolCallCount,
+    subagentTurnCount,
+    assistantTurnCount,
+    primaryModel,
+    primaryModelTokens,
   });
 });
 
@@ -169,18 +201,48 @@ app.get('/api/models', async (c) => {
   let totalCost = 0;
   for (const s of filtered.sessions) {
     for (const m of s.byModel ?? []) {
-      const b = map.get(m.model) ?? { model: m.model, turnCount: 0, tokens: 0, cost: 0 };
+      const b = map.get(m.model) ?? {
+        model: m.model,
+        turnCount: 0,
+        cost: 0,
+        tokens: aggregateUsage([]),
+      };
       b.turnCount += m.turnCount;
-      b.tokens += totalTokens(m.tokens);
       b.cost += m.cost;
+      const t = m.tokens ?? {};
+      b.tokens.inputTokens += t.inputTokens ?? 0;
+      b.tokens.outputTokens += t.outputTokens ?? 0;
+      b.tokens.cacheRead += t.cacheRead ?? 0;
+      b.tokens.cacheCreate5m += t.cacheCreate5m ?? 0;
+      b.tokens.cacheCreate1h += t.cacheCreate1h ?? 0;
       map.set(m.model, b);
       totalCost += m.cost;
     }
   }
   const items = [...map.values()]
-    .map((b) => ({ ...b, pctOfTotal: totalCost === 0 ? 0 : b.cost / totalCost }))
+    .map((b) => {
+      const denom =
+        (b.tokens.cacheRead ?? 0) +
+        (b.tokens.cacheCreate5m ?? 0) +
+        (b.tokens.cacheCreate1h ?? 0) +
+        (b.tokens.inputTokens ?? 0);
+      return {
+        model: b.model,
+        turnCount: b.turnCount,
+        tokens: totalTokens(b.tokens),
+        cost: b.cost,
+        cacheHitRate: denom === 0 ? null : b.tokens.cacheRead / denom,
+        pctOfTotal: totalCost === 0 ? 0 : b.cost / totalCost,
+      };
+    })
     .sort((a, b) => b.cost - a.cost);
   return c.json({ period: filtered.period, models: items });
+});
+
+app.get('/api/hours', async (c) => {
+  const filtered = await loadFiltered(c);
+  if (filtered.error) return c.json(filtered, 400);
+  return c.json({ period: filtered.period, hours: rollupByHour(filtered.sessions) });
 });
 
 app.get('/api/tasks', async (c) => {

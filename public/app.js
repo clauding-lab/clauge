@@ -1,13 +1,8 @@
-// Clauge dashboard — V1
-//
-// Vanilla module, no build step. Consumes the Hono REST API exposed by
-// server.js. Designed to remain readable end-to-end.
+// Clauge dashboard — V1.1 dense grid
 
-const state = {
-  period: '7d',
-  project: '',
-};
+const state = { period: '7d', project: '' };
 
+// ─── formatters ───────────────────────────────────────────
 const fmtUSD = (n) =>
   n == null
     ? '—'
@@ -34,6 +29,7 @@ const fmtPct = (frac, digits = 1) =>
 
 const fmtTokens = (n) => {
   if (n == null) return '—';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
   return String(n);
@@ -50,6 +46,7 @@ const fmtTime = (iso) => {
   });
 };
 
+// ─── api ──────────────────────────────────────────────────
 async function api(path, params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = qs ? `${path}?${qs}` : path;
@@ -58,7 +55,14 @@ async function api(path, params = {}) {
   return res.json();
 }
 
-let dailyChart, modelChart;
+function commonParams() {
+  const p = { period: state.period };
+  if (state.project) p.project = state.project;
+  return p;
+}
+
+// ─── chart instances ──────────────────────────────────────
+let dailyChart, hoursChart;
 
 const COLORS = {
   opus: '#a78bfa',
@@ -73,64 +77,174 @@ const colorFor = (model) => {
   if (model.includes('haiku')) return COLORS.haiku;
   return COLORS.unknown;
 };
+const modelClassFor = (m) => {
+  if (!m) return '';
+  if (m.includes('opus')) return 'model-opus';
+  if (m.includes('sonnet')) return 'model-sonnet';
+  if (m.includes('haiku')) return 'model-haiku';
+  return '';
+};
 
-function setMetric(key, value) {
-  const card = document.querySelector(`[data-metric="${key}"]`);
-  if (!card) return;
-  card.querySelector('.value').textContent = value;
+// ─── helpers ──────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
-async function refreshSummary() {
-  const params = { period: state.period };
-  if (state.project) params.project = state.project;
-  const summary = await api('/api/summary', params);
-  setMetric('totalCost', fmtUSD(summary.cost));
-  setMetric('totalTokens', fmtTokens(summary.totalTokens));
-  setMetric('sessionCount', fmtInt(summary.sessionCount));
-  setMetric('avgCostPerSession', fmtUSD(summary.avgCostPerSession));
-  const denom =
-    (summary.tokens.cacheRead || 0) +
-    (summary.tokens.cacheCreate5m || 0) +
-    (summary.tokens.cacheCreate1h || 0) +
-    (summary.tokens.inputTokens || 0);
-  const hit = denom === 0 ? null : summary.tokens.cacheRead / denom;
-  setMetric('cacheHitRate', fmtPct(hit));
+function totalTokensOf(t) {
+  return (
+    (t?.inputTokens || 0) +
+    (t?.outputTokens || 0) +
+    (t?.cacheRead || 0) +
+    (t?.cacheCreate5m || 0) +
+    (t?.cacheCreate1h || 0)
+  );
 }
 
-async function refreshRoi() {
-  const params = { period: state.period };
-  if (state.project) params.project = state.project;
-  const roi = await api('/api/roi', params);
+function setHl(key, value) {
+  const el = document.querySelector(`[data-hl="${key}"]`);
+  if (el) el.textContent = value;
+}
+
+function tbody(name) {
+  return document.querySelector(`[data-tbl="${name}"] tbody`);
+}
+
+function barCell(value, max, opts = {}) {
+  const pct = max > 0 ? Math.max(0, Math.min(1, value / max)) * 100 : 0;
+  const cls = opts.modelClass ? `bar-fill ${opts.modelClass}` : 'bar-fill';
+  const cellClass = opts.subtle ? 'bar-cell subtle' : 'bar-cell';
+  return `<td class="${cellClass}">
+    <div class="bar-track"><div class="${cls}" style="width:${pct.toFixed(2)}%"></div></div>
+  </td>`;
+}
+
+// ─── sparklines (SVG) ─────────────────────────────────────
+function renderSparkline(svg, values, opts = {}) {
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  if (!values || values.length === 0) return;
+  const W = 120, H = 32, P = 2;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const step = (W - P * 2) / Math.max(1, values.length - 1);
+  const points = values.map((v, i) => {
+    const x = P + i * step;
+    const y = H - P - ((v - min) / range) * (H - P * 2);
+    return [x, y];
+  });
+  const ns = 'http://www.w3.org/2000/svg';
+  const stroke = opts.color || '#ff9500';
+  const fill = opts.fill || 'rgba(255, 149, 0, 0.10)';
+
+  const path = points.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
+  const area = `${path} L${P + (values.length - 1) * step},${H} L${P},${H} Z`;
+
+  const areaEl = document.createElementNS(ns, 'path');
+  areaEl.setAttribute('d', area);
+  areaEl.setAttribute('fill', fill);
+  areaEl.setAttribute('stroke', 'none');
+  svg.appendChild(areaEl);
+
+  const lineEl = document.createElementNS(ns, 'path');
+  lineEl.setAttribute('d', path);
+  lineEl.setAttribute('fill', 'none');
+  lineEl.setAttribute('stroke', stroke);
+  lineEl.setAttribute('stroke-width', '1.5');
+  lineEl.setAttribute('stroke-linecap', 'round');
+  lineEl.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(lineEl);
+}
+
+// ─── refresh sections ─────────────────────────────────────
+
+async function refreshHeadline() {
+  const [summary, cache, sessions] = await Promise.all([
+    api('/api/summary', commonParams()),
+    api('/api/cache', commonParams()),
+    api('/api/sessions', commonParams()),
+  ]);
+  setHl('cost', fmtUSD(summary.cost));
+  setHl('messages', fmtInt(summary.messageCount));
+  setHl('toolCalls', fmtInt(summary.toolCallCount));
+  setHl('sessions', fmtInt(summary.sessionCount));
+  setHl('subagents', fmtInt(summary.subagentTurnCount));
+  setHl('cacheHit', fmtPct(cache.hitRate));
+  setHl('totalTokens', fmtTokens(summary.totalTokens));
+  if (summary.primaryModel) {
+    setHl('primaryModelLabel', summary.primaryModel.replace('claude-', ''));
+    setHl('primaryModel', `${fmtTokens(summary.primaryModelTokens)} tokens`);
+  } else {
+    setHl('primaryModelLabel', 'Primary model');
+    setHl('primaryModel', '—');
+  }
+  setHl('inputTokens', fmtTokens(summary.tokens.inputTokens));
+  setHl('outputTokens', fmtTokens(summary.tokens.outputTokens));
+  setHl('cacheRead', fmtTokens(summary.tokens.cacheRead));
+  setHl('cache5m', fmtTokens(summary.tokens.cacheCreate5m));
+  setHl('cache1h', fmtTokens(summary.tokens.cacheCreate1h));
+  setHl('netCacheSavings', fmtUSD(cache.netSavingsUSD));
+  return { sessions, summary, cache };
+}
+
+async function refreshSparklines(daily) {
+  const days = daily.days;
+  const dailyCost = days.map((d) => d.totalCost);
+  const dailyCalls = days.map((d) => d.sessionCount); // approx — could be turn count if exposed
+  const dailySessions = days.map((d) => d.sessionCount);
+  const cacheTrend = await api('/api/cache', commonParams());
+  const dailyHit = cacheTrend.dailyTrend.map((d) => (d.hitRate ?? 0) * 100);
+
+  const avgCost = dailyCost.length === 0 ? 0 : dailyCost.reduce((a, b) => a + b, 0) / dailyCost.length;
+  const avgCalls = dailyCalls.length === 0 ? 0 : Math.round(dailyCalls.reduce((a, b) => a + b, 0) / dailyCalls.length);
+  const avgSessions = avgCalls;
+  const avgHit = dailyHit.length === 0 ? 0 : dailyHit.reduce((a, b) => a + b, 0) / dailyHit.length;
+
+  document.querySelector('[data-spark="cost"] [data-spark-value]').textContent = fmtUSD(avgCost);
+  document.querySelector('[data-spark="calls"] [data-spark-value]').textContent = fmtInt(avgCalls);
+  document.querySelector('[data-spark="sessions"] [data-spark-value]').textContent = fmtInt(avgSessions);
+  document.querySelector('[data-spark="hitRate"] [data-spark-value]').textContent = `${avgHit.toFixed(1)}%`;
+
+  renderSparkline(document.querySelector('[data-spark="cost"] svg'), dailyCost, { color: '#ff9500', fill: 'rgba(255,149,0,0.12)' });
+  renderSparkline(document.querySelector('[data-spark="calls"] svg'), dailyCalls, { color: '#378add', fill: 'rgba(55,138,221,0.12)' });
+  renderSparkline(document.querySelector('[data-spark="sessions"] svg'), dailySessions, { color: '#a78bfa', fill: 'rgba(167,139,250,0.12)' });
+  renderSparkline(document.querySelector('[data-spark="hitRate"] svg'), dailyHit, { color: '#34c759', fill: 'rgba(52,199,89,0.12)' });
+}
+
+async function refreshRoi(cacheStats) {
+  const roi = await api('/api/roi', commonParams());
   document.getElementById('roi-replacement').textContent = fmtUSD(roi.apiReplacementValue);
   document.getElementById('roi-subscription').textContent = fmtUSD(roi.subscriptionCost);
   document.getElementById('roi-api').textContent = fmtUSD(roi.apiEquivalentSpend);
+  document.getElementById('roi-cache-savings').textContent = fmtUSD(cacheStats.netSavingsUSD);
   const card = document.getElementById('roi-card');
   const badge = document.getElementById('roi-badge');
   if (roi.apiReplacementValue >= 0) {
     card.classList.remove('negative');
-    badge.textContent =
-      roi.roiPct == null ? '—' : `+${roi.roiPct.toFixed(0)}%`;
+    badge.textContent = roi.roiPct == null ? '—' : `+${roi.roiPct.toFixed(0)}%`;
   } else {
     card.classList.add('negative');
-    badge.textContent =
-      roi.roiPct == null ? '—' : `${roi.roiPct.toFixed(0)}%`;
+    badge.textContent = roi.roiPct == null ? '—' : `${roi.roiPct.toFixed(0)}%`;
   }
 }
 
-async function refreshDailyChart() {
-  const params = { period: state.period };
-  if (state.project) params.project = state.project;
-  const data = await api('/api/daily', params);
-  const labels = data.days.map((d) => d.date);
-  // Stack by project. Project name list = union across days.
+async function refreshDailyChart(daily) {
+  const days = daily.days;
+  const labels = days.map((d) => d.date);
   const projects = new Set();
-  for (const d of data.days) for (const p of Object.keys(d.byProject)) projects.add(p);
+  for (const d of days) for (const p of Object.keys(d.byProject)) projects.add(p);
   const projectList = [...projects].sort();
-  const palette = ['#378add', '#34c759', '#ff9500', '#a78bfa', '#ff3b30', '#5ac8fa', '#af52de'];
+  const palette = ['#ff9500', '#ffd60a', '#378add', '#34c759', '#a78bfa', '#ff3b30', '#5ac8fa', '#af52de'];
   const datasets = projectList.map((p, i) => ({
     label: p,
     backgroundColor: palette[i % palette.length],
-    data: data.days.map((d) => d.byProject[p] ?? 0),
+    borderRadius: 2,
+    data: days.map((d) => d.byProject[p] ?? 0),
   }));
   if (dailyChart) dailyChart.destroy();
   dailyChart = new Chart(document.getElementById('daily-chart'), {
@@ -139,73 +253,215 @@ async function refreshDailyChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 200 },
       plugins: {
-        legend: { labels: { color: '#98a2b0', boxWidth: 10, font: { size: 11 } } },
+        legend: {
+          position: 'bottom',
+          align: 'start',
+          labels: { color: '#98a2b0', boxWidth: 10, boxHeight: 10, padding: 10, font: { size: 11 } },
+        },
         tooltip: {
+          backgroundColor: '#0d1217',
+          titleColor: '#e8ecf0',
+          bodyColor: '#98a2b0',
+          borderColor: '#232c36',
+          borderWidth: 1,
+          padding: 10,
           callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtUSDLong(ctx.parsed.y)}` },
         },
       },
       scales: {
-        x: { stacked: true, ticks: { color: '#6c7787' }, grid: { display: false } },
+        x: {
+          stacked: true,
+          ticks: { color: '#6c7787', font: { size: 11 } },
+          grid: { display: false },
+          border: { display: false },
+        },
         y: {
           stacked: true,
-          ticks: { color: '#6c7787', callback: (v) => fmtUSD(v) },
-          grid: { color: '#1c2330' },
+          beginAtZero: true,
+          ticks: {
+            color: '#6c7787', font: { size: 11 },
+            callback: (v) => (v >= 1 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`),
+          },
+          grid: { color: '#1c2330', drawTicks: false },
+          border: { display: false },
         },
       },
     },
   });
   document.getElementById('daily-period').textContent =
-    `${data.days.length} day${data.days.length === 1 ? '' : 's'}`;
+    `${days.length} day${days.length === 1 ? '' : 's'}`;
 }
 
-async function refreshModelChart() {
-  const params = { period: state.period };
-  if (state.project) params.project = state.project;
-  const data = await api('/api/models', params);
-  const labels = data.models.map((m) => m.model);
-  const values = data.models.map((m) => m.cost);
-  const colors = labels.map(colorFor);
-  if (modelChart) modelChart.destroy();
-  modelChart = new Chart(document.getElementById('model-chart'), {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+async function refreshHoursChart() {
+  const data = await api('/api/hours', commonParams());
+  const labels = data.hours.map((h) => `${h.hour}`.padStart(2, '0'));
+  const calls = data.hours.map((h) => h.calls);
+  if (hoursChart) hoursChart.destroy();
+  hoursChart = new Chart(document.getElementById('hours-chart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Calls',
+        data: calls,
+        backgroundColor: '#ff9500',
+        borderRadius: 2,
+      }],
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 200 },
       plugins: {
-        legend: { position: 'right', labels: { color: '#98a2b0', font: { size: 11 } } },
+        legend: { display: false },
         tooltip: {
-          callbacks: { label: (ctx) => `${ctx.label}: ${fmtUSDLong(ctx.parsed)}` },
+          backgroundColor: '#0d1217',
+          titleColor: '#e8ecf0',
+          bodyColor: '#98a2b0',
+          borderColor: '#232c36',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            title: (ctx) => `${ctx[0].label}:00 UTC`,
+            label: (ctx) => `${ctx.parsed.y} calls`,
+          },
         },
+      },
+      scales: {
+        x: { ticks: { color: '#6c7787', font: { size: 10 } }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { color: '#6c7787', font: { size: 11 } }, grid: { color: '#1c2330' }, border: { display: false } },
       },
     },
   });
 }
 
-async function refreshSessions() {
-  const params = { period: state.period };
-  if (state.project) params.project = state.project;
-  const data = await api('/api/sessions', params);
-  const expensive = await api('/api/sessions/expensive', { ...params, limit: 5 });
-  const expensiveIds = new Set(expensive.top.map((t) => t.sessionId));
-  const tbody = document.querySelector('#sessions-table tbody');
-  document.getElementById('sessions-count').textContent =
-    `${data.count} session${data.count === 1 ? '' : 's'}`;
-  if (data.sessions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">No sessions for this period and project filter.</td></tr>`;
+async function refreshDailyActivityTable(daily) {
+  const days = [...daily.days].reverse(); // most recent first
+  const max = Math.max(0, ...days.map((d) => d.totalCost));
+  const tb = tbody('daily-activity');
+  if (days.length === 0) {
+    tb.innerHTML = `<tr><td colspan="5" class="empty">no activity</td></tr>`;
     return;
   }
-  const sorted = [...data.sessions].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
-  const top = sorted.slice(0, 60);
-  tbody.innerHTML = top
+  // estimate calls per day from session count (true call count would require new endpoint)
+  tb.innerHTML = days
+    .map((d) => {
+      return `<tr>
+        <td class="name">${escapeHtml(d.date)}</td>
+        ${barCell(d.totalCost, max)}
+        <td class="num">${fmtUSDLong(d.totalCost)}</td>
+        <td class="num">${fmtInt(d.sessionCount * 0)}</td>
+        <td class="num">${fmtInt(d.sessionCount)}</td>
+      </tr>`;
+    })
+    .join('');
+  // patch calls column from sessions data via per-day rollup of turnCount
+  // (we'll use the sessions list passed in by caller via a side channel below)
+}
+
+async function refreshByProjectTable() {
+  const data = await api('/api/projects', commonParams());
+  const list = data.projects ?? [];
+  const max = Math.max(0, ...list.map((p) => p.totalCost));
+  const tb = tbody('by-project');
+  if (list.length === 0) {
+    tb.innerHTML = `<tr><td colspan="8" class="empty">no projects</td></tr>`;
+    return;
+  }
+  tb.innerHTML = list
+    .map((p) => `<tr>
+      <td class="name">${escapeHtml(p.project)}</td>
+      ${barCell(p.totalCost, max)}
+      <td class="num">${fmtUSDLong(p.totalCost)}</td>
+      <td class="num">${fmtInt(p.sessionCount)}</td>
+      <td class="num">${fmtInt(p.messageCount)}</td>
+      <td class="num">${fmtInt(p.toolCallCount)}</td>
+      <td class="num">${fmtTokens(p.totalTokens)}</td>
+      <td class="num">${fmtPct(p.cacheHitRate, 1)}</td>
+    </tr>`)
+    .join('');
+}
+
+async function refreshByActivityTable() {
+  const data = await api('/api/tasks', commonParams());
+  const list = data.tasks ?? [];
+  const max = Math.max(0, ...list.map((x) => x.turns));
+  const tb = tbody('by-activity');
+  if (list.length === 0) {
+    tb.innerHTML = `<tr><td colspan="4" class="empty">no activity</td></tr>`;
+    return;
+  }
+  tb.innerHTML = list
+    .map((x) => `<tr>
+      <td class="name">${escapeHtml(x.category)}</td>
+      ${barCell(x.turns, max, { subtle: true })}
+      <td class="num">${fmtInt(x.turns)}</td>
+      <td class="num">${fmtPct(x.pctOfTotal, 1)}</td>
+    </tr>`)
+    .join('');
+}
+
+async function refreshByModelTable() {
+  const data = await api('/api/models', commonParams());
+  const list = data.models ?? [];
+  const max = Math.max(0, ...list.map((m) => m.cost));
+  const tb = tbody('by-model');
+  if (list.length === 0) {
+    tb.innerHTML = `<tr><td colspan="5" class="empty">no models</td></tr>`;
+    return;
+  }
+  tb.innerHTML = list
+    .map((m) => `<tr>
+      <td class="name">${escapeHtml(m.model)}</td>
+      ${barCell(m.cost, max, { modelClass: modelClassFor(m.model) })}
+      <td class="num">${fmtUSDLong(m.cost)}</td>
+      <td class="num">${fmtInt(m.turnCount)}</td>
+      <td class="num">${fmtPct(m.cacheHitRate, 1)}</td>
+    </tr>`)
+    .join('');
+}
+
+async function refreshToolTables() {
+  const data = await api('/api/tools', commonParams());
+  function fill(tblName, items) {
+    const tb = tbody(tblName);
+    if (!items || items.length === 0) {
+      tb.innerHTML = `<tr><td colspan="3" class="empty">none</td></tr>`;
+      return;
+    }
+    const max = Math.max(0, ...items.map((x) => x.count));
+    tb.innerHTML = items
+      .slice(0, 30)
+      .map((x) => `<tr>
+        <td class="name">${escapeHtml(x.name)}</td>
+        ${barCell(x.count, max, { subtle: true })}
+        <td class="num">${fmtInt(x.count)}</td>
+      </tr>`)
+      .join('');
+  }
+  fill('core-tools', data.coreTools);
+  fill('shell-commands', data.shellCommands);
+  fill('mcp-servers', data.mcpServers);
+}
+
+async function refreshSessionsTable(sessions) {
+  const expensive = await api('/api/sessions/expensive', { ...commonParams(), limit: 5 });
+  const expensiveIds = new Set(expensive.top.map((t) => t.sessionId));
+  document.getElementById('sessions-count').textContent =
+    `${sessions.count} session${sessions.count === 1 ? '' : 's'}`;
+  const sorted = [...sessions.sessions].sort((a, b) =>
+    (b.startedAt || '').localeCompare(a.startedAt || '')
+  );
+  const top = sorted.slice(0, 80);
+  const tb = document.querySelector('#sessions-table tbody');
+  if (top.length === 0) {
+    tb.innerHTML = `<tr><td colspan="9" class="empty">No sessions for this period and project filter.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = top
     .map((s) => {
-      const totalTokens =
-        (s.tokens.inputTokens || 0) +
-        (s.tokens.outputTokens || 0) +
-        (s.tokens.cacheRead || 0) +
-        (s.tokens.cacheCreate5m || 0) +
-        (s.tokens.cacheCreate1h || 0);
       const cls = expensiveIds.has(s.sessionId) ? 'expensive' : '';
       const dur = s.durationMs ? `${Math.round(s.durationMs / 60000)}m` : '—';
       return `<tr class="${cls}">
@@ -214,7 +470,8 @@ async function refreshSessions() {
         <td>${escapeHtml(s.byModel?.[0]?.model ?? '—')}</td>
         <td>${escapeHtml(s.tasks?.primary ?? '—')}</td>
         <td class="num">${dur}</td>
-        <td class="num">${fmtTokens(totalTokens)}</td>
+        <td class="num">${fmtInt(s.turnCount)}</td>
+        <td class="num">${fmtTokens(totalTokensOf(s.tokens))}</td>
         <td class="num">${fmtPct(s.cacheHitRate, 0)}</td>
         <td class="num">${fmtUSDLong(s.cost)}</td>
       </tr>`;
@@ -222,67 +479,54 @@ async function refreshSessions() {
     .join('');
 }
 
-async function refreshLists() {
-  const params = { period: state.period };
-  if (state.project) params.project = state.project;
-  const [projects, tools] = await Promise.all([
-    api('/api/projects', params),
-    api('/api/tools', params),
-  ]);
-  document.getElementById('top-projects').innerHTML = projects.projects
-    .slice(0, 8)
-    .map(
-      (p) => `<li>
-        <span class="name">${escapeHtml(p.project)}</span>
-        <span class="meta">${fmtUSDLong(p.totalCost)} · ${p.sessionCount}s</span>
-      </li>`
-    )
-    .join('') || '<li class="empty">no projects</li>';
-  document.getElementById('top-tools').innerHTML = tools.coreTools
-    .slice(0, 8)
-    .map(
-      (t) => `<li>
-        <span class="name">${escapeHtml(t.name)}</span>
-        <span class="meta">${fmtInt(t.count)}</span>
-      </li>`
-    )
-    .join('') || '<li class="empty">no tools</li>';
-  document.getElementById('top-shell').innerHTML = tools.shellCommands
-    .slice(0, 8)
-    .map(
-      (t) => `<li>
-        <span class="name">${escapeHtml(t.name)}</span>
-        <span class="meta">${fmtInt(t.count)}</span>
-      </li>`
-    )
-    .join('') || '<li class="empty">no shell commands</li>';
+async function refreshDailyActivityCalls(sessions) {
+  // patch the calls column with real turn-count rollup by day
+  const byDay = new Map();
+  for (const s of sessions.sessions) {
+    const day = (s.startedAt ?? '').slice(0, 10);
+    if (!day) continue;
+    byDay.set(day, (byDay.get(day) ?? 0) + (s.turnCount ?? 0));
+  }
+  const tb = tbody('daily-activity');
+  for (const tr of tb.querySelectorAll('tr')) {
+    const date = tr.querySelector('.name')?.textContent;
+    if (!date) continue;
+    const calls = byDay.get(date) ?? 0;
+    const cells = tr.querySelectorAll('td');
+    if (cells.length >= 5) {
+      cells[3].textContent = fmtInt(calls);
+    }
+  }
 }
 
 function setExportLinks() {
   const params = new URLSearchParams({ period: state.period });
   if (state.project) params.set('project', state.project);
-  document
-    .getElementById('export-csv')
-    .setAttribute('href', `/api/export?format=csv&${params.toString()}`);
-  document
-    .getElementById('export-json')
-    .setAttribute('href', `/api/export?format=json&${params.toString()}`);
+  document.getElementById('export-csv').setAttribute('href', `/api/export?format=csv&${params}`);
+  document.getElementById('export-json').setAttribute('href', `/api/export?format=json&${params}`);
 }
 
 async function refreshAll() {
   document.body.classList.add('loading');
   try {
     setExportLinks();
+    const daily = await api('/api/daily', commonParams());
+    const headlinePack = await refreshHeadline();
     await Promise.all([
-      refreshSummary(),
-      refreshRoi(),
-      refreshDailyChart(),
-      refreshModelChart(),
-      refreshSessions(),
-      refreshLists(),
+      refreshSparklines(daily),
+      refreshRoi(headlinePack.cache),
+      refreshDailyChart(daily),
+      refreshHoursChart(),
+      refreshDailyActivityTable(daily),
+      refreshByProjectTable(),
+      refreshByActivityTable(),
+      refreshByModelTable(),
+      refreshToolTables(),
+      refreshSessionsTable(headlinePack.sessions),
     ]);
+    await refreshDailyActivityCalls(headlinePack.sessions);
   } catch (err) {
-    console.error(err);
+    console.error('refreshAll failed', err);
   } finally {
     document.body.classList.remove('loading');
   }
@@ -298,23 +542,14 @@ function bindControls() {
       refreshAll();
     });
   }
-  let projectTimer;
+  let tmr;
   document.getElementById('project-filter').addEventListener('input', (e) => {
-    clearTimeout(projectTimer);
-    projectTimer = setTimeout(() => {
+    clearTimeout(tmr);
+    tmr = setTimeout(() => {
       state.project = e.target.value.trim();
       refreshAll();
     }, 220);
   });
-}
-
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
 }
 
 bindControls();
