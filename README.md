@@ -5,8 +5,8 @@
 <h1 align="center">Clauge</h1>
 
 <p align="center">
-  Token analytics and subscription value dashboard for <strong>Claude Code</strong>.<br/>
-  Local Node.js + HTML, <code>npx</code>-installable.
+  Token analytics and subscription value dashboard for <strong>Claude Code</strong> + <strong>claude.ai</strong>.<br/>
+  Local Node.js + HTML, <code>npx</code>-installable. Browser extension auto-syncs claude.ai plan usage.
 </p>
 
 <p align="center">
@@ -16,9 +16,11 @@
 
 ![Clauge dashboard](docs/dashboard.png)
 
-> Status: V1 (`v0.1.0`). Schema-verified against real `~/.claude/projects/*.jsonl` files; `requestId`-deduplicating parser, two-tier cache pricing, LiteLLM auto-pricing with offline fallback, honest API-replacement-value framing.
+> Status: V2. Schema-verified `requestId`-deduplicating parser, two-tier cache pricing, LiteLLM auto-pricing with offline fallback, claude.ai plan-usage gauges, browser extension for auto-sync, honest API-replacement-value framing.
 
 ## What it does
+
+### Claude Code analytics (from local JSONL)
 
 - **Per-session tracking** — tokens, cost, model, cache hit, primary task type
 - **Per-project breakdown** — cost · sessions · messages · tools · tokens · hit %
@@ -26,11 +28,17 @@
 - **Task classification** — Coding / Debugging / Testing / Planning / Git Ops / Build / Exploration / Conversation (heuristic, deterministic)
 - **Cache analytics** — corrected hit-rate formula and **net cache savings** (subtracts cache-write overhead, distinguishes 5-minute vs 1-hour cache tiers)
 - **Tool / shell / MCP analytics** — what Claude Code actually does
-- **Peak hours** — when in the day you burn calls
+- **Peak hours** — UTC hourly distribution of calls and cost
 - **Subscription value** — how much retail API spend your subscription replaces, with honest framing
 - **Period filtering** — Today / 7d / 30d / Month / All Time
 - **Project filter** — case-insensitive substring match
 - **Export** — CSV and JSON for any period + project filter
+
+### claude.ai plan tracking (via browser extension)
+
+- **5 ring gauges** — Session (5h), All models (7d), Sonnet (7d), Opus (7d), Claude Design — green/amber/red by 60/85% thresholds, with reset countdowns
+- **Extra-usage card** — your billing cap with progress bar
+- **Auto-refresh every minute** via the [Clauge Sync](#claudeai-auto-sync) browser extension; the dashboard polls the local store and updates the gauges in place
 
 ## Quick start
 
@@ -38,11 +46,10 @@
 npx clauge
 ```
 
-That's it — installs from the npm registry and auto-opens **http://localhost:3456** in your browser.
-
-Or from source:
+That's it — installs from npm and auto-opens **http://localhost:3456**. Reads from `~/.claude/projects/` by default.
 
 ```bash
+# Or from source
 git clone https://github.com/clauding-lab/clauge.git
 cd clauge && npm install && cp .env.example .env
 node server.js
@@ -50,17 +57,43 @@ node server.js
 
 Set `NO_OPEN=1` to skip the auto-open. Set `CLAUDE_DIR=~/somewhere-else` to read from a non-default location.
 
+## claude.ai auto-sync
+
+claude.ai sits behind Cloudflare's bot challenge, so server-side fetch from this app can't reach the API directly. Auto-sync is therefore handled by a companion browser extension that runs in your already-authenticated tab.
+
+### Option A — browser extension (recommended)
+
+The **Clauge Sync** extension polls `claude.ai/api/organizations/{uuid}/usage` every minute (configurable) using your normal browser session and POSTs the snapshot to your local Clauge instance.
+
+- **Chrome Web Store:** *(pending review — link will appear here once published)*
+- **Manual install (developer mode):**
+  1. Open `chrome://extensions` and toggle **Developer mode**
+  2. Click **Load unpacked** and pick `extension/` from this repo
+  3. Make sure you're signed in to [claude.ai](https://claude.ai) in the same browser profile
+
+Click the toolbar icon at any time to force an immediate sync. Right-click → **Options** to change port or interval.
+
+### Option B — bookmarklet (no extension)
+
+The dashboard's "claude.ai plan usage" card includes a draggable bookmarklet. Drag it to your bookmarks bar, open claude.ai, click the bookmark — the snapshot syncs once. Reuse whenever you want a fresh number.
+
 ## How it works
 
 ```
 ~/.claude/projects/{path-encoded-dir}/{session_uuid}.jsonl
     │
-    ▼
-JSONL stream parser (lib/parser.js)
-    │  filters: type IN (assistant, user)
-    │  dedups assistant turns by .requestId
-    ▼
-Per-turn extractor → aggregator → Hono REST API → HTML dashboard
+    ▼                                 ┌────────────────────────┐
+JSONL stream parser (lib/parser.js)   │  Browser extension     │
+    │  dedups assistant turns by      │  (or bookmarklet)      │
+    │  .requestId                     │  reads claude.ai usage │
+    ▼                                 │  with user's cookies   │
+Per-turn extractor → aggregator       └────────────┬───────────┘
+    │                                              │
+    └──────────────► Hono REST API ◄───────────────┘
+                            │
+                            ▼
+                     HTML dashboard
+                     (http://localhost:3456)
 ```
 
 **The single most important invariant:** Claude Code emits 1–3 JSONL lines per assistant request (one per content-block type: thinking / text / tool_use), each with **identical** `usage` numbers. The parser dedups by `requestId` — without this, every cost is multiplied 2-3×. See `lib/parser.js` and `test/parser.test.js`.
@@ -89,7 +122,7 @@ RATE_CACHE_CREATE_1H=6.00
 ## Development
 
 ```bash
-npm test          # 93 unit tests via Node's built-in test runner
+npm test          # 113 unit tests via Node's built-in test runner
 npm run dev       # auto-restart server on changes
 npm start         # plain start
 ```
@@ -111,22 +144,24 @@ npm start         # plain start
 | `GET /api/hours?period=7d` | 24-hour activity distribution (UTC) |
 | `GET /api/roi?period=7d` | API replacement value |
 | `GET /api/export?format=csv&period=7d` | CSV / JSON export |
+| `GET /api/usage` | latest claude.ai plan-usage snapshot |
+| `POST /api/usage/ingest` | extension/bookmarklet target — CORS-restricted to claude.ai + extension origins |
+| `GET /api/bookmarklet` | the bookmarklet code as `javascript:` href + readable source |
 | `GET /api/health`, `/api/config` | service info |
 
-## What's not in V1 yet
+## What's coming
 
-- **claude.ai plan-usage tracking** (session %, weekly %, Sonnet, extra_usage) — V2
-- **Intelligence banner** with pace projections — V2
-- **One-shot success rate** (per CodeBurn's column) — V2
-- **Per-project drill-down view** — V2
-- **Native macOS menu bar app** — V3 (deferred, uses the same engine)
+- **V3 native desktop app** — Mac DMG + Windows MSI from a single Tauri codebase. One-click install, no terminal, embedded claude.ai webview eliminating the extension dependency. Reuses the same backend and UI.
+- **Intelligence banner** with pace projections (priority rules: extra usage near cap, session reset imminent, weekly-vs-Sonnet routing hints, etc.)
+- **One-shot success rate** per task category (the column CodeBurn shows)
+- **Per-project drill-down view** with sessions, files edited, tools used
 
 ## Why
 
-Five apps track Claude usage. None provide token-level analytics for Claude Code. None compute subscription value vs API equivalent at observed usage. None tell you what to do about your usage. Clauge does the first two; intelligence-banner work follows in V2.
+Five apps track Claude usage. None provide token-level analytics for Claude Code. None compute subscription value vs API equivalent at observed usage. None tell you what to do about your usage. Clauge does the first two natively, plus pulls claude.ai plan utilisation into the same dashboard so you see Code spend and plan limits side-by-side.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Privacy policy in [docs/PRIVACY.md](docs/PRIVACY.md).
 
 Built by [clauding-lab](https://github.com/clauding-lab).
