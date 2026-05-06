@@ -4,65 +4,152 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clauge — Claude Code analytics</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b0d10;
-        --panel: #151820;
-        --text: #e6e8eb;
-        --muted: #8a93a0;
-        --accent: #378add;
-        --green: #34c759;
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        padding: 32px;
-        font-feature-settings: "tnum" 1;
-      }
-      h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; letter-spacing: 0.02em; }
-      .panel {
-        background: var(--panel);
-        border-radius: 10px;
-        padding: 20px;
-        max-width: 720px;
-      }
-      .muted { color: var(--muted); font-size: 13px; }
-      pre {
-        background: #0e1116;
-        padding: 12px;
-        border-radius: 6px;
-        overflow: auto;
-        font-size: 12px;
-        line-height: 1.5;
-      }
-      a { color: var(--accent); }
-      code { font-family: "SF Mono", Menlo, monospace; }
-    </style>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <h1>Clauge — V1 scaffold</h1>
-    <div class="panel">
-      <p class="muted">
-        Server is up. Dashboard UI lands in build steps 10–17 (PRD v3.1 §2.10).
-        For now, the parser and session-index endpoints are live.
-      </p>
-      <p>API endpoints currently wired:</p>
-      <ul>
-        <li><code><a href="/api/health">/api/health</a></code></li>
-        <li><code><a href="/api/sessions/index">/api/sessions/index</a></code></li>
-        <li><code>/api/sessions/:sessionId/raw</code> — replace
-          <code>:sessionId</code> with a UUID from the index</li>
-      </ul>
-      <p class="muted">
-        Build status: parser.js shipped with mandatory <code>requestId</code>
-        deduplication (PRD v3.1 §2.3.1). 18 unit tests passing. Real-data
-        smoke test: 102 deduped turns from 212 raw records, perfect dedup
-        invariant.
-      </p>
-    </div>
+  <body data-theme="dark">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◐</span>
+        <span class="brand-name">Clauge</span>
+        <span class="brand-tag">Claude Code analytics</span>
+      </div>
+      <nav class="controls" aria-label="Filters">
+        <div class="period-switcher" role="tablist" aria-label="Period">
+          <button data-period="today" role="tab">Today</button>
+          <button data-period="7d" role="tab" aria-selected="true">7d</button>
+          <button data-period="30d" role="tab">30d</button>
+          <button data-period="month" role="tab">Month</button>
+          <button data-period="all" role="tab">All</button>
+        </div>
+        <input
+          id="project-filter"
+          type="search"
+          placeholder="Filter by project…"
+          aria-label="Project filter"
+        />
+        <div class="export-buttons">
+          <a class="btn ghost" id="export-csv" href="#" download>CSV</a>
+          <a class="btn ghost" id="export-json" href="#" download>JSON</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section class="cards summary-grid" aria-label="Summary">
+        <article class="card metric" data-metric="totalCost">
+          <h3>Total cost</h3>
+          <div class="value">—</div>
+          <div class="sub">selected period</div>
+        </article>
+        <article class="card metric" data-metric="totalTokens">
+          <h3>Total tokens</h3>
+          <div class="value">—</div>
+          <div class="sub">in + out + cache</div>
+        </article>
+        <article class="card metric" data-metric="sessionCount">
+          <h3>Sessions</h3>
+          <div class="value">—</div>
+          <div class="sub">in period</div>
+        </article>
+        <article class="card metric" data-metric="avgCostPerSession">
+          <h3>Avg cost / session</h3>
+          <div class="value">—</div>
+          <div class="sub">period mean</div>
+        </article>
+        <article class="card metric" data-metric="cacheHitRate">
+          <h3>Cache hit rate</h3>
+          <div class="value">—</div>
+          <div class="sub">corrected formula</div>
+        </article>
+      </section>
+
+      <section class="cards roi-grid" aria-labelledby="roi-h">
+        <article class="card roi" id="roi-card">
+          <header>
+            <h2 id="roi-h">API replacement value</h2>
+            <span class="badge" id="roi-badge">—</span>
+          </header>
+          <div class="roi-figures">
+            <div class="figure-large">
+              <span class="label">Replaces</span>
+              <span class="big" id="roi-replacement">—</span>
+              <span class="unit">of API spend this period</span>
+            </div>
+            <div class="figure-small">
+              <span class="label">Subscription</span>
+              <span class="big" id="roi-subscription">—</span>
+              <span class="unit">monthly</span>
+            </div>
+            <div class="figure-small">
+              <span class="label">API equivalent</span>
+              <span class="big" id="roi-api">—</span>
+              <span class="unit">at retail rates</span>
+            </div>
+          </div>
+          <p class="footnote">
+            At observed token usage, your subscription replaces this much
+            retail API spend. Real economic savings depend on whether you'd
+            actually use the API at this volume — most users cut back when
+            paying retail.
+          </p>
+        </article>
+      </section>
+
+      <section class="cards two-col">
+        <article class="card chart-card">
+          <header><h2>Daily cost</h2><span class="muted" id="daily-period">—</span></header>
+          <canvas id="daily-chart" height="240"></canvas>
+        </article>
+        <article class="card chart-card">
+          <header><h2>Model breakdown</h2><span class="muted">cost share</span></header>
+          <canvas id="model-chart" height="240"></canvas>
+        </article>
+      </section>
+
+      <section class="card table-card" aria-labelledby="sessions-h">
+        <header><h2 id="sessions-h">Sessions</h2><span class="muted" id="sessions-count">—</span></header>
+        <div class="table-scroll">
+          <table id="sessions-table">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Project</th>
+                <th>Model</th>
+                <th>Task</th>
+                <th class="num">Duration</th>
+                <th class="num">Tokens</th>
+                <th class="num">Cache hit</th>
+                <th class="num">Cost</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="cards three-col">
+        <article class="card list-card">
+          <header><h2>Top projects</h2></header>
+          <ol id="top-projects" class="ranked-list"></ol>
+        </article>
+        <article class="card list-card">
+          <header><h2>Top tools</h2></header>
+          <ol id="top-tools" class="ranked-list"></ol>
+        </article>
+        <article class="card list-card">
+          <header><h2>Top shell commands</h2></header>
+          <ol id="top-shell" class="ranked-list"></ol>
+        </article>
+      </section>
+
+      <footer class="page-footer">
+        <span>Clauge V1 · PRD v3.1 · </span>
+        <a href="/api/health">health</a> ·
+        <a href="/api/config">config</a>
+      </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="/app.js" type="module"></script>
   </body>
 </html>
