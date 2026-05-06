@@ -67,7 +67,7 @@ async function syncOnce() {
     if (!usageRes.ok) throw new Error(`usage ${usageRes.status}`);
     const usage = await usageRes.json();
 
-    // claude.ai prepaid balance — confirmed endpoint shape:
+    // claude.ai prepaid balance — confirmed endpoint:
     //   GET /api/organizations/{uuid}/prepaid/credits
     //   { amount, currency, auto_reload_settings, ... }
     const ouuid = encodeURIComponent(org.uuid);
@@ -80,23 +80,30 @@ async function syncOnce() {
       if (r.ok) claudeBalance = await r.json();
     } catch { /* swallow */ }
 
-    // API console (platform.claude.com) — endpoint TBD; probe candidates
+    // API console balance — confirmed endpoint:
+    //   GET https://platform.claude.com/api/console/organizations/{uuid}/credits
+    //   { amount, currency, auto_reload_settings, ... }
+    // Note: platform.claude.com uses a *different* org UUID than claude.ai,
+    // so we discover it via the platform's own org list first.
     let balance = null;
-    const apiCandidates = [
-      `https://platform.claude.com/api/organizations/${ouuid}/prepaid/credits`,
-      `https://platform.claude.com/api/organizations/${ouuid}/billing`,
-      `https://platform.claude.com/api/organizations/${ouuid}/credits`,
-    ];
-    for (const url of apiCandidates) {
-      try {
-        const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
-        if (r.ok) {
-          balance = await r.json();
-          balance.__source = url;
-          break;
+    try {
+      const platformOrgsRes = await fetch(
+        'https://platform.claude.com/api/console/organizations',
+        { credentials: 'include', cache: 'no-store' }
+      );
+      if (platformOrgsRes.ok) {
+        const platformOrgs = await platformOrgsRes.json();
+        const platformOrg = Array.isArray(platformOrgs) ? platformOrgs[0] : null;
+        if (platformOrg?.uuid) {
+          const url = `https://platform.claude.com/api/console/organizations/${encodeURIComponent(platformOrg.uuid)}/credits`;
+          const cr = await fetch(url, { credentials: 'include', cache: 'no-store' });
+          if (cr.ok) {
+            balance = await cr.json();
+            balance.__source = url;
+          }
         }
-      } catch { /* swallow */ }
-    }
+      }
+    } catch { /* swallow */ }
 
     const post = await fetch(ingestUrl, {
       method: 'POST',
