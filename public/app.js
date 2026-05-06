@@ -264,7 +264,13 @@ async function refreshPlanUsage() {
   let html = gaugeDefs.map(gaugeHtml).join('');
   if (plan.extraUsage && plan.extraUsage.enabled) {
     const e = plan.extraUsage;
-    const pct = Math.max(0, Math.min(100, e.pct ?? 0));
+    // claude.ai returns utilization=null when extra_usage is at $0 — compute it
+    // from used/limit so the cap-percent line and bar always have a value.
+    let computedPct = e.pct;
+    if (computedPct == null && e.limitDollars && Number.isFinite(e.limitDollars) && e.limitDollars > 0) {
+      computedPct = ((e.usedDollars ?? 0) / e.limitDollars) * 100;
+    }
+    const pct = Math.max(0, Math.min(100, computedPct ?? 0));
     html += `
       <div class="extra-usage-cell">
         <div class="lbl">Extra usage</div>
@@ -276,7 +282,7 @@ async function refreshPlanUsage() {
           <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
         </div>
         <div class="foot">
-          <span>${e.pct == null ? '—' : e.pct.toFixed(1) + '%'} of cap</span>
+          <span>${computedPct == null ? '—' : computedPct.toFixed(1) + '%'} of cap</span>
           <span>${e.currency || 'USD'}</span>
         </div>
       </div>`;

@@ -310,6 +310,11 @@ main {
   grid-template-columns: repeat(5, 1fr) 1.4fr;
   gap: 18px;
   align-items: center;
+  justify-items: center;
+}
+.plan-card .plan-grid > .extra-usage-cell {
+  justify-self: stretch;
+  width: 100%;
 }
 @media (max-width: 1100px) {
   .plan-card .plan-grid {
