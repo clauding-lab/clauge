@@ -335,7 +335,7 @@ async function refreshPlanUsage() {
         <span class="lbl">API console balance</span>
         <span class="val">—</span>
         <div class="meta">
-          <span>console.anthropic.com not connected</span>
+          <span>platform.claude.com not connected</span>
         </div>
       </div>`;
   }

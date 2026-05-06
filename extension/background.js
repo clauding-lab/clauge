@@ -80,30 +80,62 @@ async function syncOnce() {
       if (r.ok) claudeBalance = await r.json();
     } catch { /* swallow */ }
 
-    // API console balance — confirmed endpoint:
-    //   GET https://platform.claude.com/api/console/organizations/{uuid}/credits
+    // API console balance — confirmed endpoint shape:
+    //   GET https://platform.claude.com/api/console/organizations/{platform-uuid}/credits
     //   { amount, currency, auto_reload_settings, ... }
-    // Note: platform.claude.com uses a *different* org UUID than claude.ai,
-    // so we discover it via the platform's own org list first.
+    // The platform org UUID is *different* from claude.ai's — we have to
+    // discover it. Probe likely identity endpoints, then extract uuid.
     let balance = null;
-    try {
-      const platformOrgsRes = await fetch(
-        'https://platform.claude.com/api/console/organizations',
-        { credentials: 'include', cache: 'no-store' }
-      );
-      if (platformOrgsRes.ok) {
-        const platformOrgs = await platformOrgsRes.json();
-        const platformOrg = Array.isArray(platformOrgs) ? platformOrgs[0] : null;
-        if (platformOrg?.uuid) {
-          const url = `https://platform.claude.com/api/console/organizations/${encodeURIComponent(platformOrg.uuid)}/credits`;
-          const cr = await fetch(url, { credentials: 'include', cache: 'no-store' });
-          if (cr.ok) {
-            balance = await cr.json();
-            balance.__source = url;
-          }
+    const balanceProbeLog = [];
+    let platformUuid = null;
+
+    const discoveryPaths = [
+      'https://platform.claude.com/api/console/organizations',
+      'https://platform.claude.com/api/console/me',
+      'https://platform.claude.com/api/console/account/me',
+      'https://platform.claude.com/api/me',
+      'https://platform.claude.com/api/organizations',
+    ];
+    for (const path of discoveryPaths) {
+      try {
+        const r = await fetch(path, { credentials: 'include', cache: 'no-store' });
+        balanceProbeLog.push(`${path} → ${r.status}`);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const found =
+          (Array.isArray(data) && data[0]?.uuid) ||
+          data?.uuid ||
+          data?.organization?.uuid ||
+          data?.organizations?.[0]?.uuid ||
+          data?.org_uuid ||
+          null;
+        if (found) {
+          platformUuid = found;
+          balanceProbeLog.push(`uuid: ${platformUuid}`);
+          break;
         }
+        balanceProbeLog.push(`(no uuid in response — keys: ${Object.keys(data || {}).join(',')})`);
+      } catch (e) {
+        balanceProbeLog.push(`${path} → error: ${String(e?.message || e)}`);
       }
-    } catch { /* swallow */ }
+    }
+
+    if (platformUuid) {
+      const url = `https://platform.claude.com/api/console/organizations/${encodeURIComponent(platformUuid)}/credits`;
+      try {
+        const cr = await fetch(url, { credentials: 'include', cache: 'no-store' });
+        balanceProbeLog.push(`${url} → ${cr.status}`);
+        if (cr.ok) {
+          balance = await cr.json();
+          balance.__source = url;
+        }
+      } catch (e) {
+        balanceProbeLog.push(`credits fetch error: ${String(e?.message || e)}`);
+      }
+    }
+    // expose probe trail to popup for debugging
+    await chrome.storage.local.set({ cl_balance_probe: balanceProbeLog });
+    console.log('[Clauge Sync] balance probe:', balanceProbeLog);
 
     const post = await fetch(ingestUrl, {
       method: 'POST',

@@ -10,6 +10,16 @@ function fmtTime(iso) {
 async function refresh() {
   const data = await chrome.runtime.sendMessage({ type: 'CLAUGE_GET_LAST' });
   const last = data?.last ?? null;
+  // populate probe log
+  try {
+    const stored = await chrome.storage.local.get('cl_balance_probe');
+    const log = stored?.cl_balance_probe;
+    if ($('probe-log')) {
+      $('probe-log').textContent = Array.isArray(log) && log.length
+        ? log.join('\n')
+        : '(no probes yet — sync once to populate)';
+    }
+  } catch {}
   if (!last) {
     $('status').textContent = 'Pending first sync';
     $('status').className = 'muted';
