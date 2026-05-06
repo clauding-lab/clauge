@@ -13,7 +13,7 @@
 
 const ALARM_NAME = 'clauge-sync';
 const DEFAULT_PORT = 3456;
-const DEFAULT_INTERVAL_MIN = 5;
+const DEFAULT_INTERVAL_MIN = 1;
 const STORAGE_KEYS = {
   port: 'cl_port',
   intervalMin: 'cl_interval_min',

@@ -687,3 +687,9 @@ function bindControls() {
 
 bindControls();
 refreshAll();
+
+// Auto-refresh the plan-usage card every 60s so it mirrors the extension's
+// polling cadence without requiring a full dashboard reload.
+setInterval(() => {
+  refreshPlanUsage().catch((err) => console.error('plan refresh', err));
+}, 60_000);

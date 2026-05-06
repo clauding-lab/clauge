@@ -3,12 +3,12 @@ const $ = (id) => document.getElementById(id);
 async function load() {
   const all = await chrome.storage.local.get(['cl_port', 'cl_interval_min']);
   $('port').value = all.cl_port ?? 3456;
-  $('interval').value = all.cl_interval_min ?? 5;
+  $('interval').value = all.cl_interval_min ?? 1;
 }
 
 async function save() {
   const port = Number($('port').value) || 3456;
-  const interval = Math.max(1, Math.min(60, Number($('interval').value) || 5));
+  const interval = Math.max(1, Math.min(60, Number($('interval').value) || 1));
   await chrome.storage.local.set({
     cl_port: port,
     cl_interval_min: interval,

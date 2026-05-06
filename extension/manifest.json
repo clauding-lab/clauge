@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Clauge Sync",
-  "version": "0.1.0",
-  "description": "Auto-sync claude.ai plan usage (session %, weekly %, Sonnet, extra usage) to your local Clauge dashboard.",
+  "version": "0.1.1",
+  "description": "Auto-sync claude.ai plan usage (session %, weekly %, Sonnet, extra usage) to your local Clauge dashboard. Polls every minute by default.",
   "homepage_url": "https://github.com/clauding-lab/clauge",
   "author": "clauding-lab",
   "icons": {
