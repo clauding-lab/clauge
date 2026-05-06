@@ -298,9 +298,13 @@ main {
 .row-2col   { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
 .row-1-4-1  { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
 .row-3col   { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.row-4col   { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; align-items: start; }
 
+@media (max-width: 1280px) {
+  .row-4col { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 1100px) {
-  .row-2col, .row-1-4-1, .row-3col { grid-template-columns: 1fr; }
+  .row-2col, .row-1-4-1, .row-3col, .row-4col { grid-template-columns: 1fr; }
 }
 
 /* ─── Plan card (claude.ai) ─────────────────────────────── */

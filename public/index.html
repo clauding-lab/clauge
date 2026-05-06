@@ -213,35 +213,13 @@
         </div>
       </section>
 
-      <!-- Sessions + Models -->
-      <section class="row-1-4-1">
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>Sessions</h3>
-              <span class="sub" id="sessions-count">—</span>
-            </div>
-          </div>
-          <table class="bd-table" data-tbl="sessions">
-            <thead><tr>
-              <th>Started</th>
-              <th>Project</th>
-              <th>Model</th>
-              <th>Task</th>
-              <th class="num">Duration</th>
-              <th class="num">Calls</th>
-              <th class="num">Tokens</th>
-              <th class="num">Hit</th>
-              <th class="num">Cost</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+      <!-- By Model + tool lists in one 4-col row -->
+      <section class="row-4col">
         <div class="card">
           <div class="card-head">
             <div class="title-row">
               <h3>By model</h3>
-              <span class="sub">cost · cache · share</span>
+              <span class="sub">cost · share</span>
             </div>
           </div>
           <table class="bd-table" data-tbl="models">
@@ -255,10 +233,6 @@
             <tbody></tbody>
           </table>
         </div>
-      </section>
-
-      <!-- Tools -->
-      <section class="row-3col">
         <div class="card">
           <div class="card-head">
             <div class="title-row">
@@ -285,6 +259,32 @@
             </div>
           </div>
           <div class="tool-list" data-tools="mcp"></div>
+        </div>
+      </section>
+
+      <!-- Sessions full width at bottom -->
+      <section>
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>Sessions</h3>
+              <span class="sub" id="sessions-count">—</span>
+            </div>
+          </div>
+          <table class="bd-table" data-tbl="sessions">
+            <thead><tr>
+              <th>Started</th>
+              <th>Project</th>
+              <th>Model</th>
+              <th>Task</th>
+              <th class="num">Duration</th>
+              <th class="num">Calls</th>
+              <th class="num">Tokens</th>
+              <th class="num">Hit</th>
+              <th class="num">Cost</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </section>
 
