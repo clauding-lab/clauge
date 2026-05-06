@@ -1,5 +1,8 @@
 # Clauge
 
+[![npm version](https://img.shields.io/npm/v/clauge.svg)](https://www.npmjs.com/package/clauge)
+[![license](https://img.shields.io/npm/l/clauge.svg)](LICENSE)
+
 Token analytics and subscription value dashboard for **Claude Code**. Local Node.js + HTML, npx-installable.
 
 ![Clauge dashboard](docs/dashboard.png)
@@ -23,16 +26,17 @@ Token analytics and subscription value dashboard for **Claude Code**. Local Node
 ## Quick start
 
 ```bash
-npx github:clauding-lab/clauge
+npx clauge
 ```
 
-Or local:
+That's it — installs from the npm registry and auto-opens **http://localhost:3456** in your browser.
+
+Or from source:
 
 ```bash
 git clone https://github.com/clauding-lab/clauge.git
 cd clauge && npm install && cp .env.example .env
 node server.js
-# → http://localhost:3456 (auto-opens browser)
 ```
 
 Set `NO_OPEN=1` to skip the auto-open. Set `CLAUDE_DIR=~/somewhere-else` to read from a non-default location.
