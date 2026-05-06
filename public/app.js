@@ -9,17 +9,12 @@ const fmtUSD = (n) =>
     : new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 0,
       }).format(n);
 
-const fmtUSDLong = (n) =>
-  n == null
-    ? '—'
-    : new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 4,
-      }).format(n);
+// Detail formatter — same 0-decimal rule for the dashboard. CSV/JSON
+// exports keep full precision (see lib/exporter.js).
+const fmtUSDLong = fmtUSD;
 
 const fmtInt = (n) =>
   n == null ? '—' : new Intl.NumberFormat('en-US').format(Math.round(n));
