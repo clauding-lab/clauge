@@ -4,3 +4,7 @@ node_modules/
 *.log
 .cache/
 test-data/
+
+# Chrome Web Store build artifacts
+clauge-sync-*.zip
+clauge-sync-*/
