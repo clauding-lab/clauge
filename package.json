@@ -1,0 +1,44 @@
+{
+  "name": "clauge",
+  "version": "0.1.0",
+  "description": "Claude + Gauge. Token analytics and subscription ROI for Claude Code.",
+  "type": "module",
+  "main": "server.js",
+  "bin": {
+    "clauge": "./server.js"
+  },
+  "files": [
+    "server.js",
+    "lib/",
+    "public/",
+    ".env.example"
+  ],
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clauding-lab/clauge.git"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "token-analytics",
+    "subscription-roi",
+    "usage-tracker"
+  ],
+  "author": "clauding-lab",
+  "license": "MIT",
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "dotenv": "^16.4.5",
+    "hono": "^4.6.14",
+    "open": "^10.1.0"
+  }
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clauge — Claude Code analytics</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --panel: #151820;
+        --text: #e6e8eb;
+        --muted: #8a93a0;
+        --accent: #378add;
+        --green: #34c759;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        padding: 32px;
+        font-feature-settings: "tnum" 1;
+      }
+      h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; letter-spacing: 0.02em; }
+      .panel {
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 20px;
+        max-width: 720px;
+      }
+      .muted { color: var(--muted); font-size: 13px; }
+      pre {
+        background: #0e1116;
+        padding: 12px;
+        border-radius: 6px;
+        overflow: auto;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      a { color: var(--accent); }
+      code { font-family: "SF Mono", Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <h1>Clauge — V1 scaffold</h1>
+    <div class="panel">
+      <p class="muted">
+        Server is up. Dashboard UI lands in build steps 10–17 (PRD v3.1 §2.10).
+        For now, the parser and session-index endpoints are live.
+      </p>
+      <p>API endpoints currently wired:</p>
+      <ul>
+        <li><code><a href="/api/health">/api/health</a></code></li>
+        <li><code><a href="/api/sessions/index">/api/sessions/index</a></code></li>
+        <li><code>/api/sessions/:sessionId/raw</code> — replace
+          <code>:sessionId</code> with a UUID from the index</li>
+      </ul>
+      <p class="muted">
+        Build status: parser.js shipped with mandatory <code>requestId</code>
+        deduplication (PRD v3.1 §2.3.1). 18 unit tests passing. Real-data
+        smoke test: 102 deduped turns from 212 raw records, perfect dedup
+        invariant.
+      </p>
+    </div>
+  </body>
+</html>
