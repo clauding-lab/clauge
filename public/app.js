@@ -287,11 +287,35 @@ async function refreshPlanUsage() {
         </div>
       </div>`;
   } else {
-    // Fill the trailing column with an empty cap card for layout balance
     html += `<div class="extra-usage-cell" style="opacity:.5">
       <div class="lbl">Extra usage</div>
       <div class="row" style="margin-top:6px"><span class="val mono" style="font-size:14px;color:var(--text-3)">none configured</span></div>
     </div>`;
+  }
+
+  // Balance card (currently a placeholder — endpoint TBD).
+  const bal = plan.balance;
+  if (bal && bal.currentBalance != null) {
+    const reloadCls = bal.autoReloadEnabled ? 'reload-on' : 'reload-off';
+    const reloadTxt = bal.autoReloadEnabled ? `auto-reload ${fmtUSD(bal.autoReloadAmount)}` : 'auto-reload off';
+    html += `
+      <div class="balance-cell">
+        <span class="lbl">Current balance</span>
+        <span class="val">${fmtUSD(bal.currentBalance)}</span>
+        <div class="meta">
+          <span class="${reloadCls}">${escapeHtml(reloadTxt)}</span>
+          <span>${escapeHtml(bal.currency || 'USD')}</span>
+        </div>
+      </div>`;
+  } else {
+    html += `
+      <div class="balance-cell empty">
+        <span class="lbl">Current balance</span>
+        <span class="val">—</span>
+        <div class="meta">
+          <span>API console balance not connected</span>
+        </div>
+      </div>`;
   }
   grid.innerHTML = html;
 
@@ -605,7 +629,7 @@ async function refreshToolLists() {
     }
     const max = Math.max(...items.map((x) => x.count), 1);
     wrap.innerHTML = items
-      .slice(0, 20)
+      .slice(0, 12)
       .map((x) => {
         const pct = (x.count / max) * 100;
         return `<div class="tool-row">

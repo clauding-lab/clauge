@@ -298,7 +298,9 @@ main {
 .row-2col   { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
 .row-1-4-1  { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
 .row-3col   { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
-.row-4col   { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; align-items: start; }
+.row-4col   { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; align-items: stretch; }
+.row-4col > .card { display: flex; flex-direction: column; }
+.row-4col > .card > :last-child { flex: 1; min-height: 0; }
 
 @media (max-width: 1280px) {
   .row-4col { grid-template-columns: 1fr 1fr; }
@@ -311,14 +313,66 @@ main {
 
 .plan-card .plan-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr) 1.4fr;
-  gap: 18px;
+  grid-template-columns: repeat(5, 1fr) 1.4fr 1.4fr;
+  gap: 16px;
   align-items: center;
   justify-items: center;
 }
-.plan-card .plan-grid > .extra-usage-cell {
+.plan-card .plan-grid > .extra-usage-cell,
+.plan-card .plan-grid > .balance-cell {
   justify-self: stretch;
   width: 100%;
+}
+
+.balance-cell {
+  padding: 16px 18px;
+  background: var(--surface-2);
+  border-radius: var(--r-2);
+  border: 1px solid var(--hairline);
+}
+.balance-cell .lbl {
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.balance-cell .val {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-top: 6px;
+  display: block;
+}
+.balance-cell .meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.balance-cell .reload-on { color: var(--ok); }
+.balance-cell .reload-off { color: var(--text-3); }
+.balance-cell.empty .val { color: var(--text-3); font-size: 14px; font-weight: 500; }
+
+@media (max-width: 1280px) {
+  .plan-card .plan-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .plan-card .plan-grid > .extra-usage-cell,
+  .plan-card .plan-grid > .balance-cell {
+    grid-column: span 5;
+  }
+}
+@media (max-width: 1100px) {
+  .plan-card .plan-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .plan-card .plan-grid > .extra-usage-cell,
+  .plan-card .plan-grid > .balance-cell {
+    grid-column: span 2;
+  }
 }
 @media (max-width: 1100px) {
   .plan-card .plan-grid {
