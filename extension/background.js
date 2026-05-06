@@ -83,41 +83,56 @@ async function syncOnce() {
     // API console balance — confirmed endpoint shape:
     //   GET https://platform.claude.com/api/console/organizations/{platform-uuid}/credits
     //   { amount, currency, auto_reload_settings, ... }
-    // The platform org UUID is *different* from claude.ai's — we have to
-    // discover it. Probe likely identity endpoints, then extract uuid.
+    // The platform org UUID is *different* from claude.ai's. The extension's
+    // content-platform.js extracts it from any page the user visits on
+    // platform.claude.com and stores it in chrome.storage.local under
+    // cl_platform_uuid. We use that first; fallback to API discovery.
     let balance = null;
     const balanceProbeLog = [];
     let platformUuid = null;
 
-    const discoveryPaths = [
-      'https://platform.claude.com/api/console/organizations',
-      'https://platform.claude.com/api/console/me',
-      'https://platform.claude.com/api/console/account/me',
-      'https://platform.claude.com/api/me',
-      'https://platform.claude.com/api/organizations',
-    ];
-    for (const path of discoveryPaths) {
-      try {
-        const r = await fetch(path, { credentials: 'include', cache: 'no-store' });
-        balanceProbeLog.push(`${path} → ${r.status}`);
-        if (!r.ok) continue;
-        const data = await r.json();
-        const found =
-          (Array.isArray(data) && data[0]?.uuid) ||
-          data?.uuid ||
-          data?.organization?.uuid ||
-          data?.organizations?.[0]?.uuid ||
-          data?.org_uuid ||
-          null;
-        if (found) {
-          platformUuid = found;
-          balanceProbeLog.push(`uuid: ${platformUuid}`);
-          break;
-        }
-        balanceProbeLog.push(`(no uuid in response — keys: ${Object.keys(data || {}).join(',')})`);
-      } catch (e) {
-        balanceProbeLog.push(`${path} → error: ${String(e?.message || e)}`);
+    try {
+      const stored = await chrome.storage.local.get('cl_platform_uuid');
+      if (stored?.cl_platform_uuid) {
+        platformUuid = stored.cl_platform_uuid;
+        balanceProbeLog.push(`uuid (from content script): ${platformUuid}`);
       }
+    } catch { /* swallow */ }
+
+    if (!platformUuid) {
+      const discoveryPaths = [
+        'https://platform.claude.com/api/console/organizations',
+        'https://platform.claude.com/api/console/me',
+        'https://platform.claude.com/api/console/account/me',
+        'https://platform.claude.com/api/me',
+        'https://platform.claude.com/api/organizations',
+      ];
+      for (const path of discoveryPaths) {
+        try {
+          const r = await fetch(path, { credentials: 'include', cache: 'no-store' });
+          balanceProbeLog.push(`${path} → ${r.status}`);
+          if (!r.ok) continue;
+          const data = await r.json();
+          const found =
+            (Array.isArray(data) && data[0]?.uuid) ||
+            data?.uuid ||
+            data?.organization?.uuid ||
+            data?.organizations?.[0]?.uuid ||
+            data?.org_uuid ||
+            null;
+          if (found) {
+            platformUuid = found;
+            balanceProbeLog.push(`uuid: ${platformUuid}`);
+            break;
+          }
+          balanceProbeLog.push(`(no uuid in response — keys: ${Object.keys(data || {}).join(',')})`);
+        } catch (e) {
+          balanceProbeLog.push(`${path} → error: ${String(e?.message || e)}`);
+        }
+      }
+    }
+    if (!platformUuid) {
+      balanceProbeLog.push('no uuid — visit platform.claude.com once to populate');
     }
 
     if (platformUuid) {
@@ -213,5 +228,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         })
       );
     return true;
+  }
+  // Content script reports the platform.claude.com org UUID it discovered
+  // by scanning the page DOM. Persist it so background syncs can reach the
+  // credits endpoint without trying to discover the UUID via the API.
+  if (message?.type === 'CL_PLATFORM_UUID' && message.uuid) {
+    chrome.storage.local.set({ cl_platform_uuid: message.uuid }).then(() => {
+      // Trigger a fresh sync so the balance card populates immediately
+      // instead of waiting for the next 1-min tick.
+      syncOnce();
+    });
+    return false;
   }
 });
