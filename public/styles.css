@@ -313,19 +313,25 @@ main {
 
 .plan-card .plan-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr) 1.4fr 1.4fr;
-  gap: 16px;
+  grid-template-columns: repeat(5, 1fr) 1.3fr 1.3fr 1.3fr;
+  gap: 14px;
   align-items: stretch;
   justify-items: center;
 }
 .plan-card .plan-grid > .extra-usage-cell {
-  grid-column: -3 / -2;       /* second-to-last column (1.4fr) */
+  grid-column: -4 / -3;       /* third-from-last (claude.ai cap) */
   justify-self: stretch;
   width: 100%;
   height: 100%;
 }
-.plan-card .plan-grid > .balance-cell {
-  grid-column: -2 / -1;       /* last column (1.4fr) */
+.plan-card .plan-grid > .balance-cell.claude-balance {
+  grid-column: -3 / -2;       /* second-from-last (claude.ai balance) */
+  justify-self: stretch;
+  width: 100%;
+  height: 100%;
+}
+.plan-card .plan-grid > .balance-cell.api-balance {
+  grid-column: -2 / -1;       /* last (API console balance) */
   justify-self: stretch;
   width: 100%;
   height: 100%;
@@ -362,7 +368,8 @@ main {
     grid-template-columns: repeat(5, 1fr);
   }
   .plan-card .plan-grid > .extra-usage-cell,
-  .plan-card .plan-grid > .balance-cell {
+  .plan-card .plan-grid > .balance-cell.claude-balance,
+  .plan-card .plan-grid > .balance-cell.api-balance {
     grid-column: span 5;
   }
 }
@@ -371,7 +378,8 @@ main {
     grid-template-columns: repeat(2, 1fr);
   }
   .plan-card .plan-grid > .extra-usage-cell,
-  .plan-card .plan-grid > .balance-cell {
+  .plan-card .plan-grid > .balance-cell.claude-balance,
+  .plan-card .plan-grid > .balance-cell.api-balance {
     grid-column: span 2;
   }
 }

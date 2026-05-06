@@ -293,14 +293,36 @@ async function refreshPlanUsage() {
     </div>`;
   }
 
-  // Balance card (currently a placeholder — endpoint TBD).
+  // claude.ai current balance (the consumer-app balance — endpoint TBD)
+  const claudeBal = plan.claudeBalance;
+  if (claudeBal && claudeBal.currentBalance != null) {
+    html += `
+      <div class="balance-cell claude-balance">
+        <span class="lbl">claude.ai balance</span>
+        <span class="val">${fmtUSD(claudeBal.currentBalance)}</span>
+        <div class="meta">
+          <span>${escapeHtml(claudeBal.currency || 'USD')}</span>
+        </div>
+      </div>`;
+  } else {
+    html += `
+      <div class="balance-cell claude-balance empty">
+        <span class="lbl">claude.ai balance</span>
+        <span class="val">—</span>
+        <div class="meta">
+          <span>endpoint not yet identified</span>
+        </div>
+      </div>`;
+  }
+
+  // API console balance (console.anthropic.com prepaid credits)
   const bal = plan.balance;
   if (bal && bal.currentBalance != null) {
     const reloadCls = bal.autoReloadEnabled ? 'reload-on' : 'reload-off';
     const reloadTxt = bal.autoReloadEnabled ? `auto-reload ${fmtUSD(bal.autoReloadAmount)}` : 'auto-reload off';
     html += `
-      <div class="balance-cell">
-        <span class="lbl">Current balance</span>
+      <div class="balance-cell api-balance">
+        <span class="lbl">API console balance</span>
         <span class="val">${fmtUSD(bal.currentBalance)}</span>
         <div class="meta">
           <span class="${reloadCls}">${escapeHtml(reloadTxt)}</span>
@@ -309,11 +331,11 @@ async function refreshPlanUsage() {
       </div>`;
   } else {
     html += `
-      <div class="balance-cell empty">
-        <span class="lbl">Current balance</span>
+      <div class="balance-cell api-balance empty">
+        <span class="lbl">API console balance</span>
         <span class="val">—</span>
         <div class="meta">
-          <span>API console balance not connected</span>
+          <span>console.anthropic.com not connected</span>
         </div>
       </div>`;
   }
