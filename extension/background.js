@@ -67,18 +67,30 @@ async function syncOnce() {
     if (!usageRes.ok) throw new Error(`usage ${usageRes.status}`);
     const usage = await usageRes.json();
 
-    // Also probe for billing/balance — paths aren't documented; first 200 wins.
+    // Probe candidate balance endpoints across both consumer (claude.ai) and
+    // developer console (platform.claude.com) domains. Paths aren't
+    // documented; first 200 wins. Tag the source path so the dashboard
+    // knows which surface the data came from.
     let balance = null;
+    const ouuid = encodeURIComponent(org.uuid);
     const balanceCandidates = [
-      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/billing`,
-      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/billing/balance`,
-      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/credits`,
-      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/account/balance`,
+      `https://claude.ai/api/organizations/${ouuid}/billing`,
+      `https://claude.ai/api/organizations/${ouuid}/billing/balance`,
+      `https://claude.ai/api/organizations/${ouuid}/credits`,
+      `https://platform.claude.com/api/organizations/${ouuid}/billing`,
+      `https://platform.claude.com/api/organizations/${ouuid}/billing/balance`,
+      `https://platform.claude.com/api/organizations/${ouuid}/credits`,
+      `https://platform.claude.com/api/organizations/${ouuid}/account`,
+      `https://console.anthropic.com/api/organizations/${ouuid}/billing/balance`,
     ];
     for (const url of balanceCandidates) {
       try {
         const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
-        if (r.ok) { balance = await r.json(); break; }
+        if (r.ok) {
+          balance = await r.json();
+          balance.__source = url;
+          break;
+        }
       } catch { /* swallow */ }
     }
 
