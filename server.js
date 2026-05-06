@@ -401,16 +401,26 @@ app.post('/api/usage/ingest', async (c) => {
     return c.json({ error: 'expected { org, usage }' }, 400);
   }
   const normalized = normalizePlanUsage(body.usage);
-  const balance = normalizeBalance(body.balance, body.org);
-  if (normalized && balance) normalized.balance = balance;
+  const claudeBalance = normalizeBalance(body.claudeBalance, null);
+  const apiBalance = normalizeBalance(body.balance, null);
+  if (normalized) {
+    if (claudeBalance) normalized.claudeBalance = claudeBalance;
+    if (apiBalance) normalized.balance = apiBalance;
+  }
   const record = await usageStore.save({
     org: body.org ? { uuid: body.org.uuid, name: body.org.name } : null,
     rawOrg: body.org ?? null,
     raw: body.usage,
+    rawClaudeBalance: body.claudeBalance ?? null,
     rawBalance: body.balance ?? null,
     normalized,
   });
-  return c.json({ ok: true, ingestedAt: record.ingestedAt, balanceFound: !!balance });
+  return c.json({
+    ok: true,
+    ingestedAt: record.ingestedAt,
+    claudeBalanceFound: !!claudeBalance,
+    apiBalanceFound: !!apiBalance,
+  });
 });
 
 app.get('/api/usage', async (c) => {

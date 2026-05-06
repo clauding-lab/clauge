@@ -67,23 +67,27 @@ async function syncOnce() {
     if (!usageRes.ok) throw new Error(`usage ${usageRes.status}`);
     const usage = await usageRes.json();
 
-    // Probe candidate balance endpoints across both consumer (claude.ai) and
-    // developer console (platform.claude.com) domains. Paths aren't
-    // documented; first 200 wins. Tag the source path so the dashboard
-    // knows which surface the data came from.
-    let balance = null;
+    // claude.ai prepaid balance — confirmed endpoint shape:
+    //   GET /api/organizations/{uuid}/prepaid/credits
+    //   { amount, currency, auto_reload_settings, ... }
     const ouuid = encodeURIComponent(org.uuid);
-    const balanceCandidates = [
-      `https://claude.ai/api/organizations/${ouuid}/billing`,
-      `https://claude.ai/api/organizations/${ouuid}/billing/balance`,
-      `https://claude.ai/api/organizations/${ouuid}/credits`,
+    let claudeBalance = null;
+    try {
+      const r = await fetch(
+        `https://claude.ai/api/organizations/${ouuid}/prepaid/credits`,
+        { credentials: 'include', cache: 'no-store' }
+      );
+      if (r.ok) claudeBalance = await r.json();
+    } catch { /* swallow */ }
+
+    // API console (platform.claude.com) — endpoint TBD; probe candidates
+    let balance = null;
+    const apiCandidates = [
+      `https://platform.claude.com/api/organizations/${ouuid}/prepaid/credits`,
       `https://platform.claude.com/api/organizations/${ouuid}/billing`,
-      `https://platform.claude.com/api/organizations/${ouuid}/billing/balance`,
       `https://platform.claude.com/api/organizations/${ouuid}/credits`,
-      `https://platform.claude.com/api/organizations/${ouuid}/account`,
-      `https://console.anthropic.com/api/organizations/${ouuid}/billing/balance`,
     ];
-    for (const url of balanceCandidates) {
+    for (const url of apiCandidates) {
       try {
         const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
         if (r.ok) {
@@ -97,7 +101,7 @@ async function syncOnce() {
     const post = await fetch(ingestUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ org, usage, balance }),
+      body: JSON.stringify({ org, usage, claudeBalance, balance }),
     });
     if (!post.ok) throw new Error(`ingest ${post.status}`);
 
