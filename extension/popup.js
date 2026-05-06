@@ -33,16 +33,20 @@ async function refresh() {
   $('open-dashboard').href = `http://localhost:${port}/`;
 }
 
-$('sync-now').addEventListener('click', async () => {
-  $('status').textContent = 'Syncing…';
-  $('status').className = 'muted';
-  await chrome.runtime.sendMessage({ type: 'CLAUGE_SYNC_NOW' });
-  await refresh();
-});
-
 $('open-options').addEventListener('click', (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
 
+// Opening the popup IS the sync trigger — no extra button needed.
+async function syncOnOpen() {
+  $('status').textContent = 'Syncing…';
+  $('status').className = 'muted';
+  await chrome.runtime.sendMessage({ type: 'CLAUGE_SYNC_NOW' });
+  await refresh();
+}
+
+// Show the most-recent cached state immediately (no flash of empty),
+// then fire a fresh sync so the values update on this open.
 refresh();
+syncOnOpen();
