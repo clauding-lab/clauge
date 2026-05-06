@@ -355,11 +355,13 @@ async function renderInstallPanel() {
 
 // ─── headline ─────────────────────────────────────────────
 async function refreshHeadline() {
-  const [summary, cache, sessions, daily] = await Promise.all([
+  const isToday = state.period === 'today';
+  const [summary, cache, sessions, daily, hours] = await Promise.all([
     api('/api/summary', commonParams()),
     api('/api/cache', commonParams()),
     api('/api/sessions', commonParams()),
     api('/api/daily', commonParams()),
+    isToday ? api('/api/hours', commonParams()) : Promise.resolve(null),
   ]);
 
   // Hero
@@ -372,10 +374,14 @@ async function refreshHeadline() {
       ? ` Net cache savings ${fmtUSD(cache.netSavingsUSD)}.`
       : '';
 
-  // Hero spark (daily cost)
-  const dailyCost = daily.days.map((d) => d.totalCost);
-  renderSpark(document.getElementById('hero-spark'), dailyCost);
-  document.getElementById('hero-spark-start').textContent = daily.days[0]?.date ?? 'start';
+  // Hero spark — hourly when 'today', else daily
+  const heroSeries = isToday
+    ? (hours?.hours ?? []).map((h) => h.cost)
+    : daily.days.map((d) => d.totalCost);
+  renderSpark(document.getElementById('hero-spark'), heroSeries);
+  document.getElementById('hero-spark-start').textContent = isToday
+    ? '00:00'
+    : (daily.days[0]?.date ?? 'start');
 
   // Secondary: messages / sessions / cache hit
   document.getElementById('sec-messages').textContent = fmtInt(summary.messageCount);
@@ -414,26 +420,53 @@ async function refreshHeadline() {
   document.querySelector('[data-tok="cache1h"]').textContent = fmtTokens(tk.cacheCreate1h);
   document.querySelector('[data-tok="netSavings"]').textContent = fmtUSD(cache.netSavingsUSD);
 
-  return { sessions, daily };
+  return { sessions, daily, hours, isToday };
 }
 
-// ─── daily cost bar chart ─────────────────────────────────
-function renderDailyChart(daily) {
+// ─── cost over time chart (daily or hourly) ───────────────
+function renderCostChart({ daily, hours, isToday }) {
   const wrap = document.getElementById('daily-chart');
   const ticks = document.getElementById('daily-ticks');
   const meta = document.getElementById('daily-meta');
+
+  if (isToday) {
+    const list = utcHoursToLocal(hours?.hours);
+    meta.textContent = `24 hours (${TZ_LABEL})`;
+    if (list.every((h) => h.cost === 0)) {
+      wrap.innerHTML = `<div class="empty" style="width:100%">no data</div>`;
+      ticks.innerHTML = '';
+      return;
+    }
+    const max = Math.max(...list.map((h) => h.cost), 0.0001);
+    const nowHour = new Date().getHours();
+    let html = '<div class="gridlines"><div></div><div></div><div></div><div></div></div>';
+    for (const h of list) {
+      const heightPct = (h.cost / max) * 100;
+      const cls = h.hour === nowHour ? 'now' : h.hour > nowHour ? 'future' : '';
+      html += `
+        <div class="bar-col ${cls}" title="${String(h.hour).padStart(2,'0')}:00 ${TZ_LABEL} — ${fmtUSDLong(h.cost)}">
+          <div class="bar" style="height:${Math.max(heightPct, 0.5).toFixed(1)}%"></div>
+        </div>`;
+    }
+    wrap.innerHTML = html;
+    ticks.innerHTML = `
+      <span style="flex:1;text-align:left">00</span>
+      <span style="flex:1;text-align:center">06</span>
+      <span style="flex:1;text-align:center">12</span>
+      <span style="flex:1;text-align:center">18</span>
+      <span style="flex:1;text-align:right">23</span>`;
+    return;
+  }
+
   const days = daily.days ?? [];
   meta.textContent = `${days.length} day${days.length === 1 ? '' : 's'}`;
-
   if (days.length === 0) {
     wrap.innerHTML = `<div class="empty" style="width:100%">no data</div>`;
     ticks.innerHTML = '';
     return;
   }
-
   const max = Math.max(...days.map((d) => d.totalCost), 1);
   const todayDate = new Date().toISOString().slice(0, 10);
-
   let html = '<div class="gridlines"><div></div><div></div><div></div><div></div></div>';
   for (const d of days) {
     const h = (d.totalCost / max) * 100;
@@ -444,7 +477,6 @@ function renderDailyChart(daily) {
       </div>`;
   }
   wrap.innerHTML = html;
-
   const tickLabels = pickTicks(days.map((d) => d.date), 5);
   ticks.innerHTML = tickLabels
     .map((t) => `<span style="flex:1;text-align:${t.align}">${escapeHtml(t.label)}</span>`)
@@ -475,12 +507,37 @@ function shortDate(iso) {
   return m && d ? `${m}/${d}` : iso;
 }
 
+// ─── timezone helpers ────────────────────────────────────
+// /api/hours returns 24 buckets indexed by UTC hour. Remap to the user's
+// local timezone so the chart's hour-0 column = user's local midnight.
+function utcHoursToLocal(hours) {
+  const out = new Array(24).fill(null).map((_, i) => ({ hour: i, calls: 0, cost: 0 }));
+  for (const h of hours ?? []) {
+    const d = new Date();
+    d.setUTCHours(h.hour, 0, 0, 0);
+    const localH = d.getHours();
+    out[localH] = { hour: localH, calls: h.calls ?? 0, cost: h.cost ?? 0 };
+  }
+  return out;
+}
+
+const TZ_LABEL = (() => {
+  try {
+    const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return z || 'local';
+  } catch {
+    return 'local';
+  }
+})();
+
 // ─── peak hours ───────────────────────────────────────────
 async function refreshPeakHours() {
   const data = await api('/api/hours', commonParams());
-  const hours = data.hours ?? [];
+  const hours = utcHoursToLocal(data.hours);
   const wrap = document.getElementById('peak-chart');
-  if (hours.length === 0) {
+  const sub = document.getElementById('peak-sub');
+  if (sub) sub.textContent = `distribution by hour (${TZ_LABEL})`;
+  if (hours.length === 0 || hours.every((h) => h.calls === 0)) {
     wrap.innerHTML = `<div class="empty" style="width:100%">no data</div>`;
     return;
   }
@@ -489,7 +546,7 @@ async function refreshPeakHours() {
     .map((h) => {
       const pct = (h.calls / max) * 100;
       const isPeak = pct > 70;
-      return `<div class="pcol ${isPeak ? 'peak' : ''}" style="height:${Math.max(3, pct)}%" title="${h.hour}:00 — ${h.calls} calls"></div>`;
+      return `<div class="pcol ${isPeak ? 'peak' : ''}" style="height:${Math.max(3, pct)}%" title="${String(h.hour).padStart(2,'0')}:00 ${TZ_LABEL} — ${h.calls} calls"></div>`;
     })
     .join('');
 }
@@ -668,7 +725,7 @@ async function refreshAll() {
       refreshToolLists(),
       refreshSessionsTable(headlinePack.sessions),
     ]);
-    renderDailyChart(headlinePack.daily);
+    renderCostChart(headlinePack);
   } catch (err) {
     console.error('refreshAll failed', err);
   } finally {
