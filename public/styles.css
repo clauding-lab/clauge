@@ -55,12 +55,13 @@ body {
   top: 0;
   z-index: 5;
 }
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 12px; }
 .brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: block;
+  flex-shrink: 0;
 }
 .brand-name {
   font-weight: 700;
