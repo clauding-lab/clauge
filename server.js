@@ -15,7 +15,7 @@ import 'dotenv/config';
 import open from 'open';
 
 import { SessionStore } from './lib/session-store.js';
-import { UsageStore, normalizeUsage as normalizePlanUsage } from './lib/usage-store.js';
+import { UsageStore, normalizeUsage as normalizePlanUsage, normalizeBalance } from './lib/usage-store.js';
 import { bookmarkletHref, bookmarkletSource } from './lib/bookmarklet.js';
 import { loadPriceTable, envFallbackRates } from './lib/cost-calculator.js';
 import { filterSessions, isValidPeriod } from './lib/period.js';
@@ -400,12 +400,17 @@ app.post('/api/usage/ingest', async (c) => {
   if (!body || typeof body !== 'object' || !body.usage) {
     return c.json({ error: 'expected { org, usage }' }, 400);
   }
+  const normalized = normalizePlanUsage(body.usage);
+  const balance = normalizeBalance(body.balance, body.org);
+  if (normalized && balance) normalized.balance = balance;
   const record = await usageStore.save({
-    org: body.org ?? null,
+    org: body.org ? { uuid: body.org.uuid, name: body.org.name } : null,
+    rawOrg: body.org ?? null,
     raw: body.usage,
-    normalized: normalizePlanUsage(body.usage),
+    rawBalance: body.balance ?? null,
+    normalized,
   });
-  return c.json({ ok: true, ingestedAt: record.ingestedAt });
+  return c.json({ ok: true, ingestedAt: record.ingestedAt, balanceFound: !!balance });
 });
 
 app.get('/api/usage', async (c) => {

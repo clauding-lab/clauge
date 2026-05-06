@@ -67,10 +67,25 @@ async function syncOnce() {
     if (!usageRes.ok) throw new Error(`usage ${usageRes.status}`);
     const usage = await usageRes.json();
 
+    // Also probe for billing/balance — paths aren't documented; first 200 wins.
+    let balance = null;
+    const balanceCandidates = [
+      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/billing`,
+      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/billing/balance`,
+      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/credits`,
+      `https://claude.ai/api/organizations/${encodeURIComponent(org.uuid)}/account/balance`,
+    ];
+    for (const url of balanceCandidates) {
+      try {
+        const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
+        if (r.ok) { balance = await r.json(); break; }
+      } catch { /* swallow */ }
+    }
+
     const post = await fetch(ingestUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ org: { uuid: org.uuid, name: org.name }, usage }),
+      body: JSON.stringify({ org, usage, balance }),
     });
     if (!post.ok) throw new Error(`ingest ${post.status}`);
 
