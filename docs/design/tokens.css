@@ -1,0 +1,95 @@
+/* Clauge — design tokens
+   Warm-dark, brand-orange forward, mono-prominent.
+   All values reusable across dashboard + menu bar.
+*/
+
+:root {
+  color-scheme: dark;
+
+  /* Brand */
+  --brand: #d97757;            /* Claude orange */
+  --brand-2: #e89478;          /* lighter rim */
+  --brand-deep: #b45c41;       /* pressed */
+  --brand-tint: rgba(217, 119, 87, 0.12);
+  --brand-tint-strong: rgba(217, 119, 87, 0.22);
+
+  /* Surfaces — warm neutral, not pure black */
+  --bg: #14110f;               /* page */
+  --bg-2: #1a1714;             /* second tier */
+  --surface: #1f1b18;          /* cards */
+  --surface-2: #25201c;        /* hover / nested */
+  --surface-3: #2c2622;        /* track */
+  --hairline: rgba(255, 240, 230, 0.06);
+  --hairline-2: rgba(255, 240, 230, 0.10);
+  --border: rgba(255, 240, 230, 0.09);
+
+  /* Text */
+  --text: #f4ece4;             /* warm white */
+  --text-2: #c9bdb2;           /* secondary */
+  --text-3: #8a7e74;           /* tertiary / labels */
+  --text-4: #5e544c;           /* quaternary / disabled */
+
+  /* Semantic */
+  --ok: #7bc89c;
+  --ok-tint: rgba(123, 200, 156, 0.14);
+  --warn: #e8b06a;
+  --warn-tint: rgba(232, 176, 106, 0.14);
+  --crit: #e07b6e;
+  --crit-tint: rgba(224, 123, 110, 0.14);
+
+  /* Model accents — desaturated to fit warm palette */
+  --opus: #b59cdc;
+  --sonnet: #84a8d4;
+  --haiku: #9bc89a;
+
+  /* Type */
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", "Berkeley Mono", ui-monospace, Menlo, Consolas, monospace;
+  --tnum: "tnum" 1, "ss01" 1, "cv11" 1;
+
+  /* Radii */
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 14px;
+  --r-4: 20px;
+
+  /* Elevation — subtle, warm-toned */
+  --shadow-1: 0 1px 0 rgba(255, 240, 230, 0.04) inset, 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-2: 0 1px 0 rgba(255, 240, 230, 0.04) inset, 0 8px 24px -12px rgba(0,0,0,0.5);
+  --shadow-pop: 0 1px 0 rgba(255, 240, 230, 0.06) inset,
+                0 24px 48px -16px rgba(0,0,0,0.55),
+                0 4px 12px -4px rgba(0,0,0,0.4);
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Global resets used by the prototypes */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body.clauge-app {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  font-feature-settings: var(--tnum);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* utility */
+.mono { font-family: var(--mono); font-feature-settings: var(--tnum); }
+.tnum { font-feature-settings: var(--tnum); font-variant-numeric: tabular-nums; }
+.kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  background: var(--surface-3);
+  border: 1px solid var(--hairline-2);
+  border-bottom-color: var(--hairline);
+  border-radius: 5px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}

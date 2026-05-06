@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clauge — Design Language</title>
+<link rel="icon" type="image/svg+xml" href="assets/clauge-icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { background: #0d0b09; color: var(--text); font-family: var(--sans); }
+  .ghost-btn {
+    appearance: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 120ms var(--ease);
+  }
+  .ghost-btn:hover {
+    border-color: var(--brand);
+    color: var(--text);
+  }
+  /* canvas backdrop tweak */
+  body { background: #0a0907; }
+  /* fake macOS desktop wallpaper for menu bar context */
+  .desktop-bg {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(60% 50% at 30% 20%, rgba(217,119,87,0.12), transparent 60%),
+      radial-gradient(40% 60% at 80% 80%, rgba(120,90,200,0.10), transparent 60%),
+      linear-gradient(135deg, #2a221c 0%, #1a1410 60%, #0f0c08 100%);
+  }
+  .menu-bar-strip {
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 26px;
+    background: rgba(20, 17, 15, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 240, 230, 0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .menu-bar-strip .apple {
+    font-size: 14px;
+  }
+  .menu-bar-strip .menu-item {
+    font-weight: 500;
+    color: var(--text);
+  }
+  .menu-bar-strip .menu-item.app {
+    font-weight: 600;
+  }
+  .menu-bar-strip .right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .menu-bar-strip .clauge-icon {
+    width: 16px; height: 16px;
+    opacity: 0.95;
+    filter: drop-shadow(0 0 0 transparent);
+    position: relative;
+  }
+  .menu-bar-strip .clauge-icon.active {
+    background: rgba(217, 119, 87, 0.18);
+    border-radius: 4px;
+    padding: 2px;
+    margin: -2px;
+    box-shadow: 0 0 0 1px rgba(217, 119, 87, 0.3);
+  }
+  .menu-bar-strip .pct-badge {
+    color: var(--brand);
+    font-weight: 600;
+    margin-left: -10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="dashboard.jsx"></script>
+<script type="text/babel" src="menubar.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+function MenuBarScene() {
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", borderRadius: 0 }}>
+      <div className="desktop-bg" />
+      <div className="menu-bar-strip">
+        <span className="apple"></span>
+        <span className="menu-item app">Finder</span>
+        <span className="menu-item">File</span>
+        <span className="menu-item">Edit</span>
+        <span className="menu-item">View</span>
+        <span className="menu-item">Go</span>
+        <span className="menu-item">Window</span>
+        <span className="menu-item">Help</span>
+        <div className="right">
+          <img src="assets/clauge-menubar.svg" className="clauge-icon active" />
+          <span className="pct-badge">68%</span>
+          <span>$8.42</span>
+          <span style={{ color: "var(--text-3)" }}>🔋 84%</span>
+          <span style={{ color: "var(--text-3)" }}>Wed 9:41 PM</span>
+        </div>
+      </div>
+      {/* popover positioned below menu bar */}
+      <div style={{ position: "absolute", top: 36, left: 12 }}>
+        <window.ClaugeMenuBar />
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <window.DesignCanvas defaultZoom={0.7}>
+      <window.DCSection id="dashboard" title="Dashboard" subtitle="Main analytics view — full clickable prototype">
+        <window.DCArtboard id="full" label="Clauge dashboard · 1440×1100" width={1440} height={1100}>
+          <window.ClaugeDashboard />
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="menubar" title="Mac menu bar" subtitle="Glanceable popover · 380px">
+        <window.DCArtboard id="popover" label="Menu bar popover" width={520} height={680}>
+          <MenuBarScene />
+        </window.DCArtboard>
+
+        <window.DCArtboard id="popover-clean" label="Popover · isolated" width={420} height={680} style={{ background: "var(--bg)", padding: 20, display: "grid", placeItems: "start center" }}>
+          <div style={{ marginTop: 20, position: "relative" }}>
+            <window.ClaugeMenuBar />
+          </div>
+        </window.DCArtboard>
+      </window.DCSection>
+
+      <window.DCSection id="system" title="Design system" subtitle="Tokens & primitives at a glance">
+        <window.DCArtboard id="tokens" label="Tokens · type · color" width={1100} height={620}>
+          <TokenSheet />
+        </window.DCArtboard>
+      </window.DCSection>
+    </window.DesignCanvas>
+  );
+}
+
+function TokenSheet() {
+  const colors = [
+    { name: "brand",       v: "#d97757", hex: "#d97757" },
+    { name: "brand-2",     v: "#e89478", hex: "#e89478" },
+    { name: "brand-deep",  v: "#b45c41", hex: "#b45c41" },
+    { name: "bg",          v: "#14110f", hex: "#14110f" },
+    { name: "bg-2",        v: "#1a1714", hex: "#1a1714" },
+    { name: "surface",     v: "#1f1b18", hex: "#1f1b18" },
+    { name: "surface-2",   v: "#25201c", hex: "#25201c" },
+    { name: "surface-3",   v: "#2c2622", hex: "#2c2622" },
+    { name: "text",        v: "#f4ece4", hex: "#f4ece4" },
+    { name: "text-2",      v: "#c9bdb2", hex: "#c9bdb2" },
+    { name: "text-3",      v: "#8a7e74", hex: "#8a7e74" },
+    { name: "ok",          v: "#7bc89c", hex: "#7bc89c" },
+    { name: "warn",        v: "#e8b06a", hex: "#e8b06a" },
+    { name: "crit",        v: "#e07b6e", hex: "#e07b6e" },
+    { name: "opus",        v: "#b59cdc", hex: "#b59cdc" },
+    { name: "sonnet",      v: "#84a8d4", hex: "#84a8d4" },
+    { name: "haiku",       v: "#9bc89a", hex: "#9bc89a" },
+  ];
+  return (
+    <div style={{ background: "var(--bg)", padding: 32, height: "100%", display: "flex", flexDirection: "column", gap: 28, fontFamily: "var(--sans)", color: "var(--text)" }}>
+      {/* Type */}
+      <div>
+        <SheetLabel>Typography</SheetLabel>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 14 }}>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-3)", letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 8 }}>Sans · Inter</div>
+            <div style={{ fontFamily: "Inter", fontSize: 32, fontWeight: 600, letterSpacing: "-0.02em" }}>Aa Bb $84.62</div>
+            <div style={{ fontFamily: "Inter", fontSize: 14, color: "var(--text-2)", marginTop: 4 }}>UI labels, body, secondary</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-3)", letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 8 }}>Mono · JetBrains Mono</div>
+            <div className="mono" style={{ fontSize: 32, fontWeight: 600, letterSpacing: "-0.02em" }}>Aa Bb $84.62</div>
+            <div className="mono" style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>numbers, code, tabular data</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Color */}
+      <div>
+        <SheetLabel>Color</SheetLabel>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginTop: 14 }}>
+          {colors.map(c => (
+            <div key={c.name} style={{
+              border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--surface)",
+            }}>
+              <div style={{ height: 56, background: c.v }} />
+              <div style={{ padding: "7px 9px" }}>
+                <div className="mono" style={{ fontSize: 10.5, color: "var(--text)" }}>{c.name}</div>
+                <div className="mono" style={{ fontSize: 9.5, color: "var(--text-3)", marginTop: 1 }}>{c.hex}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Components mini */}
+      <div>
+        <SheetLabel>Primitives</SheetLabel>
+        <div style={{ display: "flex", gap: 16, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <button className="ghost-btn">Ghost button</button>
+          <button style={{
+            appearance: "none", border: 0, background: "var(--brand)", color: "#1c100a",
+            padding: "6px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer"
+          }}>Primary</button>
+          <span className="kbd">⌘D</span>
+          <span style={{
+            fontSize: 10.5, padding: "3px 8px", borderRadius: 999,
+            background: "var(--ok-tint)", color: "var(--ok)",
+            display: "flex", alignItems: "center", gap: 6, letterSpacing: "0.04em",
+          }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--ok)" }} />
+            synced
+          </span>
+          <span style={{
+            fontSize: 10.5, padding: "3px 8px", borderRadius: 4,
+            background: "var(--brand-tint)", color: "var(--brand-2)",
+          }}>+18%</span>
+          <span style={{
+            fontSize: 10.5, padding: "2px 7px", borderRadius: 4,
+            background: "var(--surface-2)", border: "1px solid var(--hairline-2)", color: "var(--text-2)",
+          }}>Coding</span>
+          <div style={{ width: 160 }}>
+            <div style={{ height: 6, width: "100%", background: "var(--surface-3)", borderRadius: 999, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: "62%", background: "var(--brand)", borderRadius: 999 }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SheetLabel({ children }) {
+  return <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-3)" }}>{children}</div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

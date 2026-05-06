@@ -6,59 +6,63 @@
     <title>Clauge — Claude Code analytics</title>
     <link rel="icon" type="image/svg+xml" href="/clauge-icon-512.svg" />
     <link rel="alternate icon" type="image/png" href="/clauge-icon-fallback.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body data-theme="dark">
+  <body>
     <header class="topbar">
-      <div class="brand">
-        <img class="brand-mark" src="/clauge-icon-512.svg" alt="" width="36" height="36" />
-        <span class="brand-name">Clauge</span>
-        <span class="brand-tag">Claude Code analytics</span>
+      <div class="brand-block">
+        <div class="brand-chiclet">
+          <img src="/clauge-icon-512.svg" alt="" width="22" height="22" />
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">Clauge</div>
+          <div class="brand-meta" id="brand-meta">v0.2.1 · localhost:3456</div>
+        </div>
+        <span class="sync-pill off" id="sync-pill">
+          <span class="dot"></span>
+          <span id="sync-pill-text">checking…</span>
+        </span>
       </div>
       <nav class="controls" aria-label="Filters">
         <div class="period-switcher" role="tablist" aria-label="Period">
           <button data-period="today" role="tab">Today</button>
-          <button data-period="7d" role="tab" aria-selected="true">7 Days</button>
-          <button data-period="30d" role="tab">30 Days</button>
-          <button data-period="month" role="tab">This Month</button>
-          <button data-period="all" role="tab">All Time</button>
+          <button data-period="7d" role="tab" aria-selected="true">7 days</button>
+          <button data-period="30d" role="tab">30 days</button>
+          <button data-period="month" role="tab">Month</button>
+          <button data-period="all" role="tab">All time</button>
         </div>
-        <input
-          id="project-filter"
-          type="search"
-          placeholder="Filter project…"
-          aria-label="Project filter"
-        />
-        <div class="export-buttons">
-          <a class="btn ghost" id="export-csv" href="#" download>CSV</a>
-          <a class="btn ghost" id="export-json" href="#" download>JSON</a>
+        <div class="search-wrap">
+          <input id="project-filter" type="search" placeholder="filter project…" aria-label="Project filter" />
         </div>
+        <a class="ghost-btn" id="export-csv" href="#" download>CSV</a>
+        <a class="ghost-btn" id="export-json" href="#" download>JSON</a>
       </nav>
     </header>
 
     <main>
-      <!-- claude.ai plan usage (V2) -->
-      <section class="card plan-card" id="plan-section">
-        <header>
-          <h2>claude.ai plan usage</h2>
-          <span class="muted" id="plan-status">Checking sync…</span>
-        </header>
-        <div class="plan-gauges" id="plan-gauges"></div>
-        <div class="plan-extra" id="plan-extra-usage"></div>
 
-        <!-- Big CTA when nothing has synced yet -->
-        <div class="plan-onboard" id="plan-onboard" hidden>
-          <div class="plan-onboard-head">
-            <h3>Enable claude.ai auto-sync</h3>
-            <p>One-time setup. The extension polls your already-authenticated claude.ai tab every minute and feeds usage back here automatically.</p>
+      <!-- claude.ai plan usage -->
+      <section class="card plan-card">
+        <div class="card-head">
+          <div class="title-row">
+            <h3>claude.ai plan usage</h3>
+            <span class="sub" id="plan-status">checking sync…</span>
           </div>
-          <a class="btn-primary" id="install-extension" href="#" target="_blank" rel="noopener">
-            <span class="btn-label">Install Clauge Sync extension</span>
-            <span class="btn-meta" id="install-meta">Chrome Web Store</span>
+          <span class="sub mono" id="plan-updated"></span>
+        </div>
+        <div class="plan-grid" id="plan-grid"></div>
+        <div class="plan-onboard" id="plan-onboard" hidden>
+          <h3>Enable claude.ai auto-sync</h3>
+          <p>One-time setup. The extension polls your already-authenticated claude.ai tab every minute and feeds usage back here automatically.</p>
+          <a class="btn-primary" id="install-extension" href="#" rel="noopener">
+            <span>Install Clauge Sync extension</span>
+            <span class="meta" id="install-meta">see install options below</span>
           </a>
           <p class="onboard-fineprint">
-            Works on Chrome, Edge, Brave, Arc, and Vivaldi. Make sure you're
-            signed in to <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> in the same browser profile.
+            Works on Chrome, Edge, Brave, Arc, and Vivaldi. Make sure you're signed in to <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> in the same browser profile.
           </p>
           <details class="plan-alternates">
             <summary>Other ways to sync</summary>
@@ -74,272 +78,221 @@
         </div>
       </section>
 
-      <!-- Headline strip — CodeBurn-style dense top stats -->
-      <section class="card headline-strip" aria-label="Headline stats">
-        <div class="hl-stat hl-primary">
-          <span class="hl-label">API equivalent</span>
-          <span class="hl-value" data-hl="cost">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Messages</span>
-          <span class="hl-value" data-hl="messages">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Tool calls</span>
-          <span class="hl-value" data-hl="toolCalls">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Sessions</span>
-          <span class="hl-value" data-hl="sessions">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Subagents</span>
-          <span class="hl-value" data-hl="subagents">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Cache hit</span>
-          <span class="hl-value hl-pct" data-hl="cacheHit">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Tokens</span>
-          <span class="hl-value" data-hl="totalTokens">—</span>
-        </div>
-        <div class="hl-stat hl-model">
-          <span class="hl-label" data-hl="primaryModelLabel">Primary model</span>
-          <span class="hl-value" data-hl="primaryModel">—</span>
-        </div>
-      </section>
-
-      <!-- Token breakdown -->
-      <section class="card token-strip" aria-label="Token breakdown">
-        <div class="hl-stat">
-          <span class="hl-label">Input</span>
-          <span class="hl-value" data-hl="inputTokens">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Output</span>
-          <span class="hl-value" data-hl="outputTokens">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Cache read</span>
-          <span class="hl-value" data-hl="cacheRead">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Cache 5m</span>
-          <span class="hl-value" data-hl="cache5m">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Cache 1h</span>
-          <span class="hl-value" data-hl="cache1h">—</span>
-        </div>
-        <div class="hl-stat">
-          <span class="hl-label">Net cache savings</span>
-          <span class="hl-value hl-savings" data-hl="netCacheSavings">—</span>
-        </div>
-      </section>
-
-      <!-- Sparkline cards — summary metrics with trend lines -->
-      <section class="cards spark-grid" aria-label="Summary trends">
-        <article class="card spark-card" data-spark="cost">
-          <div class="spark-head">
-            <span class="spark-label">Daily cost</span>
-            <span class="spark-value" data-spark-value>—</span>
-          </div>
-          <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none"></svg>
-          <div class="spark-sub">avg / day this period</div>
-        </article>
-        <article class="card spark-card" data-spark="calls">
-          <div class="spark-head">
-            <span class="spark-label">Daily calls</span>
-            <span class="spark-value" data-spark-value>—</span>
-          </div>
-          <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none"></svg>
-          <div class="spark-sub">avg / day</div>
-        </article>
-        <article class="card spark-card" data-spark="sessions">
-          <div class="spark-head">
-            <span class="spark-label">Sessions / day</span>
-            <span class="spark-value" data-spark-value>—</span>
-          </div>
-          <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none"></svg>
-          <div class="spark-sub">avg / day</div>
-        </article>
-        <article class="card spark-card" data-spark="hitRate">
-          <div class="spark-head">
-            <span class="spark-label">Cache hit rate</span>
-            <span class="spark-value" data-spark-value>—</span>
-          </div>
-          <svg class="spark" viewBox="0 0 120 32" preserveAspectRatio="none"></svg>
-          <div class="spark-sub">% over time</div>
-        </article>
-      </section>
-
-      <!-- API replacement value -->
-      <section class="cards roi-grid" aria-labelledby="roi-h">
-        <article class="card roi" id="roi-card">
-          <header>
-            <h2 id="roi-h">API replacement value</h2>
-            <span class="badge" id="roi-badge">—</span>
-          </header>
-          <div class="roi-figures">
-            <div class="figure-large">
-              <span class="label">Replaces</span>
-              <span class="big" id="roi-replacement">—</span>
-              <span class="unit">of API spend this period</span>
+      <!-- Headline (hero metric + secondary stats + token row) -->
+      <section class="headline" aria-label="Headline metrics">
+        <div class="headline-top">
+          <!-- Hero -->
+          <div class="hero-cell">
+            <div>
+              <div class="hero-label-row">
+                <span class="hero-eyebrow">API equivalent</span>
+                <span class="hero-period-pill" id="hero-period">7d</span>
+              </div>
+              <div class="hero-value mono" id="hero-cost">—</div>
+              <div class="hero-caption">
+                At observed token usage, your <span class="accent" id="hero-sub-cost">$200/mo</span> subscription replaces this much retail API spend.
+                <span class="secondary" id="hero-net-savings"></span>
+              </div>
             </div>
-            <div class="figure-small">
-              <span class="label">Subscription</span>
-              <span class="big" id="roi-subscription">—</span>
-              <span class="unit">monthly</span>
-            </div>
-            <div class="figure-small">
-              <span class="label">API equivalent</span>
-              <span class="big" id="roi-api">—</span>
-              <span class="unit">at retail rates</span>
-            </div>
-            <div class="figure-small">
-              <span class="label">Net cache savings</span>
-              <span class="big" id="roi-cache-savings">—</span>
-              <span class="unit">2-tier corrected</span>
+            <div>
+              <svg class="hero-spark" viewBox="0 0 100 42" preserveAspectRatio="none" id="hero-spark"></svg>
+              <div class="hero-spark-ticks">
+                <span id="hero-spark-start">start</span>
+                <span>now</span>
+              </div>
             </div>
           </div>
-          <p class="footnote">
-            At observed token usage, your subscription replaces this much
-            retail API spend. Real economic savings depend on whether you'd
-            actually use the API at this volume — most users cut back when
-            paying retail.
-          </p>
-        </article>
-      </section>
 
-      <!-- Daily cost chart full width -->
-      <section class="card chart-card-wide">
-        <header>
-          <h2>Usage over time</h2>
-          <span class="muted" id="daily-period">—</span>
-        </header>
-        <div class="chart-canvas-wrap" data-aspect="bar">
-          <canvas id="daily-chart"></canvas>
+          <!-- Messages -->
+          <div class="secondary-cell">
+            <div>
+              <div class="lbl">Messages</div>
+              <div class="val mono" id="sec-messages">—</div>
+              <div class="sub" id="sec-messages-sub">— tool calls</div>
+            </div>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" data-spark="messages"></svg>
+          </div>
+
+          <!-- Sessions -->
+          <div class="secondary-cell">
+            <div>
+              <div class="lbl">Sessions</div>
+              <div class="val mono" id="sec-sessions">—</div>
+              <div class="sub" id="sec-sessions-sub">— subagents</div>
+            </div>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" data-spark="sessions"></svg>
+          </div>
+
+          <!-- Cache hit -->
+          <div class="secondary-cell">
+            <div>
+              <div class="lbl">Cache hit</div>
+              <div class="val mono ok" id="sec-cachehit">—</div>
+              <div class="sub" id="sec-cachehit-sub">— cached reads</div>
+            </div>
+            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" data-spark="cachehit"></svg>
+          </div>
+        </div>
+
+        <!-- Token tier breakdown -->
+        <div class="headline-tokens">
+          <div class="token-cell"><div class="lbl">Input</div><div class="val mono" data-tok="input">—</div></div>
+          <div class="token-cell"><div class="lbl">Output</div><div class="val mono" data-tok="output">—</div></div>
+          <div class="token-cell"><div class="lbl">Cache read</div><div class="val mono" data-tok="cacheRead">—</div></div>
+          <div class="token-cell"><div class="lbl">Cache 5m</div><div class="val mono" data-tok="cache5m">—</div></div>
+          <div class="token-cell"><div class="lbl">Cache 1h</div><div class="val mono" data-tok="cache1h">—</div></div>
+          <div class="token-cell"><div class="lbl">Net cache savings</div><div class="val mono ok" data-tok="netSavings">—</div></div>
         </div>
       </section>
 
-      <!-- 2-col: Daily Activity table + By Project -->
-      <section class="cards two-col">
-        <article class="card breakdown">
-          <header><h2>Daily activity</h2><span class="muted">cost · calls per day</span></header>
-          <div class="table-scroll">
-            <table data-tbl="daily-activity">
-              <thead><tr><th>Date</th><th></th><th class="num">Cost</th><th class="num">Calls</th><th class="num">Sessions</th></tr></thead>
-              <tbody></tbody>
-            </table>
+      <!-- Daily cost + Peak hours -->
+      <section class="row-2col">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>Cost over time</h3>
+              <span class="sub" id="daily-meta">—</span>
+            </div>
           </div>
-        </article>
-        <article class="card breakdown">
-          <header><h2>By project</h2><span class="muted">cost · sessions · messages · tools</span></header>
-          <div class="table-scroll">
-            <table data-tbl="by-project">
-              <thead><tr><th>Project</th><th></th><th class="num">Cost</th><th class="num">Sessions</th><th class="num">Messages</th><th class="num">Tools</th><th class="num">Tokens</th><th class="num">Hit %</th></tr></thead>
-              <tbody></tbody>
-            </table>
+          <div class="chart-wrap" id="daily-chart"></div>
+          <div class="x-ticks" id="daily-ticks"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>Peak hours</h3>
+              <span class="sub">distribution by hour (UTC)</span>
+            </div>
           </div>
-        </article>
-      </section>
-
-      <!-- 2-col: By Activity + By Model -->
-      <section class="cards two-col">
-        <article class="card breakdown">
-          <header><h2>By activity</h2><span class="muted">primary intent (heuristic)</span></header>
-          <div class="table-scroll">
-            <table data-tbl="by-activity">
-              <thead><tr><th>Activity</th><th></th><th class="num">Calls</th><th class="num">% of total</th></tr></thead>
-              <tbody></tbody>
-            </table>
+          <div class="peak-wrap" id="peak-chart"></div>
+          <div class="peak-ticks">
+            <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
           </div>
-        </article>
-        <article class="card breakdown">
-          <header><h2>By model</h2><span class="muted">cost · cache · share</span></header>
-          <div class="table-scroll">
-            <table data-tbl="by-model">
-              <thead><tr><th>Model</th><th></th><th class="num">Cost</th><th class="num">Calls</th><th class="num">Hit %</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <!-- Peak hours full width -->
-      <section class="card chart-card-wide">
-        <header>
-          <h2>Peak hours</h2>
-          <span class="muted">activity by hour (UTC)</span>
-        </header>
-        <div class="chart-canvas-wrap" data-aspect="bar">
-          <canvas id="hours-chart"></canvas>
         </div>
       </section>
 
-      <!-- 3-col: Core Tools / Shell / MCP -->
-      <section class="cards three-col">
-        <article class="card breakdown">
-          <header><h2>Core tools</h2></header>
-          <div class="table-scroll">
-            <table data-tbl="core-tools">
-              <thead><tr><th>Tool</th><th></th><th class="num">Calls</th></tr></thead>
-              <tbody></tbody>
-            </table>
+      <!-- Projects + Activity -->
+      <section class="row-1-4-1">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>By project</h3>
+              <span class="sub">cost · sessions · messages · tools</span>
+            </div>
           </div>
-        </article>
-        <article class="card breakdown">
-          <header><h2>Shell commands</h2></header>
-          <div class="table-scroll">
-            <table data-tbl="shell-commands">
-              <thead><tr><th>Command</th><th></th><th class="num">Calls</th></tr></thead>
-              <tbody></tbody>
-            </table>
+          <table class="bd-table" data-tbl="projects">
+            <thead><tr>
+              <th>Project</th>
+              <th class="bar-cell"></th>
+              <th class="num">Cost</th>
+              <th class="num">Sess</th>
+              <th class="num">Msgs</th>
+              <th class="num">Tools</th>
+              <th class="num">Tokens</th>
+              <th class="num">Hit</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>By activity</h3>
+              <span class="sub">primary intent (heuristic)</span>
+            </div>
           </div>
-        </article>
-        <article class="card breakdown">
-          <header><h2>MCP servers</h2></header>
-          <div class="table-scroll">
-            <table data-tbl="mcp-servers">
-              <thead><tr><th>Server</th><th></th><th class="num">Calls</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <!-- Sessions table full width -->
-      <section class="card table-card" aria-labelledby="sessions-h">
-        <header><h2 id="sessions-h">Sessions</h2><span class="muted" id="sessions-count">—</span></header>
-        <div class="table-scroll">
-          <table id="sessions-table">
-            <thead>
-              <tr>
-                <th>Started</th>
-                <th>Project</th>
-                <th>Model</th>
-                <th>Task</th>
-                <th class="num">Duration</th>
-                <th class="num">Calls</th>
-                <th class="num">Tokens</th>
-                <th class="num">Hit %</th>
-                <th class="num">Cost</th>
-              </tr>
-            </thead>
+          <table class="bd-table" data-tbl="activity">
+            <thead><tr>
+              <th>Activity</th>
+              <th class="bar-cell-thin"></th>
+              <th class="num">Calls</th>
+              <th class="num">Share</th>
+            </tr></thead>
             <tbody></tbody>
           </table>
         </div>
       </section>
 
-      <footer class="page-footer">
-        <span>Clauge V1 · PRD v3.1 · </span>
-        <a href="/api/health">health</a> ·
-        <a href="/api/config">config</a>
+      <!-- Sessions + Models -->
+      <section class="row-1-4-1">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>Sessions</h3>
+              <span class="sub" id="sessions-count">—</span>
+            </div>
+          </div>
+          <table class="bd-table" data-tbl="sessions">
+            <thead><tr>
+              <th>Started</th>
+              <th>Project</th>
+              <th>Model</th>
+              <th>Task</th>
+              <th class="num">Duration</th>
+              <th class="num">Calls</th>
+              <th class="num">Tokens</th>
+              <th class="num">Hit</th>
+              <th class="num">Cost</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>By model</h3>
+              <span class="sub">cost · cache · share</span>
+            </div>
+          </div>
+          <table class="bd-table" data-tbl="models">
+            <thead><tr>
+              <th>Model</th>
+              <th class="bar-cell"></th>
+              <th class="num">Cost</th>
+              <th class="num">Calls</th>
+              <th class="num">Hit</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tools -->
+      <section class="row-3col">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>Core tools</h3>
+              <span class="sub">claude-code primitives</span>
+            </div>
+          </div>
+          <div class="tool-list" data-tools="core"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>Shell commands</h3>
+              <span class="sub">via Bash tool</span>
+            </div>
+          </div>
+          <div class="tool-list" data-tools="shell"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="title-row">
+              <h3>MCP servers</h3>
+              <span class="sub">connected providers</span>
+            </div>
+          </div>
+          <div class="tool-list" data-tools="mcp"></div>
+        </div>
+      </section>
+
+      <footer class="foot">
+        clauge · <a href="/api/health">health</a> · <a href="/api/config">config</a>
       </footer>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="/app.js" type="module"></script>
   </body>
 </html>
