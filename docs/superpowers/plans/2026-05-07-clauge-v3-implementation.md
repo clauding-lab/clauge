@@ -156,7 +156,7 @@ version = "0.3.0"
 description = "Clauge — Claude Code analytics native shell"
 authors = ["clauding-lab"]
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.77.2"
 
 [lib]
 name = "clauge_lib"
