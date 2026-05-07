@@ -3,9 +3,16 @@
   "output": "sea-prep.blob",
   "disableExperimentalSEAWarning": true,
   "useSnapshot": false,
-  "useCodeCache": true,
+  "useCodeCache": false,
   "assets": {
-    "dist/server.bundle.mjs": "dist/server.bundle.mjs",
-    "lib/litellm-prices.fallback.json": "lib/litellm-prices.fallback.json"
+    "server.bundle.mjs": "dist/server.bundle.mjs",
+    "litellm-prices.fallback.json": "lib/litellm-prices.fallback.json",
+    "public/index.html": "public/index.html",
+    "public/app.js": "public/app.js",
+    "public/styles.css": "public/styles.css",
+    "public/clauge-icon-1024.svg": "public/clauge-icon-1024.svg",
+    "public/clauge-icon-512.svg": "public/clauge-icon-512.svg",
+    "public/clauge-icon-fallback.png": "public/clauge-icon-fallback.png",
+    "public/clauge-menubar-18px.svg": "public/clauge-menubar-18px.svg"
   }
 }

@@ -1,11 +1,22 @@
-// SEA bootstrap — loads the bundled ESM server out of the SEA blob.
+// SEA bootstrap — extracts embedded assets and loads the bundled ESM server.
 //
 // Why this exists: Node 22's SEA loader loads the `main` entry as CommonJS.
 // Our server uses top-level await + import.meta, so it must run as ESM.
 // We bundle server.js + lib/ to dist/server.bundle.mjs (ESM) and embed it
-// as a SEA asset. This bootstrap (CJS) extracts the asset to a temp file
-// and dynamic-imports it. The temp file is required because import() refuses
-// to load very large data: URLs reliably across Node versions.
+// (plus public/ static assets and the LiteLLM fallback JSON) as SEA assets.
+// This bootstrap (CJS) extracts all assets to a temp dir, preserving the
+// relative paths the bundle expects, then dynamic-imports the bundle. The
+// temp file is required because import() refuses to load very large data:
+// URLs reliably across Node versions.
+//
+// Asset key layout (must match scripts/sea-config.json):
+//   server.bundle.mjs              → <tmpDir>/server.bundle.mjs
+//   litellm-prices.fallback.json   → <tmpDir>/litellm-prices.fallback.json
+//   public/<file>                  → <tmpDir>/public/<file>
+//
+// The bundled code's `__dirname` resolves to <tmpDir> (where the bundle lives),
+// so `join(__dirname, 'public')` and `join(__dirname, 'litellm-prices.fallback.json')`
+// both find their assets at the expected location.
 
 'use strict';
 
@@ -20,24 +31,42 @@ if (!sea.isSea()) {
   process.exit(1);
 }
 
-const bundle = sea.getAsset('dist/server.bundle.mjs');
-const buf = Buffer.from(bundle);
+// Hardcoded asset list. Must mirror sea-config.json's `assets` keys.
+// Kept hardcoded (not auto-discovered) so any drift is loud, not silent.
+const ASSETS = [
+  'server.bundle.mjs',
+  'litellm-prices.fallback.json',
+  'public/index.html',
+  'public/app.js',
+  'public/styles.css',
+  'public/clauge-icon-1024.svg',
+  'public/clauge-icon-512.svg',
+  'public/clauge-icon-fallback.png',
+  'public/clauge-menubar-18px.svg',
+];
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clauge-sea-'));
-const tmpFile = path.join(tmpDir, 'server.bundle.mjs');
-fs.writeFileSync(tmpFile, buf);
+
+for (const key of ASSETS) {
+  const buf = Buffer.from(sea.getAsset(key));
+  const dest = path.join(tmpDir, key);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, buf);
+}
 
 // Best-effort cleanup. Errors here are non-fatal — the OS reaps temp files.
-const cleanup = () => {
+// We register only on `exit` (fires regardless of how the process ends).
+// SIGINT/SIGTERM are deliberately NOT handled here: the bundled server has
+// its own SIGINT/SIGTERM handlers that call `server.close()` to drain
+// in-flight requests. If we also called process.exit() here, it would race
+// with — and likely kill — that drain.
+process.on('exit', () => {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
-};
-process.on('exit', cleanup);
-process.on('SIGINT', () => { cleanup(); process.exit(130); });
-process.on('SIGTERM', () => { cleanup(); process.exit(143); });
+});
 
-import(tmpFile).catch((err) => {
+const bundlePath = path.join(tmpDir, 'server.bundle.mjs');
+import(bundlePath).catch((err) => {
   // eslint-disable-next-line no-console
   console.error('[clauge] Failed to load embedded ESM server:', err);
-  cleanup();
   process.exit(1);
 });

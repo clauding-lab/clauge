@@ -5,6 +5,8 @@ set -euo pipefail
 # Output: src-tauri/binaries/clauge-server-aarch64-apple-darwin
 # Output: src-tauri/binaries/clauge-server-x86_64-apple-darwin
 
+START=$SECONDS
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -77,14 +79,18 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
 echo "[build-sidecar] Downloading node v${NODE_VERSION} for $OTHER_ARCH..."
-curl -sL "$OTHER_URL" -o "$TMP_DIR/$OTHER_TARBALL"
+curl -fSL "$OTHER_URL" -o "$TMP_DIR/$OTHER_TARBALL" || {
+  echo "[build-sidecar] FATAL: failed to download $OTHER_URL" >&2
+  exit 1
+}
 tar -xzf "$TMP_DIR/$OTHER_TARBALL" -C "$TMP_DIR"
 OTHER_NODE="$TMP_DIR/node-v${NODE_VERSION}-darwin-${OTHER_ARCH}/bin/node"
 
 inject_sea "$OTHER_ARCH" "$OTHER_TRIPLE" "$OTHER_NODE"
 
-# 6. Cleanup blob
-rm -f sea-prep.blob
+# 6. Cleanup blob + intermediate bundle
+rm -f sea-prep.blob "$DIST/server.bundle.mjs"
 
-echo "[build-sidecar] Done. Universal SEA binaries in $BIN_DIR"
+ELAPSED=$((SECONDS - START))
+echo "[build-sidecar] Done in ${ELAPSED}s. Universal SEA binaries in $BIN_DIR"
 ls -lh "$BIN_DIR"
