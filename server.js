@@ -40,9 +40,16 @@ const CLAUDE_DIR = (process.env.CLAUDE_DIR ?? join(homedir(), '.claude'))
   .replace(/^~(?=\/)/, homedir());
 const SUBSCRIPTION_COST = Number(process.env.SUBSCRIPTION_COST ?? 200);
 
-const { version: APP_VERSION } = JSON.parse(
-  readFileSync(new URL('./package.json', import.meta.url), 'utf8')
-);
+let APP_VERSION = '0.0.0-unknown';
+try {
+  APP_VERSION = JSON.parse(
+    readFileSync(new URL('./package.json', import.meta.url), 'utf8')
+  ).version;
+} catch {
+  // SEA bundle path: package.json may not be co-located with the bundle.
+  // The SEA bootstrap extracts it as an asset; in the unlikely case the
+  // extraction is missing, fall through to the placeholder.
+}
 
 const envFallback = envFallbackRates(process.env);
 const priceTable = await loadPriceTable();

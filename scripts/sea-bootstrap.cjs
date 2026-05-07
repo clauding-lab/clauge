@@ -36,6 +36,7 @@ if (!sea.isSea()) {
 const ASSETS = [
   'server.bundle.mjs',
   'litellm-prices.fallback.json',
+  'package.json',
   'public/index.html',
   'public/app.js',
   'public/styles.css',
