@@ -10,7 +10,7 @@ clauge-sync-*.zip
 clauge-sync-*/
 
 # V3 build outputs
-dist/
+/dist/
 src-tauri/target/
 src-tauri/gen/
 sea-prep.blob
