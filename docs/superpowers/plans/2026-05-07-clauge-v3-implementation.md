@@ -1600,6 +1600,8 @@ Get the tray icon visible and the dashboard window working (loads existing `publ
 - Create: `src-tauri/src/tray.rs`
 - Modify: `src-tauri/src/lib.rs` (call tray::init)
 
+> **Note (placeholder asset awareness):** The current tray PNG (`src-tauri/icons/tray-icon.png`) is colored, not a true monochrome template image — it's a fallback from T3 because `rsvg-convert` was unavailable and the source SVG is multi-color anyway. macOS will still apply template-tinting to colored pixels and the result will look slightly off on light menu bars. This is a known issue tracked in `docs/RELEASE_CHECKLIST.md` and will be addressed before v0.3.0 release with a proper single-color SVG variant. The `icon_as_template(true)` call below stays — it's correct for when the proper template asset lands.
+
 - [ ] **Step 1: Write tray.rs**
 
 Write `src-tauri/src/tray.rs`:
