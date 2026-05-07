@@ -16,7 +16,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "test:sea": "node --test test/sea-smoke.test.js",
+    "build:sidecar": "bash scripts/build-sidecar.sh",
+    "tauri:dev": "cd src-tauri && cargo tauri dev",
+    "tauri:build": "cd src-tauri && cargo tauri build"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -40,5 +44,9 @@
     "dotenv": "^16.4.5",
     "hono": "^4.6.14",
     "open": "^10.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "postject": "^1.0.0-alpha.6"
   }
 }
