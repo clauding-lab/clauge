@@ -1,0 +1,40 @@
+[package]
+name = "clauge"
+version = "0.3.0"
+description = "Clauge — Claude Code analytics native shell"
+authors = ["clauding-lab"]
+edition = "2021"
+rust-version = "1.75"
+
+[lib]
+name = "clauge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-shell = "2.0"
+tauri-plugin-single-instance = "2.0"
+tauri-plugin-autostart = "2.0"
+tauri-plugin-updater = "2.0"
+tauri-plugin-notification = "2.0"
+tauri-plugin-window-state = "2.0"
+tauri-plugin-store = "2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.5"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
