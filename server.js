@@ -11,6 +11,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import 'dotenv/config';
 import open from 'open';
 
@@ -38,6 +39,10 @@ const PORT = Number(process.env.PORT ?? 3456);
 const CLAUDE_DIR = (process.env.CLAUDE_DIR ?? join(homedir(), '.claude'))
   .replace(/^~(?=\/)/, homedir());
 const SUBSCRIPTION_COST = Number(process.env.SUBSCRIPTION_COST ?? 200);
+
+const { version: APP_VERSION } = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8')
+);
 
 const envFallback = envFallbackRates(process.env);
 const priceTable = await loadPriceTable();
@@ -131,8 +136,10 @@ app.use('/api/usage/ingest', async (c, next) => {
 
 app.get('/api/health', (c) =>
   c.json({
+    service: 'clauge',
     status: 'ok',
-    version: '0.1.0',
+    version: APP_VERSION,
+    pid: process.pid,
     claudeDir: CLAUDE_DIR,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     subscriptionCost: SUBSCRIPTION_COST,
