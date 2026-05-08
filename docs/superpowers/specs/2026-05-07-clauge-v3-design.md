@@ -100,7 +100,7 @@ External (unchanged):
 - Window vibrancy on popover — `decorations: false`, `transparent: true`, `vibrancy: "popover"`
 - Pre-rendered popover — window created hidden at boot, shown on tray click (<50ms perceived latency)
 - Native macOS menu bar (File / Edit / View / Window / Help)
-- Tray right-click native menu (Open Dashboard / Preferences / Check for Updates / Quit)
+- Tray right-click native menu (Open Dashboard / Preferences… / Check for Updates / Quit Clauge). Accelerators: ⌘Q for Quit Clauge (matches §6.7 quit flow), ⌘, for Preferences (macOS HIG default).
 
 ## 5. Components
 
@@ -117,6 +117,7 @@ External (unchanged):
 ### 5.1 Implementation specifics
 
 - **Popover-to-server transport:** plain `fetch()` to `http://127.0.0.1:<port>/api/*`, identical pattern to `public/app.js`. Tauri exposes a single **data-plane** IPC command — `get_server_port()` — called once at popover load. Control-plane IPCs (autostart toggle, update check, dashboard open, quit) are also registered but carry no domain data.
+- **Tray→Popover preferences signal:** when the user clicks "Preferences…" in the tray menu, Rust dispatches `window.dispatchEvent(new CustomEvent('show-preferences'))` into the popover WebView. Popover JS must register `addEventListener('show-preferences', …)` to switch to the preferences view.
 - **Universal binary:** built via `lipo` from arm64 + x86_64 SEA outputs. One DMG works on Apple Silicon and Intel Macs.
 - **Dashboard window URL:** uses HTTP (`http://127.0.0.1:<port>/index.html`), not Tauri's `tauri://localhost` asset protocol. `public/app.js` runs unchanged. Trade-off: small HTTP overhead vs zero refactor risk.
 - **Settings storage:** `tauri-plugin-store` writes `~/Library/Application Support/com.clauding.clauge/settings.json`.

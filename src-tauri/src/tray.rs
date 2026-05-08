@@ -32,7 +32,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     TrayIconBuilder::with_id("main")
-        .icon(app.default_window_icon().cloned().unwrap())
+        .icon(tauri::image::Image::from_bytes(include_bytes!(
+            "../icons/tray-icon.png"
+        ))?)
         .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(false)
