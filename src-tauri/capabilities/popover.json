@@ -5,6 +5,8 @@
   "windows": ["popover"],
   "permissions": [
     "core:default",
-    "window-state:default"
+    "window-state:default",
+    "notification:default",
+    "updater:default"
   ]
 }
