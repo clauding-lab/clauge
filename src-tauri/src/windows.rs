@@ -135,23 +135,32 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Defensive `on_navigation` handler (v0.3.1, Bug #3 follow-up).
     //
     // Bug #3's primary cause was the sidecar's auto-open (server.js:594) —
-    // fixed by passing `NO_OPEN=1` in sidecar.rs. But a secondary path could
-    // still leak the dashboard out into the system browser: an anchor click
-    // inside the dashboard HTML pointing at an http(s) URL outside our own
-    // server. The current dashboard has two such anchors (links to
-    // claude.ai and github.com inside the install-extension panel) — those
-    // SHOULD open externally on click. We keep them working by returning
-    // `false` for off-host URLs (which lets Tauri's anchor-click fallback
-    // dispatch `Shell::open` for new-tab navigations) and `true` for our
-    // own server origin.
+    // fixed by passing `NO_OPEN=1` in sidecar.rs. Without an on_navigation
+    // handler, Tauri 2.x allows any navigation by default, which means a
+    // stray same-window `location.href = "https://example.com"` in the
+    // dashboard JS would navigate the dashboard webview AWAY from the API
+    // server. Returning `true` only for the SEA server's host:port pins the
+    // webview to its intended content.
     //
-    // Why this matters now: without an on_navigation handler, Tauri 2.x
-    // allows any navigation by default, which means a stray same-window
-    // `location.href = "https://example.com"` in the dashboard JS would
-    // navigate the dashboard webview AWAY from the API server. Returning
-    // `true` only for the SEA server's host:port pins the webview to its
-    // intended content.
-    let port_for_handler = port;
+    // External links (`target="_blank"`) status: currently broken — and this
+    // handler is NOT what fixes them. Verified against wry-0.55.1 and
+    // tauri-runtime-wry-2.11.1: `target="_blank"` clicks route through
+    // wry's new-window request handler (createWebViewForNavigationAction on
+    // macOS), which Tauri only installs when `pending.new_window_handler`
+    // is `Some`. We don't call `.on_new_window(...)` below, so that handler
+    // is `None`, so the macOS WKWebView delegate returns `nil` and silently
+    // drops the new window. Anchor clicks pointing at claude.ai / github.com
+    // inside the install-extension panel are presently no-ops. This is a
+    // pre-existing v0.3.0 issue — NOT caused by this on_navigation handler
+    // — and is deferred to v0.3.2 (which will wire `.on_new_window(...)` to
+    // shell-open external URLs).
+    //
+    // Port read: pulled live from AppState on EVERY navigation rather than
+    // captured at dashboard creation. Sidecar crash-respawn (T30) can land
+    // the new server on a fallback port (3457+) and update AppState; if we
+    // captured the port here, the dashboard would refuse the redirect to
+    // the new port and lock itself out of its own server.
+    let app_for_handler = app.clone();
     let win = WebviewWindowBuilder::new(
         app,
         "main",
@@ -164,11 +173,15 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     .visible(true)
     .on_navigation(move |u| {
         // Allow our own SEA server (host MUST be 127.0.0.1 OR localhost,
-        // port MUST match the bound port). Block everything else from
-        // taking over the dashboard webview — anchor target=_blank links
-        // are handled by Tauri's separate new-window path, not here.
+        // port MUST match the bound port AT NAVIGATION TIME — read live
+        // from AppState so crash-respawned sidecars on fallback ports
+        // don't lock the dashboard out).
+        let live_port = app_for_handler
+            .try_state::<crate::ipc::AppState>()
+            .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
+            .unwrap_or(3456);
         let host_ok = matches!(u.host_str(), Some("127.0.0.1") | Some("localhost"));
-        let port_ok = u.port_or_known_default() == Some(port_for_handler);
+        let port_ok = u.port_or_known_default() == Some(live_port);
         let scheme_ok = u.scheme() == "http";
         let allowed = host_ok && port_ok && scheme_ok;
         if !allowed {

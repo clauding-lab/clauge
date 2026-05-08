@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw
 import math
 from pathlib import Path
 
-OUT = Path("/Users/adnanrashid/Projects/clauge/src-tauri/icons")
+OUT = Path(__file__).resolve().parent.parent / "src-tauri" / "icons"
 
 
 def draw_gauge(size: int) -> Image.Image:

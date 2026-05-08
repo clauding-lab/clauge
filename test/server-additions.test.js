@@ -55,8 +55,14 @@ describe('port fallback', () => {
   let blocker, server;
 
   before(async () => {
-    // Hold port 3500 with a dummy listener so server has to fall back
-    blocker = createServer().listen(3500);
+    // Hold port 3500 with a dummy listener so server has to fall back.
+    // Bind explicitly to 127.0.0.1 to match the production server's bind
+    // (server.js passes `hostname: '127.0.0.1'` to serve()). Without the
+    // explicit host, Node defaults to `::` (IPv6 wildcard), and on macOS a
+    // `::` blocker does NOT conflict with a `127.0.0.1` bind on the same
+    // port — the server would happily grab 3500 and the test would fetch
+    // 3501 from a different process (or 404).
+    blocker = createServer().listen(3500, '127.0.0.1');
     await new Promise((resolve, reject) => {
       blocker.once('listening', resolve);
       blocker.once('error', reject);

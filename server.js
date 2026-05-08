@@ -117,7 +117,13 @@ const app = new Hono();
 //     would let any web page POST usage data.
 //
 // Wildcard origin is safe for read-only endpoints because:
-//   - the server binds to 127.0.0.1 only (no remote attacker can reach it)
+//   - the server binds explicitly to 127.0.0.1 (loopback only) — see the
+//     `hostname: '127.0.0.1'` arg passed to `serve()` in `listenWithRetry`
+//     below. No remote attacker on the LAN can reach the listener; only
+//     processes on this machine can. Without that explicit bind, @hono/
+//     node-server would default to 0.0.0.0 (all interfaces) and the wildcard
+//     CORS would become a LAN data-exposure regression. The bind and the
+//     wildcard are coupled — do not change one without the other.
 //   - Tauri's `tauri://localhost` is dynamic per-window so an exact-match
 //     allowlist is impractical
 //   - all GET responses are non-credentialed (no cookies, no auth headers)
@@ -548,7 +554,11 @@ async function listenWithRetry(startPort) {
     let ss;
     try {
       const s = await new Promise((resolve, reject) => {
-        ss = serve({ fetch: app.fetch, port: tryPort }, () => resolve(ss));
+        // hostname: '127.0.0.1' is LOAD-BEARING — combined with the wildcard
+        // CORS origin on read-only endpoints, this is what keeps the server
+        // off the LAN. Defaulting to 0.0.0.0 (all interfaces) + `origin: '*'`
+        // would expose every dashboard read to anyone on the local network.
+        ss = serve({ fetch: app.fetch, port: tryPort, hostname: '127.0.0.1' }, () => resolve(ss));
         // @hono/node-server returns the http.Server directly; bind error
         // event for EADDRINUSE detection.
         ss.once('error', reject);
