@@ -48,6 +48,36 @@ pub fn run() {
             // required (Tauri menu event listeners are global).
             let menu = crate::menu::build(app.handle())?;
             app.set_menu(menu)?;
+            // First-launch autostart enablement (spec §6.4 — default ON).
+            // Placed AFTER menu setup so menu/tray remain functional even if
+            // the store fails to open. The store carries a `first_launch_done`
+            // flag in settings.json (~/Library/Application Support/com.clauding.clauge/settings.json).
+            // If the flag is absent (fresh install OR user wiped settings), we
+            // call `app.autolaunch().enable()` to register Clauge in macOS
+            // Login Items, then mark the flag so subsequent launches no-op.
+            // The user can later toggle autostart OFF via the popover gear
+            // (spec §6.6); we do not re-enable it once they've opted out.
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                use tauri_plugin_store::StoreExt;
+
+                let store = app.store("settings.json").map_err(|e| {
+                    log::error!("Failed to open settings store: {}", e);
+                    e
+                })?;
+
+                if store.get("first_launch_done").is_none() {
+                    log::info!("First launch detected; enabling Launch at Login by default");
+                    if let Err(e) = app.autolaunch().enable() {
+                        log::warn!("Failed to enable autostart on first launch: {}", e);
+                    }
+                    store.set("first_launch_done", serde_json::Value::Bool(true));
+                    if let Err(e) = store.save() {
+                        log::warn!("Failed to persist first_launch_done flag: {}", e);
+                    }
+                }
+            }
+
             app.on_menu_event(|app, event| match event.id().0.as_str() {
                 "menu:preferences" => {
                     if let Some(w) = app.get_webview_window("popover") {
