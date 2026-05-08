@@ -6,6 +6,7 @@
  */
 
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { fileURLToPath } from 'node:url';
@@ -103,6 +104,55 @@ function totalTokens(t) {
 }
 
 const app = new Hono();
+
+// CORS strategy:
+//   - Global wildcard CORS for READ-ONLY endpoints (Bug #2 fix). The Tauri
+//     popover loads from `tauri://localhost` (Tauri 2.x asset protocol) and
+//     fetches `http://127.0.0.1:<port>/api/...` cross-origin. Without these
+//     headers, WKWebView silently drops the response and the popover renders
+//     empty.
+//   - TIGHTER per-route allowlist for `/api/usage/ingest` (the only write
+//     endpoint exposed to other origins). Defined later in this file via
+//     its own `app.use('/api/usage/ingest', …)` middleware. Wildcard there
+//     would let any web page POST usage data.
+//
+// Wildcard origin is safe for read-only endpoints because:
+//   - the server binds to 127.0.0.1 only (no remote attacker can reach it)
+//   - Tauri's `tauri://localhost` is dynamic per-window so an exact-match
+//     allowlist is impractical
+//   - all GET responses are non-credentialed (no cookies, no auth headers)
+//
+// Implementation note: we list the read-only paths explicitly rather than
+// using `app.use('*', cors(...))` because a global wildcard would override
+// the ingest-specific OPTIONS handler (Hono short-circuits OPTIONS in the
+// cors() middleware — the per-route OPTIONS handler never runs once the
+// global one fires).
+const READ_ONLY_API_PATHS = [
+  '/api/health',
+  '/api/summary',
+  '/api/sessions/*',
+  '/api/sessions',
+  '/api/projects',
+  '/api/daily',
+  '/api/models',
+  '/api/hours',
+  '/api/tasks',
+  '/api/tools',
+  '/api/cache',
+  '/api/roi',
+  '/api/config',
+  '/api/usage',          // GET + DELETE — reading or wiping local usage
+  '/api/bookmarklet',
+  '/api/export',
+];
+const readOnlyCors = cors({
+  origin: '*',
+  allowMethods: ['GET', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type'],
+});
+for (const path of READ_ONLY_API_PATHS) {
+  app.use(path, readOnlyCors);
+}
 
 // CORS for the ingest endpoint.
 //   - claude.ai (bookmarklet)
