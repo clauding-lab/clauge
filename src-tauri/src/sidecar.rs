@@ -77,6 +77,114 @@ pub enum CrashAction {
     BackoffRespawn(Duration),
 }
 
+use tauri::{AppHandle, Manager};
+use tauri::async_runtime::Receiver;
+use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+
+const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
+
+/// Continuously runs the sidecar process, restarting on crash with exponential backoff.
+/// On 3rd crash within 60s, emits a one-shot user notification.
+///
+/// Wired into Tauri's `setup()` lifecycle (T12). Loops forever:
+///   1. Spawn child via `spawn_one`, capturing the bound port.
+///   2. Drain remaining events until `CommandEvent::Terminated` arrives.
+///   3. Consult `CrashBreaker` for SilentRespawn / NotifyAndRespawn / BackoffRespawn.
+///   4. Notify the user if needed; sleep if backing off; loop.
+///
+/// `_child` is held live alongside `rx` in the spawn-arm so the kill-on-drop semantics
+/// don't fire prematurely; once the child terminates, dropping it is a no-op.
+pub async fn spawn_and_supervise(app: AppHandle) {
+    let mut breaker = CrashBreaker::new();
+    loop {
+        match spawn_one(&app).await {
+            Ok((port, mut rx, _child)) => {
+                log::info!("Sidecar bound to port {}", port);
+                if let Some(state) = app.try_state::<crate::ipc::AppState>() {
+                    if let Err(e) = state.set_port(port) {
+                        log::error!("Failed to record sidecar port: {}", e);
+                    }
+                }
+                // Drain remaining events until child terminates. _child stays in
+                // scope so its kill-on-drop guard remains armed during runtime.
+                while let Some(ev) = rx.recv().await {
+                    if let CommandEvent::Terminated(payload) = ev {
+                        log::warn!(
+                            "Sidecar terminated (code={:?}, signal={:?})",
+                            payload.code,
+                            payload.signal
+                        );
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Sidecar spawn failed: {}", e);
+            }
+        }
+
+        let action = breaker.record(Instant::now());
+        log::warn!("Sidecar respawn action: {:?}", action);
+        match action {
+            CrashAction::SilentRespawn => {}
+            CrashAction::NotifyAndRespawn => {
+                use tauri_plugin_notification::NotificationExt;
+                if let Err(e) = app
+                    .notification()
+                    .builder()
+                    .title("Clauge")
+                    .body("Clauge had a problem — please restart the app.")
+                    .show()
+                {
+                    log::error!("Failed to dispatch crash notification: {}", e);
+                }
+            }
+            CrashAction::BackoffRespawn(d) => {
+                tokio::time::sleep(d).await;
+            }
+        }
+    }
+}
+
+/// Spawn the sidecar binary once and wait for it to report its bound port via
+/// `CLAUGE_BOUND_PORT=<n>` on stderr. Returns the port plus the live event stream
+/// and child handle so the caller can detect termination.
+async fn spawn_one(
+    app: &AppHandle,
+) -> Result<(u16, Receiver<CommandEvent>, CommandChild), String> {
+    let (mut rx, child): (Receiver<CommandEvent>, CommandChild) = app
+        .shell()
+        .sidecar("clauge-server")
+        .map_err(|e| e.to_string())?
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    while let Some(ev) = rx.recv().await {
+        match ev {
+            CommandEvent::Stderr(line_bytes) => {
+                let line = String::from_utf8_lossy(&line_bytes);
+                if let Some(idx) = line.find(PORT_MARKER) {
+                    let after = &line[idx + PORT_MARKER.len()..];
+                    if let Some(port_str) = after.split_whitespace().next() {
+                        if let Ok(port) = port_str.parse::<u16>() {
+                            return Ok((port, rx, child));
+                        }
+                    }
+                }
+            }
+            CommandEvent::Terminated(payload) => {
+                return Err(format!(
+                    "sidecar exited before binding port (code={:?}, signal={:?})",
+                    payload.code, payload.signal
+                ));
+            }
+            _ => {}
+        }
+    }
+    Err("sidecar event stream closed before port marker".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
