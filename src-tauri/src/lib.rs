@@ -44,7 +44,16 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Filter excludes the popover from state tracking — popover is a
+        // fixed-size menu-bar surface (300×440 per windows.rs). If tracked,
+        // any stale resize gets persisted across launches as a "ghost outline"
+        // (the OS window keeps the cached size while CSS content fills only
+        // the configured area). Dashboard ("main") still tracks normally.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_filter(|label| label != "popover")
+                .build(),
+        )
         // TODO(T18): configure store path/migration when popover settings handler lands.
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ipc::AppState::default())
