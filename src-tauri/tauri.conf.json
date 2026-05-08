@@ -4,7 +4,7 @@
   "version": "0.3.0",
   "identifier": "com.clauding.clauge",
   "build": {
-    "beforeBuildCommand": "bash ../scripts/build-sidecar.sh",
+    "beforeBuildCommand": "bash -c 'cd \"$(git rev-parse --show-toplevel)\" && bash scripts/build-sidecar.sh'",
     "frontendDist": "../popover"
   },
   "app": {
