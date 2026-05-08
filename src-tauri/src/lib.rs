@@ -6,12 +6,13 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             // Focus an existing window when a second launch is attempted.
-            // Picks "any" window via .values().next() — acceptable until T13/T14
-            // give the popover/main split deterministic identity.
+            // TODO(T13/T14): replace `.values().next()` with explicit "main"
+            // window lookup once popover + dashboard are added; HashMap
+            // iteration order is unspecified.
             if let Some(w) = app.webview_windows().values().next() {
                 let _ = w.set_focus();
             }
@@ -39,6 +40,10 @@ pub fn run() {
                 match port_discovery::discover().await {
                     port_discovery::DiscoveryResult::External(port) => {
                         log::info!("Using external clauge server on port {}", port);
+                        // TODO(spec §6.2): External branch is one-shot. If the
+                        // external clauge dies, V3 stays pointed at a dead port.
+                        // Add periodic re-probe + fall back to spawn_and_supervise.
+                        // Tracked as deferred work.
                         if let Some(state) = app_handle.try_state::<ipc::AppState>() {
                             if let Err(e) = state.set_port(port) {
                                 log::error!("Failed to record external server port: {}", e);
@@ -58,6 +63,27 @@ pub fn run() {
             ipc::set_autostart,
             ipc::get_autostart,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        // TODO(spec §6.5): updater check on launch is not wired here. Spec
+        // promises "1×/day AND on app launch"; currently only fires on
+        // user-triggered `check_for_updates` IPC. Tracked as deferred work.
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        // Honor spec §6.7 quit flow: when the OS event loop tells us the app
+        // is about to exit, signal the sidecar supervisor so it can call the
+        // explicit `child.kill()` (CommandChild has no Drop — see sidecar.rs).
+        // We then briefly yield to give the supervisor task a chance to wake
+        // up, take the CommandChild, and fire the kill before the runtime
+        // tears the async task down.
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let Some(state) = app_handle.try_state::<ipc::AppState>() {
+                log::info!("Exit requested; signaling sidecar shutdown");
+                state.shutdown.notify_waiters();
+                // 500ms grace window: empirically enough for `kill()` to
+                // dispatch on macOS without making quit feel sluggish.
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+    });
 }

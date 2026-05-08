@@ -89,35 +89,98 @@ const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
 ///
 /// Wired into Tauri's `setup()` lifecycle (T12). Loops forever:
 ///   1. Spawn child via `spawn_one`, capturing the bound port.
-///   2. Drain remaining events until `CommandEvent::Terminated` arrives.
-///   3. Consult `CrashBreaker` for SilentRespawn / NotifyAndRespawn / BackoffRespawn.
-///   4. Notify the user if needed; sleep if backing off; loop.
+///   2. Race `rx.recv()` against the shutdown signal — break on either crash
+///      or shutdown.
+///   3. On shutdown: explicitly call `child.kill()` and return immediately,
+///      bypassing the crash breaker entirely.
+///   4. On crash: consult `CrashBreaker` for SilentRespawn / NotifyAndRespawn /
+///      BackoffRespawn; notify the user if needed; sleep if backing off; loop.
 ///
-/// `_child` is held live alongside `rx` in the spawn-arm so the kill-on-drop semantics
-/// don't fire prematurely; once the child terminates, dropping it is a no-op.
+/// **Process-lifetime contract (the orphan-sidecar bug):**
+/// `CommandChild` (and its inner `Arc<SharedChild>`) have **no** `Drop` impl,
+/// so simply dropping the `child` binding does NOT kill the OS process. Without
+/// the explicit `child.kill()` below — driven by `RunEvent::ExitRequested` in
+/// `lib.rs` notifying `state.shutdown` — every app launch/quit cycle would leak
+/// a `clauge-server` process. The child is held in scope alongside `rx` so the
+/// underlying file descriptors stay live and `CommandEvent::Terminated` can
+/// be observed; nothing more.
 pub async fn spawn_and_supervise(app: AppHandle) {
     let mut breaker = CrashBreaker::new();
+
+    // Snapshot the shutdown signal up front; if AppState is missing we still
+    // run, just without graceful kill-on-exit (no fallback path is sensible —
+    // missing state means a misconfigured Tauri build, which surfaces in dev).
+    let shutdown = app
+        .try_state::<crate::ipc::AppState>()
+        .map(|s| s.shutdown.clone());
+
     loop {
         match spawn_one(&app).await {
-            Ok((port, mut rx, _child)) => {
-                log::info!("Sidecar bound to port {}", port);
+            Ok((port, mut rx, child)) => {
+                log::info!("Sidecar bound to port {} (pid={})", port, child.pid());
                 if let Some(state) = app.try_state::<crate::ipc::AppState>() {
                     if let Err(e) = state.set_port(port) {
                         log::error!("Failed to record sidecar port: {}", e);
                     }
                 }
-                // Drain remaining events until child terminates. _child stays in
-                // scope so its kill-on-drop guard remains armed during runtime.
-                while let Some(ev) = rx.recv().await {
-                    if let CommandEvent::Terminated(payload) = ev {
-                        log::warn!(
-                            "Sidecar terminated (code={:?}, signal={:?})",
-                            payload.code,
-                            payload.signal
-                        );
-                        break;
+
+                // Hold `child` in an Option so the shutdown branch can `take()`
+                // it and call the consuming `kill(self)` while we still own the
+                // event-loop frame. Without this, the binding would be dropped
+                // at scope exit — and since CommandChild has NO Drop impl, that
+                // drop does nothing to the OS process.
+                let mut child_slot: Option<CommandChild> = Some(child);
+
+                if let Some(ref s) = shutdown {
+                    loop {
+                        tokio::select! {
+                            biased;
+                            _ = s.notified() => {
+                                log::info!("Shutdown requested; killing sidecar");
+                                if let Some(c) = child_slot.take() {
+                                    if let Err(e) = c.kill() {
+                                        log::error!("Failed to kill sidecar: {}", e);
+                                    }
+                                }
+                                return;
+                            }
+                            ev = rx.recv() => match ev {
+                                Some(CommandEvent::Terminated(payload)) => {
+                                    log::warn!(
+                                        "Sidecar terminated (code={:?}, signal={:?})",
+                                        payload.code,
+                                        payload.signal
+                                    );
+                                    break;
+                                }
+                                Some(_) => {} // ignore stdout/stderr/error noise
+                                None => {
+                                    log::warn!("Sidecar event stream closed");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // AppState missing — fall back to plain drain. At quit
+                    // we'd leak, but this branch should never hit in a real
+                    // Tauri build (setup() always registers AppState).
+                    while let Some(ev) = rx.recv().await {
+                        if let CommandEvent::Terminated(payload) = ev {
+                            log::warn!(
+                                "Sidecar terminated (code={:?}, signal={:?})",
+                                payload.code,
+                                payload.signal
+                            );
+                            break;
+                        }
                     }
                 }
+
+                // child_slot may still hold a CommandChild if the loop broke
+                // on Terminated; dropping it is a no-op (no Drop impl) — the
+                // OS process is already gone in that path, so it's fine.
+                drop(child_slot);
             }
             Err(e) => {
                 log::error!("Sidecar spawn failed: {}", e);
@@ -141,7 +204,19 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                 }
             }
             CrashAction::BackoffRespawn(d) => {
-                tokio::time::sleep(d).await;
+                // Race the backoff against shutdown so a quit during backoff
+                // doesn't leave the supervisor task napping past app exit.
+                if let Some(ref s) = shutdown {
+                    tokio::select! {
+                        _ = s.notified() => {
+                            log::info!("Shutdown during backoff; not respawning");
+                            return;
+                        }
+                        _ = tokio::time::sleep(d) => {}
+                    }
+                } else {
+                    tokio::time::sleep(d).await;
+                }
             }
         }
     }

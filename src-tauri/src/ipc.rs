@@ -2,11 +2,26 @@
 
 use std::sync::{Arc, Mutex};
 use tauri::State;
+use tokio::sync::Notify;
 
-/// Shared app state holding the sidecar's bound port.
-#[derive(Default)]
+/// Shared app state holding the sidecar's bound port and shutdown signal.
+///
+/// `shutdown` is notified from the `RunEvent::ExitRequested` hook in `lib.rs`
+/// so the sidecar supervisor can break out of its loop and explicitly kill the
+/// running child (`CommandChild` has no `Drop`, so dropping the binding alone
+/// would leak the OS process).
 pub struct AppState {
     pub server_port: Arc<Mutex<Option<u16>>>,
+    pub shutdown: Arc<Notify>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            server_port: Arc::new(Mutex::new(None)),
+            shutdown: Arc::new(Notify::new()),
+        }
+    }
 }
 
 impl AppState {
