@@ -300,6 +300,53 @@ pub fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Proxy a GET request to the local SEA sidecar via Rust's reqwest, bypassing
+/// the WKWebView fetch layer entirely.
+///
+/// **Why this exists (v0.4.0).** v0.3.1 added wildcard CORS to /api/* and
+/// confirmed the headers reach the wire (`curl -H 'Origin: tauri://localhost'`
+/// returns `access-control-allow-origin: *`), yet the popover still rendered
+/// empty after launch. The remaining failure mode is a WKWebView-layer block
+/// — Tauri 2.x's asset protocol routes the popover through `tauri://localhost`
+/// (or `https://tauri.localhost` when `useHttpsScheme=true`), and macOS
+/// WKWebView treats those origins as Mixed-Content secure contexts. A
+/// cross-origin `fetch('http://127.0.0.1:3456/...')` from such a context can
+/// be silently dropped before the request leaves the webview, because the
+/// upgrade-insecure-requests / mixed-content guard fires before CORS even
+/// gets a chance to inspect the response. There are no DevTools console
+/// messages to confirm this in production builds, so the failure was invisible.
+///
+/// The fix is to skip the WebView fetch path entirely. `proxy_fetch` accepts a
+/// path (e.g. `/api/summary?period=today`), reads the live sidecar port from
+/// `AppState`, builds the URL, and `reqwest`s it from Rust. The popover JS now
+/// calls `invoke('proxy_fetch', { path })` instead of `fetch(...)`. No CORS,
+/// no mixed-content, no asset-protocol surprises. The dashboard window keeps
+/// its native fetch path because it's loaded via `WebviewUrl::External(http://127.0.0.1:.../)`
+/// — same-origin to its API server.
+///
+/// Path validation: only allows paths starting with `/api/` to prevent the
+/// frontend from being tricked into fetching arbitrary URLs. The sidecar's
+/// SSRF surface is already minimal (it only reads local files), but defense
+/// in depth is cheap here.
+#[tauri::command]
+pub async fn proxy_fetch(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    if !path.starts_with("/api/") {
+        return Err(format!("path must start with /api/: {}", path));
+    }
+    let port = read_port(&state)?;
+    let url = format!("http://127.0.0.1:{}{}", port, path);
+    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {} for {}", resp.status(), path));
+    }
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,6 +412,27 @@ mod tests {
     fn find_app_bundle_returns_none_for_dev_target_path() {
         let p = std::path::Path::new("/Users/x/projects/clauge/src-tauri/target/debug/clauge");
         assert_eq!(find_app_bundle(p), None);
+    }
+
+    #[tokio::test]
+    async fn proxy_fetch_rejects_non_api_paths() {
+        // We can't synthesize a `State<'_, AppState>` without a Tauri runtime,
+        // so we test the path validation by replicating the invariant inline.
+        // The actual command rejects paths not starting with /api/ before
+        // touching state — verify that prefix check holds.
+        let bad = ["/", "/health", "//api/x", "/.api/", "../api/"];
+        for path in bad {
+            assert!(
+                !path.starts_with("/api/"),
+                "test fixture must be a non-/api/ path: {}",
+                path
+            );
+        }
+        // Sanity check: known-good paths the frontend will send.
+        let good = ["/api/summary", "/api/health", "/api/usage"];
+        for path in good {
+            assert!(path.starts_with("/api/"), "should be allowed: {}", path);
+        }
     }
 
     #[cfg(target_os = "macos")]

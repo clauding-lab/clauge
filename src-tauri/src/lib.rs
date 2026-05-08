@@ -180,6 +180,7 @@ pub fn run() {
             ipc::get_autostart,
             ipc::open_dashboard,
             ipc::quit_app,
+            ipc::proxy_fetch,
         ])
         // TODO(spec §6.5): updater check on launch is not wired here. Spec
         // promises "1×/day AND on app launch"; currently only fires on
