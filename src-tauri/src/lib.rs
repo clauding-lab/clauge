@@ -11,13 +11,31 @@ use tauri::Manager;
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            // Focus an existing window when a second launch is attempted.
-            // TODO(T13/T14): replace `.values().next()` with explicit "main"
-            // window lookup once popover + dashboard are added; HashMap
-            // iteration order is unspecified.
-            if let Some(w) = app.webview_windows().values().next() {
-                let _ = w.set_focus();
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // Second-launch attempt (spec §6.7): prefer focusing the popover
+            // (the primary glanceable surface). If popover doesn't exist
+            // (degraded startup — see windows.rs::create_popover), fall back
+            // to the dashboard window. If neither exists, log and bail —
+            // duplicate launches must never spawn a second app instance.
+            if let Some(popover) = app.get_webview_window("popover") {
+                if let Err(e) = crate::windows::position_popover_under_tray(app) {
+                    log::warn!("Failed to position popover on second-launch: {}", e);
+                }
+                if let Err(e) = popover.show() {
+                    log::warn!("Failed to show popover on second-launch: {}", e);
+                }
+                if let Err(e) = popover.set_focus() {
+                    log::warn!("Failed to focus popover on second-launch: {}", e);
+                }
+            } else if let Some(main) = app.get_webview_window("main") {
+                if let Err(e) = main.show() {
+                    log::warn!("Failed to show dashboard on second-launch: {}", e);
+                }
+                if let Err(e) = main.set_focus() {
+                    log::warn!("Failed to focus dashboard on second-launch: {}", e);
+                }
+            } else {
+                log::warn!("Second-launch attempt found neither popover nor dashboard window");
             }
         }))
         .plugin(tauri_plugin_autostart::init(
