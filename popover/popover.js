@@ -1,12 +1,24 @@
-// Popover JS. Wires UI to clauge-server via fetch.
-// Reference: docs/design/menubar.jsx (port to vanilla here).
+// Clauge popover (v0.4.0).
+//
+// All sidecar fetches go through Tauri's `proxy_fetch` IPC, NOT native fetch.
+// See src-tauri/src/ipc.rs::proxy_fetch for the rationale — short version:
+// WKWebView's mixed-content guard (popover loads from tauri://localhost or
+// https://tauri.localhost; sidecar serves http://127.0.0.1:port) silently
+// drops fetch responses, even though the wire-level request succeeds with
+// CORS headers attached. Routing the request through Rust skips the entire
+// browser fetch layer.
+//
+// The dashboard window doesn't need this — it loads via WebviewUrl::External
+// pointed at the sidecar root, so its fetches are same-origin.
 
 const { invoke } = window.__TAURI__.core;
 
+// Track the popover state so we can repaint on data updates without a
+// re-fetch (e.g. tab switch or warning-state transition).
 let serverPort = 3456;
+let serverVersion = '0.4.0';
 
-// Escape user-derived strings before they hit innerHTML. Numeric values from
-// toFixed/Math.round are safe and don't need this.
+// ─── helpers ──────────────────────────────────────────────
 function escapeHtml(s) {
   if (s == null) return '';
   return String(s)
@@ -17,24 +29,332 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+function fmtUSD(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return n.toFixed(2);
+}
+
+function fmtInt(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return new Intl.NumberFormat('en-US').format(Math.round(n));
+}
+
+function fmtAgo(iso) {
+  if (!iso) return '—';
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+function fmtRelative(iso) {
+  if (!iso) return '—';
+  const ms = Date.parse(iso) - Date.now();
+  if (!Number.isFinite(ms)) return '—';
+  if (ms <= 0) return 'now';
+  const m = Math.floor(ms / 60000);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `${d}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${m}m`;
+}
+
+// ─── proxy fetch (replaces native fetch) ──────────────────
+async function fetchJson(path) {
+  return await invoke('proxy_fetch', { path });
+}
+
+// ─── ring HTML helpers ────────────────────────────────────
+// Mini ring (48px, four-up grid). pctFrac is 0..1.
+function miniRingHtml({ label, pctFrac, reset, gradId }) {
+  const r = 20;
+  const c = 2 * Math.PI * r;
+  const offset = c - Math.max(0, Math.min(1, pctFrac)) * c;
+  const pctNum = Math.round(pctFrac * 100);
+  const tone = pctFrac >= 0.85 ? 'crit' : pctFrac >= 0.6 ? 'amber' : pctFrac >= 0.05 ? 'healthy' : 'cool';
+  // Each ring needs a unique gradient id so SVG stops don't collide when the
+  // markup is reused. The gradId is supplied by the caller.
+  return `
+    <div class="po-ring-card">
+      <div class="mini-ring ${tone}">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <defs>
+            <linearGradient id="${escapeHtml(gradId)}" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#e89478"/>
+              <stop offset="100%" stop-color="#b45c41"/>
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="24" r="${r}" fill="none"
+            stroke="rgba(255,240,230,0.06)" stroke-width="3.5"/>
+          <circle cx="24" cy="24" r="${r}" fill="none"
+            stroke="url(#${escapeHtml(gradId)})" stroke-width="3.5" stroke-linecap="round"
+            stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
+        </svg>
+        <div class="pct">
+          <span class="num">${pctNum}</span><span class="sym">%</span>
+        </div>
+      </div>
+      <div class="po-ring-label">${escapeHtml(label)}</div>
+      <div class="po-ring-reset mono">${escapeHtml(reset)}</div>
+    </div>`;
+}
+
+// Big ring (80px, warning state). Same shape, larger.
+function bigWarnRingHtml(pctFrac) {
+  const r = 32;
+  const c = 2 * Math.PI * r;
+  const offset = c - Math.max(0, Math.min(1, pctFrac)) * c;
+  const pctNum = Math.round(pctFrac * 100);
+  return `
+    <svg viewBox="0 0 80 80" aria-hidden="true">
+      <defs>
+        <linearGradient id="warnring" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#f0c780"/>
+          <stop offset="100%" stop-color="#c88840"/>
+        </linearGradient>
+      </defs>
+      <circle cx="40" cy="40" r="${r}" fill="none"
+        stroke="rgba(255,240,230,0.06)" stroke-width="4.5"/>
+      <circle cx="40" cy="40" r="${r}" fill="none"
+        stroke="url(#warnring)" stroke-width="4.5" stroke-linecap="round"
+        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
+    </svg>
+    <div class="pct">
+      <span class="num">${pctNum}</span><span class="sym">%</span>
+    </div>`;
+}
+
+// ─── render: header / status pill ─────────────────────────
+function renderHeader({ ingestedAt, healthOk }) {
+  document.getElementById('po-meta').textContent = `v${serverVersion} · :${serverPort}`;
+  const pill = document.getElementById('po-status');
+  const text = document.getElementById('po-status-text');
+  if (!healthOk) {
+    pill.className = 'po-status off';
+    text.textContent = 'offline';
+    return;
+  }
+  if (!ingestedAt) {
+    pill.className = 'po-status';
+    text.textContent = 'live';
+    return;
+  }
+  const ageMs = Date.now() - Date.parse(ingestedAt);
+  if (ageMs > 10 * 60_000) {
+    pill.className = 'po-status stale';
+    text.textContent = `stale ${fmtAgo(ingestedAt)}`;
+  } else {
+    pill.className = 'po-status';
+    text.textContent = `synced ${fmtAgo(ingestedAt)}`;
+  }
+}
+
+// ─── render: rings ────────────────────────────────────────
+function renderRings(usage) {
+  const plan = usage?.plan ?? {};
+  // Mapping decision (v0.4.0): the design's four rings are
+  // Session / Weekly / Sonnet / Design. The API has `sevenDayOmelette`
+  // (the internal codename for the Design model) which the v0.3.x
+  // dashboard already labels "Design". Keep that label here.
+  const gauges = [
+    { label: 'Session', pctFrac: (plan.fiveHour?.pct ?? 0) / 100, reset: fmtRelative(plan.fiveHour?.resetsAt) },
+    { label: 'Weekly',  pctFrac: (plan.sevenDay?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDay?.resetsAt) },
+    { label: 'Sonnet',  pctFrac: (plan.sevenDaySonnet?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDaySonnet?.resetsAt) },
+    { label: 'Design',  pctFrac: (plan.sevenDayOmelette?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDayOmelette?.resetsAt) },
+  ];
+  const root = document.getElementById('po-rings');
+  root.innerHTML = gauges
+    .map((g, i) => miniRingHtml({ ...g, gradId: `pop-rg-${i}` }))
+    .join('');
+
+  // Update plan-status aux label.
+  const status = document.getElementById('plan-status');
+  const maxPct = Math.max(...gauges.map((g) => g.pctFrac));
+  if (maxPct >= 0.85) {
+    status.textContent = 'critical';
+    status.className = 'sect-aux mono crit';
+  } else if (maxPct >= 0.6) {
+    status.textContent = 'warn';
+    status.className = 'sect-aux mono warn';
+  } else {
+    status.textContent = 'healthy';
+    status.className = 'sect-aux mono';
+  }
+}
+
+// ─── render: warning state ────────────────────────────────
+function renderWarnState(usage) {
+  const fiveHour = usage?.plan?.fiveHour;
+  if (!fiveHour) return;
+  const ringWrap = document.getElementById('warn-ring');
+  ringWrap.innerHTML = bigWarnRingHtml((fiveHour.pct ?? 0) / 100);
+  document.getElementById('warn-reset').textContent =
+    `resets in ${fmtRelative(fiveHour.resetsAt)}`;
+}
+
+// ─── render: finance ──────────────────────────────────────
+function renderFinance(usage) {
+  const plan = usage?.plan ?? {};
+  const ingestedAt = usage?.ingestedAt;
+
+  // Extra usage card. Server returns enabled=false when the user hasn't
+  // configured an extra-usage cap; in that case show a tasteful placeholder.
+  const extra = plan.extraUsage;
+  const extraUsedEl = document.getElementById('extra-used');
+  const extraOfEl = document.getElementById('extra-of');
+  const extraBarEl = document.getElementById('extra-bar');
+  const extraFootEl = document.getElementById('extra-foot');
+  if (extra && extra.enabled) {
+    const used = extra.usedDollars ?? 0;
+    const limit = extra.limitDollars ?? 0;
+    extraUsedEl.textContent = fmtUSD(used);
+    extraOfEl.textContent = limit > 0 ? `/ $${limit.toFixed(0)}` : '';
+    // Match the dashboard's extra-usage logic: claude.ai sometimes returns
+    // utilization=null at $0 — recompute from used/limit so the bar moves.
+    let pctNum = extra.pct;
+    if ((pctNum == null || !Number.isFinite(pctNum)) && limit > 0) {
+      pctNum = (used / limit) * 100;
+    }
+    const pct = Math.max(0, Math.min(100, pctNum ?? 0));
+    extraBarEl.style.width = `${pct.toFixed(1)}%`;
+    extraFootEl.textContent = `${pct.toFixed(0)}% of cap`;
+  } else {
+    extraUsedEl.textContent = '0.00';
+    extraOfEl.textContent = '';
+    extraBarEl.style.width = '0%';
+    extraFootEl.textContent = 'not configured';
+  }
+
+  // Balance card. Data wiring decision (v0.4.0): claude.ai consumer balance
+  // arrives via the bookmarklet/extension as plan.claudeBalance. When the
+  // user hasn't synced (or claude.ai's prepaid endpoint isn't found), we
+  // render an em-dash with the sync status as foot text, rather than
+  // inventing a fake number.
+  const bal = plan.claudeBalance;
+  const balValEl = document.getElementById('bal-val');
+  const balBarEl = document.getElementById('bal-bar');
+  const balFootEl = document.getElementById('bal-foot');
+  const balCurrencyEl = document.getElementById('bal-currency');
+  if (bal && Number.isFinite(bal.currentBalance)) {
+    balValEl.textContent = fmtUSD(bal.currentBalance);
+    balCurrencyEl.textContent = bal.currency === 'USD' || !bal.currency ? '$' : bal.currency;
+    // No published cap from claude.ai, so show a fixed bar at 60% as a
+    // visual anchor (matches the design mock; it's purely cosmetic).
+    balBarEl.style.width = '60%';
+    balFootEl.textContent = ingestedAt ? `refreshed ${fmtAgo(ingestedAt)} ago` : 'refreshed —';
+  } else {
+    balValEl.textContent = '—';
+    balCurrencyEl.textContent = '$';
+    balBarEl.style.width = '0%';
+    balFootEl.textContent = 'sync to view';
+  }
+}
+
+// ─── render: today snapshot ───────────────────────────────
+function renderToday({ summary, cache }) {
+  // Aux ("3 sessions · 2h 12m").
+  const aux = document.getElementById('today-aux');
+  const sessCount = summary?.sessionCount ?? 0;
+  // We don't have a duration sum on /api/summary; derive a rough total from
+  // assistantTurnCount as a stand-in. Future API polish can add a real
+  // duration field. For now, omit the time so we never display a wrong number.
+  aux.textContent = sessCount > 0 ? `${sessCount} session${sessCount === 1 ? '' : 's'}` : 'no sessions';
+
+  document.getElementById('today-cost').textContent = `$${fmtUSD(summary?.cost ?? 0)}`;
+  document.getElementById('today-cost-sub').textContent =
+    summary?.avgCostPerSession != null
+      ? `$${fmtUSD(summary.avgCostPerSession)} avg/sess`
+      : '';
+  document.getElementById('today-msgs').textContent = fmtInt(summary?.messageCount);
+  document.getElementById('today-msgs-sub').textContent = `${fmtInt(summary?.toolCallCount)} tools`;
+
+  const hit = cache?.hitRate;
+  document.getElementById('today-cache').textContent = hit == null ? '—' : `${Math.round(hit * 100)}%`;
+  // cacheRead is in tokens — abbreviate to the M/B unit for compactness.
+  const reads = summary?.tokens?.cacheRead;
+  let readsLabel = '—';
+  if (Number.isFinite(reads)) {
+    if (reads >= 1e9) readsLabel = `${(reads / 1e9).toFixed(1)}B`;
+    else if (reads >= 1e6) readsLabel = `${(reads / 1e6).toFixed(1)}M`;
+    else if (reads >= 1e3) readsLabel = `${(reads / 1e3).toFixed(1)}k`;
+    else readsLabel = String(Math.round(reads));
+  }
+  document.getElementById('today-cache-sub').textContent = `${readsLabel} reads`;
+}
+
+// ─── orchestration ────────────────────────────────────────
+let lastUsage = null;
+
+async function refresh() {
+  let healthOk = false;
+  try {
+    const [health, summary, cache, usage] = await Promise.all([
+      fetchJson('/api/health').catch(() => null),
+      fetchJson('/api/summary?period=today').catch(() => null),
+      fetchJson('/api/cache?period=today').catch(() => null),
+      fetchJson('/api/usage').catch(() => null),
+    ]);
+    if (health?.version) serverVersion = health.version;
+    healthOk = !!health;
+    lastUsage = usage;
+
+    // Set state BEFORE rendering so CSS hides the right sections.
+    const pct = usage?.plan?.fiveHour?.pct ?? 0;
+    const isWarn = pct >= 85;
+    document.getElementById('root').dataset.state = isWarn ? 'warn' : 'default';
+
+    renderHeader({ ingestedAt: usage?.ingestedAt, healthOk });
+    if (isWarn) {
+      renderWarnState(usage);
+    } else {
+      renderRings(usage);
+      renderFinance(usage);
+      renderToday({ summary, cache });
+    }
+  } catch (err) {
+    // Hard failure — keep the static shell but flip the status pill.
+    console.error('[Clauge popover] refresh failed:', err);
+    renderHeader({ ingestedAt: null, healthOk: false });
+  }
+}
+
+// ─── prefs panel ──────────────────────────────────────────
+function showPreferences() { document.getElementById('prefs').hidden = false; }
+function hidePreferences() { document.getElementById('prefs').hidden = true; }
+
+async function openDashboard() {
+  await invoke('open_dashboard').catch((err) => console.error('open_dashboard failed:', err));
+}
+
+// ─── init ─────────────────────────────────────────────────
 async function init() {
   try {
     serverPort = await invoke('get_server_port');
-  } catch (e) {
-    console.warn('Server port not yet available, falling back to 3456', e);
+  } catch (err) {
+    // Sidecar not yet bound — refresh's /api/health will set healthOk=false
+    // and we'll keep retrying on the 10s interval.
+    console.warn('[Clauge popover] get_server_port failed; using fallback:', err);
   }
 
-  document.getElementById('btn-prefs').addEventListener('click', showPreferences);
-  document.getElementById('prefs-back').addEventListener('click', hidePreferences);
-  document.getElementById('btn-dashboard').addEventListener('click', openDashboard);
+  // Wire footer + prefs + dashboard buttons.
   document.getElementById('footer-dashboard').addEventListener('click', (e) => {
     e.preventDefault();
     openDashboard();
   });
-  document.getElementById('btn-refresh').addEventListener('click', refresh);
+  document.getElementById('prefs-back').addEventListener('click', hidePreferences);
   document.getElementById('check-updates-btn').addEventListener('click', () => {
-    invoke('check_for_updates').catch((err) => console.error('Update error:', err));
+    invoke('check_for_updates').catch((err) => console.error('check_for_updates failed:', err));
   });
+  document.getElementById('prefs-dashboard-btn').addEventListener('click', openDashboard);
+
+  // Autostart toggle wiring (preserved from v0.3.x).
   const autoToggle = document.getElementById('autostart-toggle');
   autoToggle.checked = await invoke('get_autostart').catch((err) => {
     console.warn('get_autostart failed; defaulting to off:', err);
@@ -45,255 +365,40 @@ async function init() {
     try {
       await invoke('set_autostart', { enabled: desired });
     } catch (err) {
-      console.error('set_autostart failed:', err);
+      console.error('set_autostart failed; reverting toggle:', err);
       autoToggle.checked = !desired;
-      // TODO(v0.3.0.x): surface inline error state in status badge or footer.
     }
   });
 
+  // External event from native menu (Cmd+, or tray's Preferences menu).
+  // tray.rs and lib.rs both dispatch this CustomEvent on the popover webview.
   window.addEventListener('show-preferences', showPreferences);
 
-  document.querySelectorAll('.tab').forEach((b) => {
-    b.addEventListener('click', () => switchTab(b.dataset.tab));
+  // Keyboard shortcuts inside the popover. ⌘D opens the dashboard, ⌘R refreshes.
+  // (Cmd+, is handled at the native-menu level via menu.rs.)
+  document.addEventListener('keydown', (e) => {
+    if (!e.metaKey) return;
+    if (e.key === 'd' || e.key === 'D') {
+      e.preventDefault();
+      openDashboard();
+    } else if (e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      refresh();
+    }
   });
 
-  // Read the running server's reported version so the about-line in the
-  // preferences panel always matches the binary that actually shipped, not
-  // the hardcoded number in the HTML. Failure here is fine — the placeholder
-  // text already in the DOM stays put.
+  // Read the running server version once for the about-line.
   fetchJson('/api/health')
     .then((h) => {
       const el = document.getElementById('about-version');
       if (el && h?.version) el.textContent = `v${h.version}`;
     })
     .catch(() => {
-      // Best-effort. The health probe is also a useful early-warning canary
-      // for the popover's own refresh: if /api/health fails right at boot,
-      // the 10s setInterval below will eventually pick it up anyway.
+      // Best-effort; the periodic refresh will pick it up later anyway.
     });
 
   await refresh();
   setInterval(refresh, 10_000);
-}
-
-function showPreferences() { document.getElementById('prefs').hidden = false; }
-function hidePreferences() { document.getElementById('prefs').hidden = true; }
-
-async function openDashboard() {
-  await invoke('open_dashboard').catch(console.error);
-}
-
-async function refresh() {
-  try {
-    const [summary, sessions, models, usage, cache, hours] = await Promise.all([
-      fetchJson(`/api/summary?period=today`),
-      fetchJson(`/api/sessions?period=today`),
-      fetchJson(`/api/models?period=today`),
-      fetchJson(`/api/usage`),
-      fetchJson(`/api/cache?period=today`),
-      fetchJson(`/api/hours?period=today`),
-    ]);
-    renderHero(summary);
-    renderRings(usage);
-    renderHeroSpark(hours);
-    lastData.summary = summary;
-    lastData.sessions = sessions;
-    lastData.models = models;
-    lastData.cache = cache;
-    renderActiveTab();
-  } catch (e) {
-    console.error('refresh failed', e);
-  }
-}
-
-async function fetchJson(path) {
-  const r = await fetch(`http://127.0.0.1:${serverPort}${path}`);
-  if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
-  return r.json();
-}
-
-let lastData = {
-  summary: null,
-  sessions: null,
-  models: null,
-  usage: null,
-  cache: null,
-  hours: null,
-};
-
-function renderHero(summary) {
-  lastData.summary = summary;
-  const total = summary?.cost ?? 0;
-  document.getElementById('hero-amount').textContent = `$${total.toFixed(2)}`;
-}
-
-function renderHeroSpark(hours) {
-  lastData.hours = hours;
-  const arr = (hours?.hours ?? []).map((h) => h.cost ?? 0);
-  if (arr.length === 0) return;
-  const max = Math.max(...arr, 0.01);
-  // Server bucketing uses UTC (lib/aggregator.js:88 calls getUTCHours()), so
-  // the "now" index must use UTC too to keep the highlight aligned.
-  const now = new Date().getUTCHours();
-  const el = document.getElementById('hero-spark');
-  el.innerHTML = arr
-    .map((v, i) => {
-      const h = (v / max) * 100;
-      const dim = i > now;
-      const isNow = i === now;
-      const bg = isNow ? 'var(--brand)' : 'var(--surface-3)';
-      return `<div style="flex:1;height:${h}%;background:${bg};opacity:${dim ? 0.3 : 1};border-radius:1px"></div>`;
-    })
-    .join('');
-}
-
-function renderRings(usage) {
-  lastData.usage = usage;
-  // /api/usage shape: { ingested, ingestedAt, org, plan: { fiveHour, sevenDay, sevenDaySonnet, sevenDayOpus, ... } }
-  // where each metric is { pct, resetsAt }.
-  const p = usage?.plan ?? {};
-  const gauges = [
-    { label: 'Session', pct: p.fiveHour?.pct ?? 0, sub: '5h', reset: p.fiveHour?.resetsAt ?? '—' },
-    { label: 'Weekly', pct: p.sevenDay?.pct ?? 0, sub: '7d', reset: p.sevenDay?.resetsAt ?? '—' },
-    { label: 'Sonnet', pct: p.sevenDaySonnet?.pct ?? 0, sub: '7d', reset: p.sevenDaySonnet?.resetsAt ?? '—' },
-    { label: 'Opus', pct: p.sevenDayOpus?.pct ?? 0, sub: '7d', reset: p.sevenDayOpus?.resetsAt ?? '—' },
-  ];
-  const root = document.getElementById('rings');
-  root.innerHTML = gauges.map(ringHtml).join('');
-}
-
-function ringHtml(g) {
-  const size = 56, stroke = 5;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const offset = c - g.pct * c;
-  const state = g.pct >= 0.85 ? 'crit' : g.pct >= 0.60 ? 'warn' : 'ok';
-  const colorMap = { ok: 'var(--brand)', warn: 'var(--warn)', crit: 'var(--crit)' };
-  return `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-      <div style="position:relative;width:${size}px;height:${size}px">
-        <svg width="${size}" height="${size}" style="transform:rotate(-90deg)">
-          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
-                  stroke="var(--surface-3)" stroke-width="${stroke}"></circle>
-          <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
-                  stroke="${colorMap[state]}" stroke-width="${stroke}" stroke-linecap="round"
-                  stroke-dasharray="${c}" stroke-dashoffset="${offset}"></circle>
-        </svg>
-        <div style="position:absolute;inset:0;display:grid;place-items:center">
-          <span class="mono" style="font-size:12px;font-weight:600;letter-spacing:-0.02em">
-            ${Math.round(g.pct*100)}<span style="font-size:8px;color:var(--text-3)">%</span>
-          </span>
-        </div>
-      </div>
-      <div style="text-align:center;line-height:1.15">
-        <div style="font-size:10.5px;color:var(--text);font-weight:500">${escapeHtml(g.label)}</div>
-        <div class="mono" style="font-size:9.5px;color:var(--text-3);margin-top:1px">${escapeHtml(g.reset)}</div>
-      </div>
-    </div>`;
-}
-
-let activeTab = 'today';
-function switchTab(name) {
-  activeTab = name;
-  document.querySelectorAll('.tab').forEach((b) =>
-    b.classList.toggle('active', b.dataset.tab === name)
-  );
-  renderActiveTab();
-}
-
-function renderActiveTab() {
-  const root = document.getElementById('tab-content');
-  if (activeTab === 'today') {
-    root.innerHTML = renderTodayTab(lastData.summary, lastData.cache);
-  } else if (activeTab === 'recent') {
-    root.innerHTML = renderRecentTab(lastData.sessions);
-  } else if (activeTab === 'models') {
-    root.innerHTML = renderModelsTab(lastData.models);
-  }
-}
-
-function renderTodayTab(summary, cache) {
-  if (!summary) return '<div class="prefs-meta">Loading…</div>';
-  const hitRate = cache?.hitRate;
-  const cacheVal = hitRate == null ? '—' : `${Math.round(hitRate * 100)}%`;
-  const items = [
-    { label: 'Messages', value: summary?.messageCount ?? 0 },
-    { label: 'Tool calls', value: summary?.toolCallCount ?? 0 },
-    { label: 'Sessions', value: summary?.sessionCount ?? 0 },
-    { label: 'Cache hit', value: cacheVal, accent: 'var(--ok)' },
-  ];
-  return `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-      ${items.map((i) => `
-        <div style="padding:8px 10px;background:var(--bg);border:1px solid var(--hairline);border-radius:8px">
-          <div style="font-size:9px;letter-spacing:0.10em;text-transform:uppercase;color:var(--text-3)">${i.label}</div>
-          <div class="mono" style="font-size:15px;font-weight:600;margin-top:2px;color:${i.accent || 'var(--text)'};letter-spacing:-0.01em">${i.value}</div>
-        </div>`).join('')}
-    </div>`;
-}
-
-function renderRecentTab(sessionsResp) {
-  // /api/sessions shape: { period, project, count, sessions: [...] }.
-  // Each session has `startedAt` (ISO) and `byModel: [{ model, ... }]` —
-  // there is no flat `start` or `model` scalar on the wire.
-  const all = sessionsResp?.sessions ?? [];
-  // Server doesn't sort by recency, so we sort client-side, newest first.
-  const sessions = [...all]
-    .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))
-    .slice(0, 5);
-  if (sessions.length === 0) return '<div class="prefs-meta">No sessions today.</div>';
-  return `<div style="display:flex;flex-direction:column;gap:1px">
-    ${sessions.map((s, i, a) => {
-      const primaryModel = s.byModel?.[0]?.model ?? null;
-      return `
-      <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 4px;border-bottom:${i < a.length-1 ? '1px solid var(--hairline)' : 'none'};font-size:11.5px">
-        <span class="mono" style="color:var(--text-3);font-size:11px">${escapeHtml(formatTime(s.startedAt))}</span>
-        <span class="mono">${escapeHtml(s.project ?? '—')}</span>
-        <span style="font-size:9.5px;padding:1px 5px;border-radius:3px;color:${modelColor(primaryModel)};background:var(--surface-2);font-family:var(--mono)">${escapeHtml(shortModel(primaryModel))}</span>
-        <span class="mono" style="font-weight:600">$${(s.cost ?? 0).toFixed(2)}</span>
-      </div>`;
-    }).join('')}
-  </div>`;
-}
-
-function renderModelsTab(modelsResp) {
-  // /api/models shape: { period, models: [{ model, turnCount, tokens, cost, cacheHitRate, pctOfTotal }] }
-  // already sorted by cost desc.
-  const models = modelsResp?.models ?? [];
-  if (models.length === 0) return '<div class="prefs-meta">No model data today.</div>';
-  const total = models.reduce((s, m) => s + (m.cost ?? 0), 0) || 1;
-  return `
-    <div style="display:flex;height:6px;border-radius:999px;overflow:hidden;margin-bottom:14px;background:var(--surface-3)">
-      ${models.map((m) => `<div style="width:${(m.cost/total)*100}%;background:${modelColor(m.model)}"></div>`).join('')}
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      ${models.map((m) => `
-        <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center">
-          <span style="width:8px;height:8px;border-radius:2px;background:${modelColor(m.model)}"></span>
-          <span class="mono" style="font-size:11.5px">${escapeHtml(m.model)}</span>
-          <span class="mono" style="font-size:10.5px;color:var(--text-3)">${Math.round((m.cost/total)*100)}%</span>
-          <span class="mono" style="font-size:11.5px;font-weight:600;min-width:48px;text-align:right">$${(m.cost ?? 0).toFixed(2)}</span>
-        </div>`).join('')}
-    </div>`;
-}
-
-function formatTime(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-function shortModel(m) {
-  if (!m) return '—';
-  if (m.includes('opus')) return 'opus';
-  if (m.includes('sonnet')) return 'sonnet';
-  if (m.includes('haiku')) return 'haiku';
-  return m;
-}
-function modelColor(m) {
-  if (!m) return 'var(--text-3)';
-  if (m.includes('opus')) return 'var(--opus)';
-  if (m.includes('sonnet')) return 'var(--sonnet)';
-  if (m.includes('haiku')) return 'var(--haiku)';
-  return 'var(--text-3)';
 }
 
 document.addEventListener('DOMContentLoaded', init);

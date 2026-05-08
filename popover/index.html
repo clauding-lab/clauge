@@ -3,42 +3,128 @@
 <head>
   <meta charset="UTF-8">
   <title>Clauge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="popover.css">
 </head>
 <body>
-  <div id="root">
-    <header class="popover-header">
-      <span class="brand-mark"></span>
-      <span class="brand-name">Clauge</span>
-      <span id="status-badge" class="status-badge" role="status">live</span>
-      <span class="header-spacer"></span>
-      <button id="btn-dashboard" class="icon-btn" title="Open dashboard" aria-label="Open dashboard">↗</button>
-      <button id="btn-refresh" class="icon-btn" title="Refresh" aria-label="Refresh">↻</button>
-      <button id="btn-prefs" class="icon-btn" title="Preferences" aria-label="Preferences">⚙</button>
+  <!-- Default popover state. Switches to the warning variant by toggling
+       data-state="warn" on #root. Both states share the same DOM tree;
+       the CSS hides the irrelevant sections. -->
+  <div id="root" data-state="default">
+
+    <!-- ── Header ────────────────────────────────────────────── -->
+    <header class="po-head">
+      <div class="po-head-left">
+        <div class="po-chiclet">
+          <!-- inline brand mark — gauge with brand orange arc + steel-blue inner ring + needle -->
+          <svg class="po-chiclet-svg" viewBox="0 0 18 18" aria-hidden="true">
+            <circle cx="9" cy="9" r="7" fill="none" stroke="#faf9f5" stroke-opacity="0.06" stroke-width="2"/>
+            <circle cx="9" cy="9" r="7" fill="none" stroke="#d97757" stroke-width="2" stroke-linecap="round" stroke-dasharray="33" stroke-dashoffset="9" transform="rotate(135 9 9)"/>
+            <circle cx="9" cy="9" r="4.5" fill="none" stroke="#faf9f5" stroke-opacity="0.06" stroke-width="0.5"/>
+            <circle cx="9" cy="9" r="4.5" fill="none" stroke="#6a9bcc" stroke-opacity="0.45" stroke-width="0.5" stroke-linecap="round" stroke-dasharray="21.2" stroke-dashoffset="15.3" transform="rotate(135 9 9)"/>
+            <line x1="9" y1="9" x2="13.5" y2="3.5" stroke="#faf9f5" stroke-width="0.75" stroke-linecap="round" opacity="0.88"/>
+            <circle cx="9" cy="9" r="1" fill="#faf9f5" opacity="0.85"/>
+          </svg>
+        </div>
+        <div class="po-head-text">
+          <div class="po-name" id="po-name">Clauge</div>
+          <div class="po-meta mono" id="po-meta">v0.4.0 · :3456</div>
+        </div>
+      </div>
+      <span class="po-status" id="po-status" role="status" aria-live="polite">
+        <span class="live"></span>
+        <span id="po-status-text">live</span>
+      </span>
     </header>
 
-    <section id="hero">
-      <div class="hero-label">Today · API equivalent</div>
-      <div id="hero-amount" class="hero-amount mono">—</div>
-      <div id="hero-spark" class="spark"></div>
+    <!-- ── Warning state body (single big ring + suggestion) ─── -->
+    <section class="sect warn-only" id="warn-body">
+      <div class="warn-ring-wrap">
+        <div class="big-warn-ring" id="warn-ring">
+          <!-- filled in by popover.js -->
+        </div>
+        <div class="po-ring-label">Session</div>
+        <div class="po-ring-reset mono" id="warn-reset">resets in —</div>
+      </div>
+      <p class="warn-suggest">
+        Consider wrapping up or switching to <span class="mono haiku">haiku</span> for the next task.
+      </p>
     </section>
 
-    <section id="rings" class="ring-strip"></section>
+    <!-- ── Plan capacity (default state) ─────────────────────── -->
+    <section class="sect default-only">
+      <div class="sect-head">
+        <span class="sect-title">Plan capacity</span>
+        <span class="sect-aux mono" id="plan-status">healthy</span>
+      </div>
+      <div class="po-rings" id="po-rings">
+        <!-- four mini rings injected by popover.js -->
+      </div>
+    </section>
 
-    <nav class="tabs">
-      <button class="tab active" data-tab="today">Today</button>
-      <button class="tab" data-tab="recent">Recent</button>
-      <button class="tab" data-tab="models">Models</button>
-    </nav>
+    <!-- ── Finance ───────────────────────────────────────────── -->
+    <section class="sect default-only">
+      <div class="sect-head">
+        <span class="sect-title">Finance</span>
+        <span class="sect-aux mono">USD</span>
+      </div>
+      <div class="po-finance">
+        <div class="po-card" id="po-card-extra">
+          <div class="po-card-lbl">Extra usage</div>
+          <div class="po-card-val mono">
+            <span class="currency">$</span><span id="extra-used">—</span><span class="of" id="extra-of"></span>
+          </div>
+          <div class="bar-track"><div class="bar-fill" id="extra-bar" style="width:0%"></div></div>
+          <div class="po-card-foot mono" id="extra-foot">—</div>
+        </div>
+        <div class="po-card" id="po-card-balance">
+          <div class="po-card-lbl">Balance</div>
+          <div class="po-card-val mono">
+            <span class="currency" id="bal-currency">$</span><span id="bal-val">—</span>
+          </div>
+          <div class="bar-track"><div class="bar-fill ok" id="bal-bar" style="width:0%"></div></div>
+          <div class="po-card-foot mono" id="bal-foot">—</div>
+        </div>
+      </div>
+    </section>
 
-    <section id="tab-content" class="tab-content"></section>
+    <!-- ── Today ─────────────────────────────────────────────── -->
+    <section class="sect default-only">
+      <div class="sect-head">
+        <span class="sect-title">Today</span>
+        <span class="sect-aux mono" id="today-aux">—</span>
+      </div>
+      <div class="po-today">
+        <div class="po-stat">
+          <div class="lbl">Cost eq</div>
+          <div class="val mono" id="today-cost">—</div>
+          <div class="sub mono" id="today-cost-sub">—</div>
+        </div>
+        <div class="po-stat">
+          <div class="lbl">Messages</div>
+          <div class="val mono" id="today-msgs">—</div>
+          <div class="sub mono" id="today-msgs-sub">—</div>
+        </div>
+        <div class="po-stat">
+          <div class="lbl">Cache hit</div>
+          <div class="val mono ok" id="today-cache">—</div>
+          <div class="sub mono" id="today-cache-sub">—</div>
+        </div>
+      </div>
+    </section>
 
-    <footer class="popover-footer">
-      <span class="footer-hint mono">⌘D dashboard · ⌘R refresh</span>
-      <a href="#" id="footer-dashboard">Open dashboard →</a>
+    <!-- ── Footer ────────────────────────────────────────────── -->
+    <footer class="po-foot">
+      <span class="kbds mono">
+        <kbd>⌘D</kbd> dashboard <kbd>⌘R</kbd> refresh
+      </span>
+      <a href="#" class="open-link" id="footer-dashboard">Open →</a>
     </footer>
   </div>
 
+  <!-- ── Preferences panel (slides over main view) ──────────── -->
   <div id="prefs" class="prefs-panel" hidden>
     <header class="prefs-header">
       <button id="prefs-back" class="icon-btn" title="Back" aria-label="Back to main view">←</button>
@@ -57,8 +143,12 @@
         <button id="check-updates-btn" class="prefs-btn">Check now</button>
       </li>
       <li class="prefs-row">
+        <span>Open dashboard</span>
+        <button id="prefs-dashboard-btn" class="prefs-btn">Open →</button>
+      </li>
+      <li class="prefs-row">
         <span>About</span>
-        <span id="about-version" class="mono prefs-meta">v0.3.1</span>
+        <span id="about-version" class="mono prefs-meta">v0.4.0</span>
       </li>
     </ul>
   </div>

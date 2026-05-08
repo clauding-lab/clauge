@@ -36,12 +36,16 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("popover").is_some() {
         return Ok(());
     }
+    // v0.4.0: popover narrowed to 300px (was 380px) to match the new design's
+    // denser layout. Height stays ample so the warning-state variant fits
+    // comfortably without resizing the OS window — CSS just hides the
+    // default-only sections.
     let win = WebviewWindowBuilder::new(
         app,
         "popover",
         WebviewUrl::App("index.html".into()),
     )
-    .inner_size(380.0, 600.0)
+    .inner_size(300.0, 540.0)
     .resizable(false)
     .decorations(false)
     .transparent(true)
