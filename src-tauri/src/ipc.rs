@@ -208,6 +208,18 @@ pub async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Test-only command for the E2E suite (T24). Triggers
+/// `RunEvent::ExitRequested`, which the lib.rs `run()` callback handles for
+/// graceful sidecar shutdown (CommandChild has no Drop — see sidecar.rs).
+///
+/// Returns `()` rather than `Result<(), String>` because we are quitting
+/// anyway — there's no caller left to receive an error. Matches T11/T18/T20
+/// `tauri::AppHandle` convention so `invoke_handler!` glue stays uniform.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
