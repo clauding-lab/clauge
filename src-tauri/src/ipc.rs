@@ -65,7 +65,9 @@ pub enum UpdateStatus {
 
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
+    use tauri_plugin_notification::NotificationExt;
     use tauri_plugin_updater::UpdaterExt;
+
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await {
         Ok(Some(update)) => {
@@ -73,6 +75,58 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
                 .download_and_install(|_, _| {}, || {})
                 .await
                 .map_err(|e| e.to_string())?;
+
+            // Strip quarantine attr on the running .app bundle so unsigned updates
+            // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
+            //
+            // Dev mode caveat: `current_exe()` returns the dev target binary
+            // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
+            // returns None and the xattr block silently skips. In production it
+            // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
+            // ancestors() walks up to the .app bundle.
+            #[cfg(target_os = "macos")]
+            {
+                use std::process::Command;
+                if let Ok(exe) = std::env::current_exe() {
+                    if let Some(bundle) = exe
+                        .ancestors()
+                        .find(|p| p.extension().is_some_and(|e| e == "app"))
+                    {
+                        match Command::new("xattr")
+                            .args(["-dr", "com.apple.quarantine"])
+                            .arg(bundle)
+                            .output()
+                        {
+                            Ok(out) if out.status.success() => {
+                                log::info!("Stripped quarantine from {:?}", bundle);
+                            }
+                            Ok(out) => {
+                                log::warn!(
+                                    "xattr exited non-zero stripping quarantine: {}",
+                                    String::from_utf8_lossy(&out.stderr)
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to invoke xattr: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // User-visible notification that update is installed.
+            // Platform-agnostic; capability `notification:default` is granted in
+            // src-tauri/capabilities/main.json.
+            if let Err(e) = app
+                .notification()
+                .builder()
+                .title("Clauge updated")
+                .body("Restart the app to apply the new version.")
+                .show()
+            {
+                log::warn!("Failed to dispatch update notification: {}", e);
+            }
+
             Ok(UpdateStatus::Installed)
         }
         Ok(None) => Ok(UpdateStatus::UpToDate),
