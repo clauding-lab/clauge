@@ -28,5 +28,12 @@
       "icons/icon.icns"
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJDOTFBRjg4QkUxRjY3OTAKUldTUVp4KytpSytSTE0xS0ZjNkRzL05WTi9qaXoyOHlZUmFIM2F1RUIwYk54c3VwVGQ2S09aMSsK",
+      "endpoints": [
+        "https://clauding-lab.github.io/clauge/latest.json"
+      ]
+    }
+  }
 }
