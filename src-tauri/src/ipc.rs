@@ -1,18 +1,41 @@
 //! Tauri IPC commands exposed to WebView pages.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tauri::State;
+use tauri_plugin_shell::process::CommandChild;
 use tokio::sync::Notify;
 
-/// Shared app state holding the sidecar's bound port and shutdown signal.
+/// Shared app state holding the sidecar's bound port and shutdown machinery.
 ///
-/// `shutdown` is notified from the `RunEvent::ExitRequested` hook in `lib.rs`
-/// so the sidecar supervisor can break out of its loop and explicitly kill the
-/// running child (`CommandChild` has no `Drop`, so dropping the binding alone
-/// would leak the OS process).
+/// Three pieces work together to guarantee no orphan sidecar processes
+/// (Bug #1 in v0.3.0 — accumulated `clauge-server` PIDs across launches):
+///
+/// 1. `shutdown` (`tokio::sync::Notify`) — wakes the supervisor when it's
+///    currently awaiting `notified()`. Used for the fast path: if the
+///    supervisor is racing `select!` against `rx.recv()`, this notify drops
+///    it through immediately.
+///
+/// 2. `shutting_down` (`AtomicBool`) — a level-triggered flag the supervisor
+///    polls between phases. `Notify` is edge-triggered: if no one's
+///    currently awaiting `notified()` (e.g., the supervisor is mid-spawn or
+///    in backoff sleep), the wake-up is LOST. The flag covers that gap —
+///    every loop iteration checks it and breaks out if set.
+///
+/// 3. `children` (`Arc<Mutex<Vec<CommandChild>>>`) — every spawned child is
+///    registered here so the `RunEvent::ExitRequested` handler in lib.rs
+///    can take ownership of the entire set and call `kill()` on each one.
+///    `CommandChild` has no `Drop` impl (verified against
+///    tauri-plugin-shell-2.3.5/src/process/mod.rs), so a child that the
+///    supervisor's loop hasn't yet observed (e.g., crash-respawn racing the
+///    quit signal) would otherwise survive the parent process exit.
 pub struct AppState {
     pub server_port: Arc<Mutex<Option<u16>>>,
     pub shutdown: Arc<Notify>,
+    pub shutting_down: Arc<AtomicBool>,
+    pub children: Arc<Mutex<Vec<CommandChild>>>,
 }
 
 impl Default for AppState {
@@ -20,6 +43,8 @@ impl Default for AppState {
         Self {
             server_port: Arc::new(Mutex::new(None)),
             shutdown: Arc::new(Notify::new()),
+            shutting_down: Arc::new(AtomicBool::new(false)),
+            children: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -33,6 +58,61 @@ impl AppState {
             .map_err(|e| format!("lock poisoned: {}", e))?;
         *guard = Some(port);
         Ok(())
+    }
+
+    /// Returns true if the app is shutting down. Supervisors poll this between
+    /// phases to ensure they stop respawning even if a `notify_waiters()` was
+    /// emitted while no task was awaiting `notified()`.
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
+    }
+
+    /// Register a sidecar child handle so it can be killed on app exit.
+    /// Returns silently on lock poison — losing the registration is bad but
+    /// not worth panicking for in production. The next time the lock recovers
+    /// (or the OS cleans up zombie processes) it'll be fine.
+    pub fn register_child(&self, child: CommandChild) {
+        match self.children.lock() {
+            Ok(mut guard) => guard.push(child),
+            Err(e) => log::error!("children lock poisoned at register: {}", e),
+        }
+    }
+
+    /// Drop a previously registered child by PID. Called when the supervisor
+    /// observes a natural `Terminated` event — keeps the Vec from growing
+    /// unboundedly across crash-respawn cycles.
+    pub fn unregister_child(&self, pid: u32) {
+        match self.children.lock() {
+            Ok(mut guard) => {
+                guard.retain(|c| c.pid() != pid);
+            }
+            Err(e) => log::error!("children lock poisoned at unregister: {}", e),
+        }
+    }
+
+    /// Take all currently registered children. Called from
+    /// `RunEvent::ExitRequested` in lib.rs to seize ownership of every live
+    /// sidecar process and `kill()` each one. Returns an empty Vec on lock
+    /// poison — at that point the children are leaked, but the alternative
+    /// (panicking) would be worse.
+    pub fn take_all_children(&self) -> Vec<CommandChild> {
+        match self.children.lock() {
+            Ok(mut guard) => std::mem::take(&mut *guard),
+            Err(e) => {
+                log::error!("children lock poisoned at take_all: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    /// Set the shutdown flag AND fire the notify so any currently-awaiting
+    /// supervisor wakes immediately. Two-phase because:
+    ///  - Setting the flag alone won't unblock a `notified()` await
+    ///  - `notify_waiters()` alone is lost if no task is awaiting
+    /// Together they cover both edge-triggered and level-triggered observers.
+    pub fn signal_shutdown(&self) {
+        self.shutting_down.store(true, Ordering::SeqCst);
+        self.shutdown.notify_waiters();
     }
 }
 
@@ -236,6 +316,38 @@ mod tests {
         let state = AppState::default();
         let err = read_port(&state).unwrap_err();
         assert!(err.contains("not yet set"));
+    }
+
+    #[test]
+    fn signal_shutdown_sets_flag() {
+        let state = AppState::default();
+        assert!(!state.is_shutting_down(), "default should be running");
+        state.signal_shutdown();
+        assert!(
+            state.is_shutting_down(),
+            "after signal_shutdown the flag must be true"
+        );
+    }
+
+    #[test]
+    fn take_all_children_drains_the_vec() {
+        // We can't construct a real CommandChild in a unit test (it requires
+        // a live process + tauri runtime), so we verify the empty-state
+        // behavior — take_all_children on an empty Vec returns an empty Vec
+        // without panicking, and the registry stays empty.
+        let state = AppState::default();
+        let drained = state.take_all_children();
+        assert!(drained.is_empty());
+        // Calling again is also a no-op
+        assert!(state.take_all_children().is_empty());
+    }
+
+    #[test]
+    fn unregister_child_on_empty_registry_is_noop() {
+        let state = AppState::default();
+        // Should not panic even though no child with PID 999 was ever registered
+        state.unregister_child(999);
+        assert!(state.take_all_children().is_empty());
     }
 
     #[cfg(target_os = "macos")]

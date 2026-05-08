@@ -188,19 +188,58 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // Honor spec §6.7 quit flow: when the OS event loop tells us the app
-        // is about to exit, signal the sidecar supervisor so it can call the
-        // explicit `child.kill()` (CommandChild has no Drop — see sidecar.rs).
-        // We then briefly yield to give the supervisor task a chance to wake
-        // up, take the CommandChild, and fire the kill before the runtime
-        // tears the async task down.
+        // Honor spec §6.7 quit flow. v0.3.1 hardened against orphan sidecars
+        // (Bug #1 in v0.3.0 smoke testing — clauge-server PIDs accumulated
+        // across launches because the supervisor's `notify_waiters()` was
+        // either lost edge-triggered OR couldn't see crash-respawned children).
+        //
+        // The fix has TWO halves:
+        //
+        //  1. SUPERVISOR-DRIVEN (preferred): set the shutting_down flag AND
+        //     fire notify_waiters. The supervisor loop in sidecar.rs polls the
+        //     flag between phases, so even a quit during backoff or mid-spawn
+        //     gets observed. If it's currently awaiting `notified()`, the
+        //     notify wakes it through immediately.
+        //
+        //  2. PARENT-DRIVEN (belt-and-braces): seize all currently-registered
+        //     children from AppState::children and explicitly kill each one.
+        //     This catches the case where a fresh child was spawned by the
+        //     crash circuit-breaker AFTER the user clicked Quit — the
+        //     supervisor's level-triggered guard would have stopped it on the
+        //     next iteration, but in the meantime a child OS process exists.
+        //     CommandChild has no Drop, so this kill is the only way to
+        //     guarantee the OS process exits with the parent.
         if let tauri::RunEvent::ExitRequested { .. } = event {
             if let Some(state) = app_handle.try_state::<ipc::AppState>() {
-                log::info!("Exit requested; signaling sidecar shutdown");
-                state.shutdown.notify_waiters();
-                // 500ms grace window: empirically enough for `kill()` to
-                // dispatch on macOS without making quit feel sluggish.
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                log::info!("Exit requested; tearing down sidecar children");
+                state.signal_shutdown();
+
+                // Drain the child registry and kill each one. We do this on
+                // the OS thread (not via async_runtime::spawn) because the
+                // tokio runtime is already winding down — a spawned async task
+                // here might never get scheduled before the process exits.
+                // CommandChild::kill is a sync function (it shells out to
+                // SharedChild::kill which calls libc::kill), so this is fine.
+                let children = state.take_all_children();
+                let count = children.len();
+                if count > 0 {
+                    log::info!("Killing {} sidecar child process(es) on quit", count);
+                }
+                for child in children {
+                    let pid = child.pid();
+                    if let Err(e) = child.kill() {
+                        log::warn!("Failed to kill sidecar pid={}: {}", pid, e);
+                    } else {
+                        log::info!("Killed sidecar pid={}", pid);
+                    }
+                }
+
+                // Brief grace window: lets the supervisor's `notified()`
+                // observer return cleanly AND gives `kill()` time to deliver
+                // SIGKILL before the runtime tears everything down. 200ms is
+                // empirically enough on macOS without making quit feel sluggish
+                // — most of the work above is synchronous already.
+                std::thread::sleep(std::time::Duration::from_millis(200));
             }
         }
     });
