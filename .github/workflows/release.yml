@@ -5,19 +5,17 @@
 # payload, and publishes the artifacts to a non-draft GitHub Release tied
 # to the tag.
 #
-# Updater publication (T26 dependency)
-# ------------------------------------
+# Updater publication
+# -------------------
 # tauri-action emits `latest.json` and uploads it to the Release alongside
 # the .dmg, .app.tar.gz, and .app.tar.gz.sig artifacts.  The updater
 # endpoint configured in src-tauri/tauri.conf.json points at
 # https://clauding-lab.github.io/clauge/latest.json — i.e. the gh-pages
-# branch.  This workflow does NOT push to gh-pages: that branch is bootstrapped
-# manually in T26 (`git checkout --orphan gh-pages` + `gh-pages` Pages source
-# enabled in repo Settings).  Once gh-pages exists, a follow-up step (or a
-# separate `peaceiris/actions-gh-pages` job) can copy the latest.json out of
-# the Release and into gh-pages on each tag.  Until then, the .json sitting on
-# the Release is harmless — the updater simply won't find it at the configured
-# endpoint, which matches the V3.0 unsigned-and-manual-first-install posture.
+# branch.  The "Mirror latest.json to gh-pages" step at the end of this
+# workflow copies the latest.json from the just-published Release into the
+# gh-pages branch on every tag.  The step guards on gh-pages existence:
+# if the branch hasn't been bootstrapped yet (T26-c manual step), the step
+# logs a ::warning:: and exits 0 — the Release itself is still published.
 #
 # E2E gap
 # -------
@@ -155,3 +153,48 @@ jobs:
           # gh-pages is initialised (T26).  Until then the file is just a
           # passive Release asset.
           includeUpdaterJson: true
+
+      # Mirror the latest.json that tauri-action just uploaded to the Release
+      # into the gh-pages branch, where the auto-updater endpoint serves it.
+      # Guards on gh-pages existence — until the branch is bootstrapped (T26-c),
+      # this step warns and exits 0 instead of failing the release.
+      - name: Mirror latest.json to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+
+          # Guard: does gh-pages exist on remote?
+          if ! git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" gh-pages | grep -q 'refs/heads/gh-pages'; then
+            echo "::warning::gh-pages branch does not exist — skipping latest.json mirror. Bootstrap gh-pages (T26-c) before next release."
+            exit 0
+          fi
+
+          # Download the latest.json that tauri-action just uploaded
+          DOWNLOAD_DIR=$(mktemp -d)
+          gh release download "$TAG" --pattern 'latest.json' --dir "$DOWNLOAD_DIR" --repo "$REPO"
+
+          # Clone gh-pages, swap latest.json, push
+          GH_PAGES_DIR=$(mktemp -d)
+          git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$GH_PAGES_DIR"
+
+          cp "$DOWNLOAD_DIR/latest.json" "$GH_PAGES_DIR/latest.json"
+
+          cd "$GH_PAGES_DIR"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Stage first, then check the index against HEAD: this catches both
+          # the "file changed" and "file is brand-new on gh-pages" cases.
+          # Using `git diff --quiet HEAD -- latest.json` directly would miss
+          # untracked-new-file because diff ignores untracked paths.
+          git add latest.json
+          if git diff --cached --quiet -- latest.json; then
+            echo 'latest.json unchanged — nothing to push.'
+            exit 0
+          fi
+
+          git commit -m "release: ${TAG} latest.json mirror"
+          git push origin gh-pages

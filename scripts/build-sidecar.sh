@@ -83,6 +83,24 @@ curl -fSL "$OTHER_URL" -o "$TMP_DIR/$OTHER_TARBALL" || {
   echo "[build-sidecar] FATAL: failed to download $OTHER_URL" >&2
   exit 1
 }
+
+# Verify SHA256 against nodejs.org's published SHASUMS256.txt.  Without this
+# check, a nodejs.org compromise, DNS-level MITM, or simple tarball corruption
+# could inject arbitrary Node bytes into the universal SEA sidecar that ships
+# inside the SIGNED DMG.  Fast (one extra HTTP fetch + a single shasum), and
+# fail-loud if mismatch.
+SHASUMS_URL="https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+echo "[build-sidecar] Verifying SHA256 against $SHASUMS_URL..."
+curl -fSL "$SHASUMS_URL" -o "$TMP_DIR/SHASUMS256.txt" || {
+  echo "[build-sidecar] FATAL: failed to download $SHASUMS_URL" >&2
+  exit 1
+}
+( cd "$TMP_DIR" && grep "  ${OTHER_TARBALL}\$" SHASUMS256.txt | shasum -a 256 -c - ) || {
+  echo "[build-sidecar] FATAL: SHA256 mismatch for $OTHER_TARBALL — possible tarball tampering or nodejs.org issue" >&2
+  exit 1
+}
+echo "[build-sidecar] SHA256 verified."
+
 tar -xzf "$TMP_DIR/$OTHER_TARBALL" -C "$TMP_DIR"
 OTHER_NODE="$TMP_DIR/node-v${NODE_VERSION}-darwin-${OTHER_ARCH}/bin/node"
 
