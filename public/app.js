@@ -215,8 +215,9 @@ function renderPlanCapacity() {
     planTag.textContent = '○ Awaiting sync';
     planTag.style.background = 'var(--glass-2)';
     planTag.style.color = 'var(--text-3)';
-    // Render four placeholder rings so the layout doesn't collapse.
-    body.innerHTML = ['Session', 'Weekly', 'Sonnet', 'Design']
+    // Render five placeholder rings so the layout doesn't collapse.
+    // (v0.4.0 fixup: Opus ring restored for v0.3.x parity.)
+    body.innerHTML = ['Session', 'Weekly', 'Sonnet', 'Opus', 'Design']
       .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
       .join('');
     inline.hidden = true;
@@ -224,10 +225,14 @@ function renderPlanCapacity() {
   }
 
   const plan = usage.plan ?? {};
+  // v0.4.0 fixup: Opus ring re-added (the v0.3.x dashboard rendered five
+  // rings; the design mock dropped to four. Restoring Opus preserves
+  // capacity visibility for Opus-heavy users.)
   const gauges = [
     { label: 'Session',    sub: '5h', metric: plan.fiveHour },
     { label: 'Weekly all', sub: '7d', metric: plan.sevenDay },
     { label: 'Sonnet',     sub: '7d', metric: plan.sevenDaySonnet },
+    { label: 'Opus',       sub: '7d', metric: plan.sevenDayOpus },
     { label: 'Design',     sub: '7d', metric: plan.sevenDayOmelette },
   ];
   body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
@@ -259,6 +264,7 @@ function renderPlanCapacity() {
     ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
     ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
     ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
+    ${inlineMiniRingHtml({ pct: plan.sevenDayOpus?.pct, label: 'Opus' })}
     ${inlineMiniRingHtml({ pct: plan.sevenDayOmelette?.pct, label: 'Design' })}
     <span class="sep"></span>
     <span class="num-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
@@ -831,7 +837,8 @@ async function initialLoad() {
   while (true) {
     const ok = await refreshAll();
     if (ok) {
-      console.log('[Clauge] Initial dashboard load succeeded');
+      // (Stripped success-log: DevTools ships in v0.4.0, but routine
+      // success messages were just noise. Failures still warn below.)
       return;
     }
     const elapsed = Date.now() - start;

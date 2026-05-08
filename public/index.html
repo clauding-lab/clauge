@@ -6,9 +6,11 @@
   <title>Clauge — Claude Code analytics</title>
   <link rel="icon" type="image/svg+xml" href="/clauge-icon-512.svg" />
   <link rel="alternate icon" type="image/png" href="/clauge-icon-fallback.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- v0.4.0 fixup (T39): self-hosted Inter + JetBrains Mono variable woff2
+       (latin subset). Replaces Google Fonts CDN calls so the dashboard is
+       privacy-preserving and works offline. -->
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin-variable.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jetbrains-mono-latin-variable.woff2" crossorigin />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -69,7 +71,7 @@
     </div>
 
     <div class="plan-body" id="plan-body">
-      <!-- four big-rings injected by app.js -->
+      <!-- five big-rings injected by app.js (Session/Weekly/Sonnet/Opus/Design) -->
     </div>
 
     <div class="plan-side">
@@ -355,14 +357,20 @@
               <div class="set-label">Show menu bar app</div>
               <div class="set-help">Compact glanceable popover in the macOS menu bar.</div>
             </div>
-            <div class="toggle on" id="set-menubar"></div>
+            <!-- v0.4.0 fixup: visibly read-only — was a fake clickable toggle
+                 in v0.4.0-rc1 with no wired handler. Switched to a static
+                 badge (matching the pricing-source pattern) until the
+                 backing API ships in v0.4.x. -->
+            <span class="tag tag-readonly" id="set-menubar" aria-readonly="true" title="Editable settings coming in v0.4.x">On</span>
           </div>
           <div class="set-row">
             <div>
               <div class="set-label">Default period</div>
               <div class="set-help">Period selected when the dashboard opens.</div>
             </div>
-            <select class="input" id="set-default-period">
+            <!-- v0.4.0 fixup: disabled — selecting did not persist in v0.4.0-rc1.
+                 Will re-enable once a `defaultPeriod` config endpoint exists. -->
+            <select class="input input-disabled" id="set-default-period" disabled aria-readonly="true" title="Editable settings coming in v0.4.x">
               <option value="today">Today</option>
               <option value="7d" selected>7 days</option>
               <option value="30d">30 days</option>

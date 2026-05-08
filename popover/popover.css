@@ -4,6 +4,27 @@
  * (public/styles.css). Both files share the brand orange #d97757 and the
  * warm-dark gradient family but the popover stays narrower / denser. */
 
+/* v0.4.0 fixup (T39): self-hosted variable fonts. Single woff2 per family
+ * carries every weight (Google Fonts serves the same variable file for
+ * 400/500/600/700 of Inter and 400/500/600 of JetBrains Mono on modern
+ * UAs). Latin subset only — covers UI strings + numerics. Local paths
+ * are relative to popover.css's directory. `font-display: swap` so
+ * system fallback paints first if the woff2 is delayed. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("fonts/inter-latin-variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
+}
+
 :root {
   color-scheme: dark;
 
@@ -77,8 +98,11 @@ html, body {
   pointer-events: none;
   border-radius: inherit;
 }
-/* Warning state narrows the popover and tints the header. */
-#root[data-state="warn"] { width: 240px; }
+/* v0.4.0 fixup (T39): warning state no longer narrows the inner surface
+ * (was `width: 240px`) — the OS window stays at 300px, so a 240px CSS
+ * width left a 60px transparent gap on the right. The warn variant now
+ * just retints the header and swaps the visible section via the rules
+ * below. */
 
 /* Hide the irrelevant sections per state. CSS-only swap so popover.js can
  * just toggle one attribute. */
@@ -180,21 +204,24 @@ html, body {
 .sect-aux.ok { color: var(--ok); }
 
 /* ── Plan capacity rings ──────────────────────────────────── */
+/* v0.4.0 fixup: 5 columns (was 4) — restored Opus ring for v0.3.x parity.
+ * The 300px popover now packs 5 rings with 2px gaps; ring diameter shrank
+ * to 42px so labels still fit comfortably. */
 .po-rings {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
 }
 .po-ring-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 .mini-ring {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
 }
 .mini-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .mini-ring.healthy svg { filter: drop-shadow(0 2px 6px rgba(217, 119, 87, 0.28)); }
@@ -210,7 +237,7 @@ html, body {
   justify-content: center;
   gap: 1px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -236,21 +263,21 @@ html, body {
   -webkit-text-fill-color: transparent;
 }
 .mini-ring .pct .sym {
-  font-size: 7.5px;
+  font-size: 6.5px;
   color: var(--text-3);
   margin-left: 1px;
   align-self: center;
-  transform: translateY(-3px);
+  transform: translateY(-2.5px);
 }
 .po-ring-label {
-  font-size: 9.5px;
+  font-size: 8.5px;
   font-weight: 500;
   color: var(--text);
   text-align: center;
   line-height: 1.1;
 }
 .po-ring-reset {
-  font-size: 8.5px;
+  font-size: 7.5px;
   color: var(--text-3);
   text-align: center;
   margin-top: 1px;
@@ -364,6 +391,18 @@ html, body {
 #today-cost { -webkit-user-select: text; user-select: text; }
 
 /* ── Warning state body ───────────────────────────────────── */
+/* v0.4.0 fixup (T39): with the popover at fixed 300×440, the warn body
+ * is the only visible section (default rings/finance/today are hidden).
+ * Pad the warn section vertically so the big ring sits roughly centered
+ * in the available glass surface instead of sticking to the top edge. */
+#warn-body {
+  padding: 28px 12px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+}
 .warn-ring-wrap {
   display: flex;
   flex-direction: column;

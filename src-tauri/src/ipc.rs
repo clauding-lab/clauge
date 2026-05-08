@@ -328,6 +328,16 @@ pub fn quit_app(app: tauri::AppHandle) {
 /// frontend from being tricked into fetching arbitrary URLs. The sidecar's
 /// SSRF surface is already minimal (it only reads local files), but defense
 /// in depth is cheap here.
+/// Maximum response body that `proxy_fetch` will buffer into memory.
+///
+/// 10 MiB ceiling = defense in depth. The sidecar is local and trusted,
+/// but a runaway endpoint (or a future bug that streams an unbounded
+/// log payload) shouldn't be able to OOM the Tauri host process by
+/// returning a JSON document larger than the popover could ever render.
+/// Largest legitimate response observed in v0.3.x is ~600KB (full
+/// sessions list with 488 sessions); 10 MiB leaves ~16× headroom.
+const PROXY_FETCH_MAX_BYTES: usize = 10 * 1024 * 1024;
+
 #[tauri::command]
 pub async fn proxy_fetch(
     state: State<'_, AppState>,
@@ -338,13 +348,39 @@ pub async fn proxy_fetch(
     }
     let port = read_port(&state)?;
     let url = format!("http://127.0.0.1:{}{}", port, path);
+    // Method-pinned GET. DO NOT switch to a method parameter without re-reviewing
+    // the IPC threat model — DELETE /api/usage exists on the sidecar.
     let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {} for {}", resp.status(), path));
     }
-    resp.json::<serde_json::Value>()
-        .await
-        .map_err(|e| e.to_string())
+    // Buffer the body fully (so we can enforce the byte cap) before parsing.
+    // `resp.json()` would silently consume an unbounded stream.
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > PROXY_FETCH_MAX_BYTES {
+        return Err(format!(
+            "response too large: {} bytes (cap {} bytes)",
+            bytes.len(),
+            PROXY_FETCH_MAX_BYTES
+        ));
+    }
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+}
+
+/// Pure body-cap check used by `proxy_fetch`. Extracted so tests can
+/// exercise the cap logic without spinning up an HTTP server / Tauri
+/// runtime. Returns `Ok(value)` when the body decodes within the cap,
+/// `Err(reason)` otherwise.
+#[cfg(test)]
+fn check_body_cap(bytes: &[u8]) -> Result<serde_json::Value, String> {
+    if bytes.len() > PROXY_FETCH_MAX_BYTES {
+        return Err(format!(
+            "response too large: {} bytes (cap {} bytes)",
+            bytes.len(),
+            PROXY_FETCH_MAX_BYTES
+        ));
+    }
+    serde_json::from_slice(bytes).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -433,6 +469,31 @@ mod tests {
         for path in good {
             assert!(path.starts_with("/api/"), "should be allowed: {}", path);
         }
+    }
+
+    #[test]
+    fn proxy_fetch_rejects_oversized_body() {
+        // Construct a body just over the cap. Use a JSON-shaped payload so the
+        // cap rejection (not a JSON parse error) is what we observe.
+        let oversize_len = PROXY_FETCH_MAX_BYTES + 1;
+        let payload = vec![b'a'; oversize_len];
+        let err = check_body_cap(&payload).unwrap_err();
+        assert!(
+            err.starts_with("response too large"),
+            "expected size cap error, got: {}",
+            err
+        );
+        // And: a body comfortably under the cap should pass through and parse.
+        let ok = b"{\"k\":\"v\"}";
+        let value = check_body_cap(ok).unwrap();
+        assert_eq!(value["k"], "v");
+    }
+
+    #[test]
+    fn proxy_fetch_cap_is_10_mib() {
+        // Pin the constant so accidental edits to PROXY_FETCH_MAX_BYTES are
+        // surfaced by a test failure rather than slipping through unnoticed.
+        assert_eq!(PROXY_FETCH_MAX_BYTES, 10 * 1024 * 1024);
     }
 
     #[cfg(target_os = "macos")]

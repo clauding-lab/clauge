@@ -12,6 +12,24 @@
  *   - Glass primitives apply via .glass / .glass-pill / .glass-inset
  */
 
+/* v0.4.0 fixup (T39): self-hosted variable fonts. Mirror of popover.css
+ * declarations — `public/fonts/` for the dashboard window. Variable woff2
+ * encodes all weights (400-700 for Inter, 400-600 for JetBrains Mono). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/inter-latin-variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
+}
+
 :root {
   color-scheme: dark;
 
@@ -598,6 +616,22 @@ td.ok { color: var(--ok); }
     inset 0 1px 1px rgba(0, 0, 0, 0.4),
     inset 0 0 0 1px var(--brand);
 }
+/* v0.4.0 fixup: disabled-input variant for settings whose backing API
+ * isn't shipped yet. `disabled` would already neutralize the control,
+ * but this gives a clearer visual signal and a not-allowed cursor. */
+.input-disabled,
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: var(--text-3);
+}
+.tag-readonly {
+  cursor: not-allowed;
+  opacity: 0.7;
+  font-family: var(--mono);
+  background: var(--glass-2);
+  color: var(--text-2);
+}
 
 /* iOS-style toggle */
 .toggle {
@@ -845,8 +879,11 @@ td.ok { color: var(--ok); }
 @keyframes pulse { 50% { opacity: 0.35; } }
 
 .plan-body {
+  /* v0.4.0 fixup: 5 columns (was 4) to fit the restored Opus ring while
+   * preserving v0.3.x parity. Big-ring shrunk slightly so 5 rings + side
+   * cards still fit cleanly within the hero's 1fr column. */
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   position: relative;
 }
@@ -854,12 +891,12 @@ td.ok { color: var(--ok); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 6px 4px;
+  gap: 12px;
+  padding: 6px 2px;
 }
 .big-ring {
-  width: 132px;
-  height: 132px;
+  width: 110px;
+  height: 110px;
   position: relative;
 }
 .big-ring svg {
@@ -883,7 +920,7 @@ td.ok { color: var(--ok); }
   line-height: 1;
 }
 .ring-pct .big {
-  font-size: 34px;
+  font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.04em;
   background: linear-gradient(180deg, #fff8f0, #f0d8c4);
@@ -893,11 +930,11 @@ td.ok { color: var(--ok); }
   line-height: 1;
 }
 .ring-pct .pct-sym {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-3);
   margin-left: 2px;
   align-self: center;
-  transform: translateY(-8px);
+  transform: translateY(-7px);
 }
 .ring-meta { text-align: center; }
 .ring-label {

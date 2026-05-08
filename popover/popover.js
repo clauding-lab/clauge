@@ -159,14 +159,19 @@ function renderHeader({ ingestedAt, healthOk }) {
 // ─── render: rings ────────────────────────────────────────
 function renderRings(usage) {
   const plan = usage?.plan ?? {};
-  // Mapping decision (v0.4.0): the design's four rings are
-  // Session / Weekly / Sonnet / Design. The API has `sevenDayOmelette`
-  // (the internal codename for the Design model) which the v0.3.x
-  // dashboard already labels "Design". Keep that label here.
+  // Mapping decision (v0.4.0 fixup): the design mock had four rings
+  // (Session / Weekly / Sonnet / Design). v0.3.x rendered FIVE rings — the
+  // design's set plus Opus. Auto-updating from v0.3.x to v0.4.0 silently
+  // dropped Opus visibility, which is a regression for Opus-heavy users
+  // (Adnan's profile: Opus is the user's primary working model). We
+  // therefore extend the design's 4-ring grid to 5 columns to preserve
+  // capacity parity. CSS handles the tighter 5-column layout via
+  // `.po-rings { grid-template-columns: repeat(5, 1fr); }`.
   const gauges = [
     { label: 'Session', pctFrac: (plan.fiveHour?.pct ?? 0) / 100, reset: fmtRelative(plan.fiveHour?.resetsAt) },
     { label: 'Weekly',  pctFrac: (plan.sevenDay?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDay?.resetsAt) },
     { label: 'Sonnet',  pctFrac: (plan.sevenDaySonnet?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDaySonnet?.resetsAt) },
+    { label: 'Opus',    pctFrac: (plan.sevenDayOpus?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDayOpus?.resetsAt) },
     { label: 'Design',  pctFrac: (plan.sevenDayOmelette?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDayOmelette?.resetsAt) },
   ];
   const root = document.getElementById('po-rings');

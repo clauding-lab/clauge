@@ -47,8 +47,21 @@ mkdir -p "$OUT"
 # and `fill="..."` (other than fill="none") with the black equivalent. The
 # opacity / stroke-opacity attributes are left in place so the alpha channel
 # carries the visual hierarchy macOS uses for the template tint.
-TMP="$(mktemp -t clauge-tray-mono).svg"
-trap 'rm -f "$TMP"' EXIT
+#
+# v0.4.0 fixup (T39): the previous `TMP="$(mktemp -t clauge-tray-mono).svg"`
+# leaked a tempfile every run — `mktemp -t` on macOS BSD treats its argument
+# as a *prefix only* and creates `/var/folders/.../clauge-tray-mono.XXXX`,
+# then the shell appends `.svg` to a separate (never-created) path. The
+# original tempfile was orphaned each run.
+#
+# Cross-platform fix: create a tempdir (mktemp -d works identically on BSD
+# and GNU), put the .svg inside it. The trap recursively removes the dir,
+# so neither the dir nor the inner file is left behind. sips needs the .svg
+# extension to recognize the source format — that requirement is what made
+# the simple `-t prefix.svg` form impossible.
+TMPDIR_LOCAL="$(mktemp -d -t clauge-tray-mono.XXXXXX)"
+trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
+TMP="$TMPDIR_LOCAL/mono.svg"
 
 # sed flags: -E for extended regex; the substitutions are explicit per-color
 # rather than a generic `stroke="#[a-f0-9]+"` blanket because we want to keep

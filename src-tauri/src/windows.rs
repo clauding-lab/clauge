@@ -36,16 +36,32 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("popover").is_some() {
         return Ok(());
     }
-    // v0.4.0: popover narrowed to 300px (was 380px) to match the new design's
-    // denser layout. Height stays ample so the warning-state variant fits
-    // comfortably without resizing the OS window — CSS just hides the
-    // default-only sections.
+    // v0.4.0 fixup (T39): popover sized to 300×440 — the previous 300×540
+    // had a ~150px transparent dead zone below content in the default state
+    // (real content stack tops out near 390px). The default and warning
+    // states now share a single fixed surface; CSS just hides the
+    // irrelevant sections — see popover.css `data-state` selectors.
+    //
+    // 440px = default-state real content (~395px after restoring the
+    // 5-ring layout with Opus) + ~45px tasteful breathing room. The
+    // warn-state body is shorter (~250px) so it shows ~150px of glass
+    // surface below the suggestion — visually intentional rather than
+    // a dead zone, because the popover's `data-state="warn"` selector
+    // tints the glass amber. Dynamic resize via `appWindow.setSize`
+    // on state-flip would tighten warn further, but the user-visible
+    // win is small relative to the added complexity.
+    //
+    // History: v0.3.x ran 380×540 (looser content). v0.4.0 narrowed to
+    // 300px for the denser redesign but kept the original 540 height,
+    // which created the dead zone. The warn-state CSS `width: 240px`
+    // rule has also been removed (it produced a 60px gap on the right
+    // when the OS window stayed at 300px).
     let win = WebviewWindowBuilder::new(
         app,
         "popover",
         WebviewUrl::App("index.html".into()),
     )
-    .inner_size(300.0, 540.0)
+    .inner_size(300.0, 440.0)
     .resizable(false)
     .decorations(false)
     .transparent(true)

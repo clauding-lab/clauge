@@ -3,9 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <title>Clauge</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- v0.4.0 fixup (T39): self-hosted Inter + JetBrains Mono variable woff2
+       (latin subset only — covers the popover's UI strings + numerics).
+       Replaces fonts.googleapis.com / fonts.gstatic.com calls so the
+       popover renders without a CDN beacon, works fully offline, and
+       skips the cold-start render block. -->
+  <link rel="preload" as="font" type="font/woff2" href="fonts/inter-latin-variable.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="fonts/jetbrains-mono-latin-variable.woff2" crossorigin>
   <link rel="stylesheet" href="popover.css">
 </head>
 <body>
@@ -60,7 +64,7 @@
         <span class="sect-aux mono" id="plan-status">healthy</span>
       </div>
       <div class="po-rings" id="po-rings">
-        <!-- four mini rings injected by popover.js -->
+        <!-- five mini rings injected by popover.js (Session/Weekly/Sonnet/Opus/Design) -->
       </div>
     </section>
 
