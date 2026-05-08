@@ -6,6 +6,14 @@
   "permissions": [
     "core:default",
     "shell:allow-spawn",
-    "shell:allow-kill"
+    "shell:allow-kill",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "updater:allow-check",
+    "updater:default",
+    "notification:default",
+    "window-state:default",
+    "store:default"
   ]
 }
