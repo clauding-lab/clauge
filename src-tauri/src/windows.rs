@@ -19,6 +19,14 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Read the bound port from AppState; fall back to 3456 if absent or poisoned.
     // (Plan used `.lock().unwrap()` which panics on poison; `.ok().and_then(...)`
     // gracefully degrades to the default.)
+    //
+    // TODO(spec §6.1 race): If the user opens the dashboard before the
+    // discover/spawn task has set AppState.server_port, this falls back to
+    // 3456. That's correct for the common case (sidecar binds 3456), but
+    // silently wrong if another app squatted on 3456 and the sidecar bound
+    // 3457+. Spec §6.1 line 300 makes this recoverable via the dashboard's
+    // 10s poll loop. Future mitigation: show a "Starting server…" splash
+    // while port=None, or block dashboard creation until set_port fires.
     let port = app
         .try_state::<crate::ipc::AppState>()
         .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
@@ -42,7 +50,9 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     win.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            let _ = win_handle.hide();
+            if let Err(e) = win_handle.hide() {
+                log::warn!("Failed to hide dashboard window on close: {}", e);
+            }
         }
     });
 

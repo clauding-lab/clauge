@@ -262,7 +262,7 @@ User opens popover → clicks ⚙ → toggles "Launch at login" OFF
 ### 6.7 Quit flow
 
 ```
-User: ⌘Q  OR  Tray → Quit  OR  red close button on dashboard
+User: ⌘Q  OR  Tray → Quit
   │
   ├─→ [Tauri main] save window state via tauri-plugin-window-state
   ├─→ [Tauri main] SIGTERM clauge-server sidecar
@@ -272,6 +272,8 @@ User: ⌘Q  OR  Tray → Quit  OR  red close button on dashboard
 ```
 
 If V3 was running as client (sidecar owned by external clauge), no SIGTERM is sent.
+
+**Red close button on dashboard ≠ quit.** The macOS-HIG-correct pattern for tray-anchored apps is hide-on-close: the red-X button calls `prevent_close()` + `hide()`, leaving the process and sidecar running. Window state (size, position) is persisted by `tauri-plugin-window-state` on hide; the DOM, scroll position, and JS state stay in memory. Reopening via Tray → "Open Dashboard" is instant — no page reload, no port re-fetch. Only ⌘Q and Tray → Quit terminate the app.
 
 **Sidecar-side details (material to the 2.5s grace window):**
 
