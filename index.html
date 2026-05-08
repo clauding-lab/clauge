@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clauge — Update Endpoint</title>
+  <style>
+    :root {
+      --bg: #0e0e10;
+      --fg: #e8e6e3;
+      --dim: #9b9893;
+      --accent: #f0a35e;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    }
+    main {
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 6rem 1.5rem 4rem;
+    }
+    h1 {
+      font-weight: 600;
+      font-size: 1.5rem;
+      letter-spacing: -0.01em;
+      margin: 0 0 0.5rem;
+    }
+    p { margin: 0 0 1rem; color: var(--dim); }
+    code {
+      background: rgba(255,255,255,0.06);
+      padding: 0.15rem 0.35rem;
+      border-radius: 3px;
+      font-size: 0.9em;
+      color: var(--fg);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .meta {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.85rem;
+      color: var(--dim);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Clauge update endpoint</h1>
+    <p>This page hosts the Tauri auto-updater payload for the Clauge macOS menu-bar app. It's not meant to be browsed — your installed Clauge fetches <code>latest.json</code> from here automatically.</p>
+    <p>Looking for a download? Head to <a href="https://github.com/clauding-lab/clauge/releases">github.com/clauding-lab/clauge/releases</a>.</p>
+    <p class="meta">Source: <a href="https://github.com/clauding-lab/clauge">clauding-lab/clauge</a> · Branch: <code>gh-pages</code></p>
+  </main>
+</body>
+</html>
