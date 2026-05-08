@@ -1,6 +1,8 @@
 mod ipc;
 mod port_discovery;
 mod sidecar;
+mod tray;
+mod windows;
 
 use tauri::Manager;
 
@@ -28,6 +30,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ipc::AppState::default())
         .setup(|app| {
+            crate::tray::init(app.handle())?;
+            crate::windows::create_popover(app.handle())?;
+
             // Cold-start: discover an external clauge-server first; fall back to
             // spawning + supervising our sidecar binary. Runs in a detached async
             // task so the WebView UI thread is unblocked.
