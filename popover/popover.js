@@ -5,6 +5,18 @@ const { invoke } = window.__TAURI__.core;
 
 let serverPort = 3456;
 
+// Escape user-derived strings before they hit innerHTML. Numeric values from
+// toFixed/Math.round are safe and don't need this.
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function init() {
   try {
     serverPort = await invoke('get_server_port');
@@ -58,14 +70,21 @@ async function openDashboard() {
 
 async function refresh() {
   try {
-    const [today, plan, hours] = await Promise.all([
+    const [summary, sessions, models, usage, cache, hours] = await Promise.all([
+      fetchJson(`/api/summary?period=today`),
       fetchJson(`/api/sessions?period=today`),
+      fetchJson(`/api/models?period=today`),
       fetchJson(`/api/usage`),
+      fetchJson(`/api/cache?period=today`),
       fetchJson(`/api/hours?period=today`),
     ]);
-    renderHero(today);
-    renderRings(plan);
+    renderHero(summary);
+    renderRings(usage);
     renderHeroSpark(hours);
+    lastData.summary = summary;
+    lastData.sessions = sessions;
+    lastData.models = models;
+    lastData.cache = cache;
     renderActiveTab();
   } catch (e) {
     console.error('refresh failed', e);
@@ -78,11 +97,18 @@ async function fetchJson(path) {
   return r.json();
 }
 
-let lastData = { today: null, plan: null, hours: null };
+let lastData = {
+  summary: null,
+  sessions: null,
+  models: null,
+  usage: null,
+  cache: null,
+  hours: null,
+};
 
-function renderHero(today) {
-  lastData.today = today;
-  const total = today?.totals?.cost ?? 0;
+function renderHero(summary) {
+  lastData.summary = summary;
+  const total = summary?.cost ?? 0;
   document.getElementById('hero-amount').textContent = `$${total.toFixed(2)}`;
 }
 
@@ -91,7 +117,9 @@ function renderHeroSpark(hours) {
   const arr = (hours?.hours ?? []).map((h) => h.cost ?? 0);
   if (arr.length === 0) return;
   const max = Math.max(...arr, 0.01);
-  const now = new Date().getHours();
+  // Server bucketing uses UTC (lib/aggregator.js:88 calls getUTCHours()), so
+  // the "now" index must use UTC too to keep the highlight aligned.
+  const now = new Date().getUTCHours();
   const el = document.getElementById('hero-spark');
   el.innerHTML = arr
     .map((v, i) => {
@@ -104,13 +132,16 @@ function renderHeroSpark(hours) {
     .join('');
 }
 
-function renderRings(plan) {
-  lastData.plan = plan;
+function renderRings(usage) {
+  lastData.usage = usage;
+  // /api/usage shape: { ingested, ingestedAt, org, plan: { fiveHour, sevenDay, sevenDaySonnet, sevenDayOpus, ... } }
+  // where each metric is { pct, resetsAt }.
+  const p = usage?.plan ?? {};
   const gauges = [
-    { label: 'Session', pct: plan?.session_5h ?? 0, sub: '5h', reset: plan?.session_reset ?? '—' },
-    { label: 'Weekly', pct: plan?.seven_day ?? 0, sub: '7d', reset: plan?.seven_day_reset ?? '—' },
-    { label: 'Sonnet', pct: plan?.seven_day_sonnet ?? 0, sub: '7d', reset: plan?.seven_day_reset ?? '—' },
-    { label: 'Opus', pct: plan?.seven_day_opus ?? 0, sub: '7d', reset: plan?.seven_day_reset ?? '—' },
+    { label: 'Session', pct: p.fiveHour?.pct ?? 0, sub: '5h', reset: p.fiveHour?.resetsAt ?? '—' },
+    { label: 'Weekly', pct: p.sevenDay?.pct ?? 0, sub: '7d', reset: p.sevenDay?.resetsAt ?? '—' },
+    { label: 'Sonnet', pct: p.sevenDaySonnet?.pct ?? 0, sub: '7d', reset: p.sevenDaySonnet?.resetsAt ?? '—' },
+    { label: 'Opus', pct: p.sevenDayOpus?.pct ?? 0, sub: '7d', reset: p.sevenDayOpus?.resetsAt ?? '—' },
   ];
   const root = document.getElementById('rings');
   root.innerHTML = gauges.map(ringHtml).join('');
@@ -140,8 +171,8 @@ function ringHtml(g) {
         </div>
       </div>
       <div style="text-align:center;line-height:1.15">
-        <div style="font-size:10.5px;color:var(--text);font-weight:500">${g.label}</div>
-        <div class="mono" style="font-size:9.5px;color:var(--text-3);margin-top:1px">${g.reset}</div>
+        <div style="font-size:10.5px;color:var(--text);font-weight:500">${escapeHtml(g.label)}</div>
+        <div class="mono" style="font-size:9.5px;color:var(--text-3);margin-top:1px">${escapeHtml(g.reset)}</div>
       </div>
     </div>`;
 }
@@ -157,18 +188,24 @@ function switchTab(name) {
 
 function renderActiveTab() {
   const root = document.getElementById('tab-content');
-  if (activeTab === 'today') root.innerHTML = renderTodayTab(lastData.today);
-  else if (activeTab === 'recent') root.innerHTML = renderRecentTab(lastData.today);
-  else if (activeTab === 'models') root.innerHTML = renderModelsTab(lastData.today);
+  if (activeTab === 'today') {
+    root.innerHTML = renderTodayTab(lastData.summary, lastData.cache);
+  } else if (activeTab === 'recent') {
+    root.innerHTML = renderRecentTab(lastData.sessions);
+  } else if (activeTab === 'models') {
+    root.innerHTML = renderModelsTab(lastData.models);
+  }
 }
 
-function renderTodayTab(today) {
-  if (!today) return '<div class="prefs-meta">Loading…</div>';
+function renderTodayTab(summary, cache) {
+  if (!summary) return '<div class="prefs-meta">Loading…</div>';
+  const hitRate = cache?.hitRate;
+  const cacheVal = hitRate == null ? '—' : `${Math.round(hitRate * 100)}%`;
   const items = [
-    { label: 'Messages', value: today?.totals?.messageCount ?? 0 },
-    { label: 'Tool calls', value: today?.totals?.toolCallCount ?? 0 },
-    { label: 'Sessions', value: today?.sessions?.length ?? 0 },
-    { label: 'Cache hit', value: `${Math.round((today?.totals?.cacheHitRate ?? 0) * 100)}%`, accent: 'var(--ok)' },
+    { label: 'Messages', value: summary?.messageCount ?? 0 },
+    { label: 'Tool calls', value: summary?.toolCallCount ?? 0 },
+    { label: 'Sessions', value: summary?.sessionCount ?? 0 },
+    { label: 'Cache hit', value: cacheVal, accent: 'var(--ok)' },
   ];
   return `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
@@ -180,22 +217,34 @@ function renderTodayTab(today) {
     </div>`;
 }
 
-function renderRecentTab(today) {
-  const sessions = (today?.sessions ?? []).slice(0, 5);
+function renderRecentTab(sessionsResp) {
+  // /api/sessions shape: { period, project, count, sessions: [...] }.
+  // Each session has `startedAt` (ISO) and `byModel: [{ model, ... }]` —
+  // there is no flat `start` or `model` scalar on the wire.
+  const all = sessionsResp?.sessions ?? [];
+  // Server doesn't sort by recency, so we sort client-side, newest first.
+  const sessions = [...all]
+    .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))
+    .slice(0, 5);
   if (sessions.length === 0) return '<div class="prefs-meta">No sessions today.</div>';
   return `<div style="display:flex;flex-direction:column;gap:1px">
-    ${sessions.map((s, i, a) => `
+    ${sessions.map((s, i, a) => {
+      const primaryModel = s.byModel?.[0]?.model ?? null;
+      return `
       <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 4px;border-bottom:${i < a.length-1 ? '1px solid var(--hairline)' : 'none'};font-size:11.5px">
-        <span class="mono" style="color:var(--text-3);font-size:11px">${formatTime(s.start)}</span>
-        <span class="mono">${s.project ?? '—'}</span>
-        <span style="font-size:9.5px;padding:1px 5px;border-radius:3px;color:${modelColor(s.model)};background:var(--surface-2);font-family:var(--mono)">${shortModel(s.model)}</span>
+        <span class="mono" style="color:var(--text-3);font-size:11px">${escapeHtml(formatTime(s.startedAt))}</span>
+        <span class="mono">${escapeHtml(s.project ?? '—')}</span>
+        <span style="font-size:9.5px;padding:1px 5px;border-radius:3px;color:${modelColor(primaryModel)};background:var(--surface-2);font-family:var(--mono)">${escapeHtml(shortModel(primaryModel))}</span>
         <span class="mono" style="font-weight:600">$${(s.cost ?? 0).toFixed(2)}</span>
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
-function renderModelsTab(today) {
-  const models = (today?.byModel ?? []);
+function renderModelsTab(modelsResp) {
+  // /api/models shape: { period, models: [{ model, turnCount, tokens, cost, cacheHitRate, pctOfTotal }] }
+  // already sorted by cost desc.
+  const models = modelsResp?.models ?? [];
   if (models.length === 0) return '<div class="prefs-meta">No model data today.</div>';
   const total = models.reduce((s, m) => s + (m.cost ?? 0), 0) || 1;
   return `
@@ -206,7 +255,7 @@ function renderModelsTab(today) {
       ${models.map((m) => `
         <div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center">
           <span style="width:8px;height:8px;border-radius:2px;background:${modelColor(m.model)}"></span>
-          <span class="mono" style="font-size:11.5px">${m.model}</span>
+          <span class="mono" style="font-size:11.5px">${escapeHtml(m.model)}</span>
           <span class="mono" style="font-size:10.5px;color:var(--text-3)">${Math.round((m.cost/total)*100)}%</span>
           <span class="mono" style="font-size:11.5px;font-weight:600;min-width:48px;text-align:right">$${(m.cost ?? 0).toFixed(2)}</span>
         </div>`).join('')}
