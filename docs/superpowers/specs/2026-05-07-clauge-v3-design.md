@@ -161,7 +161,7 @@ App launch
   │     ├─→ "service: clauge" → use existing port; skip sidecar spawn
   │     └─→ no response or non-clauge → spawn ./clauge-server sidecar
   │                                       sidecar tries 3456 → 3457 → ... → 3460
-  │                                       writes "listening on port <N>" to stderr
+  │                                       writes "CLAUGE_BOUND_PORT=<N>" to stderr
   │                                       Tauri parses stderr, stores port
   │
   ├─→ [Tauri main] create popover window (HIDDEN, vibrancy, frameless, 380px)
@@ -365,7 +365,7 @@ Respawn-anyway-on-3 is deliberate: the user keeps a working UI; they choose when
 `test/sea-smoke.test.js`, ~50 LOC. After `scripts/build-sidecar.sh`:
 
 1. Spawn `./dist/clauge-server` as subprocess
-2. Read stderr until "listening on port <N>"
+2. Read stderr until "CLAUGE_BOUND_PORT=<N>"
 3. `curl http://127.0.0.1:<N>/api/health` → expect 200, `{ service: "clauge" }`
 4. `curl /api/summary?period=7d` → expect 200, valid JSON
 5. `process.kill('SIGTERM')`

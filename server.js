@@ -487,20 +487,29 @@ app.use('/*', serveStatic({ root: join(__dirname, 'public') }));
 
 const PORT_RETRY_LIMIT = 5;
 
+// Stderr contract with Tauri sidecar parser (T9). Do not change format.
+// See src-tauri/src/sidecar.rs (T9, not yet written) — Rust side will grep
+// stderr for this exact prefix to discover the bound port.
+const PORT_MARKER_PREFIX = 'CLAUGE_BOUND_PORT=';
+
 async function listenWithRetry(startPort) {
   for (let attempt = 0; attempt < PORT_RETRY_LIMIT; attempt++) {
     const tryPort = startPort + attempt;
+    let ss;
     try {
       const s = await new Promise((resolve, reject) => {
-        const ss = serve({ fetch: app.fetch, port: tryPort }, () => resolve(ss));
-        ss.once?.('error', reject);
-        // @hono/node-server may emit error via underlying http.Server
-        ss.server?.once('error', reject);
+        ss = serve({ fetch: app.fetch, port: tryPort }, () => resolve(ss));
+        // @hono/node-server returns the http.Server directly; bind error
+        // event for EADDRINUSE detection.
+        ss.once('error', reject);
       });
       return { server: s, port: tryPort };
     } catch (err) {
+      try { ss?.close(); } catch {}
       if (err.code !== 'EADDRINUSE') throw err;
-      console.log(`[Clauge] Port ${tryPort} in use; trying ${tryPort + 1}`);
+      if (attempt < PORT_RETRY_LIMIT - 1) {
+        console.log(`[Clauge] Port ${tryPort} in use; trying ${tryPort + 1}`);
+      }
     }
   }
   throw new Error(
@@ -512,7 +521,7 @@ const { server, port: BOUND_PORT } = await listenWithRetry(PORT);
 const url = `http://localhost:${BOUND_PORT}`;
 console.log(`[Clauge] Listening on ${url}`);
 console.log(`[Clauge] CLAUDE_DIR=${CLAUDE_DIR}`);
-console.error(`CLAUGE_BOUND_PORT=${BOUND_PORT}`);  // for Tauri sidecar parser
+console.error(`${PORT_MARKER_PREFIX}${BOUND_PORT}`);  // for Tauri sidecar parser
 
 if (process.env.NO_OPEN !== '1') {
   open(url).catch(() => {
