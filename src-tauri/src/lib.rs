@@ -1,4 +1,5 @@
 mod ipc;
+mod menu;
 mod port_discovery;
 mod sidecar;
 mod tray;
@@ -31,6 +32,40 @@ pub fn run() {
         .manage(ipc::AppState::default())
         .setup(|app| {
             crate::tray::init(app.handle())?;
+
+            // Native macOS app-wide menu (Clauge / Edit / View / Window / Help).
+            // Custom ids (`preferences`, `refresh`, `github`) are dispatched
+            // below; predefined items (Quit, Hide, Cut/Copy/Paste, Minimize…)
+            // are handled natively by Tauri/muda.
+            let menu = crate::menu::build(app.handle())?;
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| match event.id().0.as_str() {
+                "preferences" => {
+                    if let Some(w) = app.get_webview_window("popover") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                        let _ = w.eval(
+                            "window.dispatchEvent(new CustomEvent('show-preferences'))",
+                        );
+                    }
+                }
+                "refresh" => {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.eval("location.reload()");
+                    }
+                }
+                "github" => {
+                    use tauri_plugin_shell::ShellExt;
+                    // Rust-side shell.open() bypasses scope validation
+                    // (tauri-plugin-shell open.rs:131), so no
+                    // `shell:allow-open` capability is required for this call.
+                    let _ = app
+                        .shell()
+                        .open("https://github.com/clauding-lab/clauge", None);
+                }
+                _ => {}
+            });
+
             crate::windows::create_popover(app.handle())?;
 
             // Cold-start: discover an external clauge-server first; fall back to
