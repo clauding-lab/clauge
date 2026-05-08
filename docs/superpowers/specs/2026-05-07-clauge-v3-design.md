@@ -174,9 +174,9 @@ App launch
   │
   └─→ Done. Dashboard window NOT created until user clicks "Open dashboard →"
 
-Cold-start budget: ~400ms total
+Cold-start budget: ~400ms typical / ~1.4s worst-case (stuck non-clauge server on 3456)
   - Tauri Rust startup: ~80ms
-  - Health check: ~10ms (or ~250ms timeout if no server)
+  - Health check: ~10ms hit (clauge already on 3456) / <50ms miss (immediate connect-refused, no server) / 1s ceiling (3456 occupied by unresponsive non-clauge server — `tokio::time::timeout(Duration::from_secs(1), …)`)
   - Sidecar spawn: ~120ms (SEA binary)
   - Sidecar bind: ~30ms
   - Popover prerender: ~150ms (parallel with sidecar warm-up)
@@ -386,8 +386,9 @@ Set `SKIP_SEA_SMOKE=1` to skip this layer (e.g. on fresh checkouts where the ~30
 
 | Test | Covers |
 |---|---|
-| `port_discovery::detects_existing_clauge_server` | Mock `/api/health` on 3456 → V3 must NOT spawn sidecar |
-| `port_discovery::falls_back_when_3456_busy_with_non_clauge` | Unrelated server on 3456 → V3 spawns sidecar on 3457 |
+| `port_discovery::tests::probe_returns_false_when_no_server` | Nothing listening on 3456 → probe returns false → discover() returns `SpawnAt(3456)` |
+| `port_discovery::tests::probe_returns_true_for_clauge_response` | Mock `/api/health` returns `{ service: "clauge" }` → probe returns true → V3 must NOT spawn sidecar (uses `Share`) |
+| `port_discovery::tests::probe_returns_false_for_non_clauge_service` | Mock `/api/health` returns a non-clauge body → probe returns false → discover() still returns `SpawnAt(3456)`. Note: Rust always emits `SpawnAt(3456)` regardless; if 3456 is occupied by a non-clauge server, the Node sidecar's own port-fallback (3456→3460 via `listenWithRetry`, T6) handles it and reports the bound port via stderr `CLAUGE_BOUND_PORT=<n>` (consumed in T11). |
 | `crash_breaker::silent_for_first_three` | 3 crash timestamps in 60s → no notification |
 | `crash_breaker::backoff_after_fourth` | 4th crash → exponential backoff, single notification |
 | `crash_breaker::resets_after_window` | Crash, wait 61s, crash again → counts as first crash |
