@@ -1,298 +1,472 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Clauge — Claude Code analytics</title>
-    <link rel="icon" type="image/svg+xml" href="/clauge-icon-512.svg" />
-    <link rel="alternate icon" type="image/png" href="/clauge-icon-fallback.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand-block">
-        <div class="brand-chiclet">
-          <img src="/clauge-icon-512.svg" alt="" width="22" height="22" />
-        </div>
-        <div class="brand-text">
-          <div class="brand-name">Clauge</div>
-          <div class="brand-meta" id="brand-meta">v0.2.1 · localhost:3456</div>
-        </div>
-        <span class="sync-pill off" id="sync-pill">
-          <span class="dot"></span>
-          <span id="sync-pill-text">checking…</span>
-        </span>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clauge — Claude Code analytics</title>
+  <link rel="icon" type="image/svg+xml" href="/clauge-icon-512.svg" />
+  <link rel="alternate icon" type="image/png" href="/clauge-icon-fallback.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand-row">
+    <div class="brand-chiclet">
+      <img src="/clauge-icon-512.svg" alt="" />
+    </div>
+    <div>
+      <div class="brand-name">Clauge</div>
+      <div class="brand-meta" id="brand-meta">v0.4.0 · localhost:3456</div>
+    </div>
+    <!-- Inline plan summary — populated at runtime by app.js. -->
+    <div class="plan-inline glass-pill" id="plan-inline" hidden></div>
+  </div>
+
+  <div class="controls">
+    <div class="seg glass-pill" id="period-seg" role="tablist" aria-label="Period">
+      <span class="indicator" id="period-ind"></span>
+      <button data-period="today" role="tab">Today</button>
+      <button data-period="7d" role="tab" aria-selected="true">7 days</button>
+      <button data-period="30d" role="tab">30 days</button>
+      <button data-period="month" role="tab">Month</button>
+      <button data-period="all" role="tab">All time</button>
+    </div>
+    <a class="icon-btn" id="export-csv" href="#" download title="Download CSV" aria-label="Download CSV">⤓</a>
+    <button class="icon-btn" id="btn-refresh" title="Refresh" aria-label="Refresh">↻</button>
+  </div>
+</header>
+
+<div class="tabs-wrap">
+  <nav class="tabs glass-pill" id="tabs" aria-label="Sections">
+    <span class="tab-indicator" id="tab-ind"></span>
+    <button data-tab="overview" aria-selected="true">Overview</button>
+    <button data-tab="sessions">Sessions <span class="badge" id="tab-badge-sessions">—</span></button>
+    <button data-tab="projects">Projects <span class="badge" id="tab-badge-projects">—</span></button>
+    <button data-tab="tools">Tools</button>
+    <button data-tab="models">Models</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="about">About</button>
+  </nav>
+</div>
+
+<main>
+
+<!-- ═══════════════════════════════ OVERVIEW ═══════════════════════════════ -->
+<section data-panel="overview">
+
+  <!-- Plan capacity hero (PRIMARY) -->
+  <div class="plan-hero">
+    <div class="plan-head">
+      <div class="plan-title-row">
+        <h3 class="plan-title">Plan capacity</h3>
+        <span class="card-sub" id="plan-meta"><span class="dot-live"></span>checking sync…</span>
       </div>
-      <nav class="controls" aria-label="Filters">
-        <div class="period-switcher" role="tablist" aria-label="Period">
-          <button data-period="today" role="tab">Today</button>
-          <button data-period="7d" role="tab" aria-selected="true">7 days</button>
-          <button data-period="30d" role="tab">30 days</button>
-          <button data-period="month" role="tab">Month</button>
-          <button data-period="all" role="tab">All time</button>
-        </div>
-        <div class="search-wrap">
-          <input id="project-filter" type="search" placeholder="filter project…" aria-label="Project filter" />
-        </div>
-        <a class="ghost-btn" id="export-csv" href="#" download>CSV</a>
-        <a class="ghost-btn" id="export-json" href="#" download>JSON</a>
-      </nav>
-    </header>
+      <span class="tag" id="plan-status-tag" style="background:var(--ok-tint);color:var(--ok)">● Healthy</span>
+    </div>
 
-    <main>
+    <div class="plan-body" id="plan-body">
+      <!-- four big-rings injected by app.js -->
+    </div>
 
-      <!-- claude.ai plan usage -->
-      <section class="card plan-card">
-        <div class="card-head">
-          <div class="title-row">
-            <h3>claude.ai plan usage</h3>
-            <span class="sub" id="plan-status">checking sync…</span>
-          </div>
-          <span class="sub mono" id="plan-updated"></span>
+    <div class="plan-side">
+      <div class="side-card">
+        <div class="side-lbl">Extra usage</div>
+        <div class="side-num">
+          <span class="currency">$</span><span id="extra-used">—</span><span class="cap" id="extra-cap"></span>
         </div>
-        <div class="plan-grid" id="plan-grid"></div>
-        <div class="plan-onboard" id="plan-onboard" hidden>
-          <h3>Enable claude.ai auto-sync</h3>
-          <p>One-time setup. The extension polls your already-authenticated claude.ai tab every minute and feeds usage back here automatically.</p>
-          <a class="btn-primary" id="install-extension" href="#" rel="noopener">
-            <span>Install Clauge Sync extension</span>
-            <span class="meta" id="install-meta">see install options below</span>
-          </a>
-          <p class="onboard-fineprint">
-            Works on Chrome, Edge, Brave, Arc, and Vivaldi. Make sure you're signed in to <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> in the same browser profile.
-          </p>
-          <details class="plan-alternates">
-            <summary>Other ways to sync</summary>
-            <h4>Developer-mode install (no Chrome Web Store needed)</h4>
-            <ol>
-              <li>Clone or download <a href="https://github.com/clauding-lab/clauge" target="_blank" rel="noopener">github.com/clauding-lab/clauge</a></li>
-              <li>Open <code>chrome://extensions</code> and toggle <strong>Developer mode</strong></li>
-              <li>Click <strong>Load unpacked</strong> and pick the <code>extension/</code> folder</li>
-            </ol>
-            <h4>One-shot bookmarklet (no extension)</h4>
-            <p>Drag <a class="bookmarklet-link" id="bookmarklet-link" href="#">Sync Clauge</a> to your bookmarks bar, open claude.ai, and click the bookmark whenever you want a fresh snapshot.</p>
-          </details>
+        <div class="bar-track"><div class="bar-fill" id="extra-bar" style="width:0%"></div></div>
+        <div class="side-foot"><span id="extra-pct">—</span><span id="extra-currency">USD</span></div>
+      </div>
+      <div class="side-card">
+        <div class="side-lbl">claude.ai balance</div>
+        <div class="side-num big">
+          <span class="currency">$</span><span id="claude-balance-val">—</span>
         </div>
-      </section>
+        <div class="side-foot"><span id="claude-balance-currency">USD</span><span id="claude-balance-foot">—</span></div>
+      </div>
+    </div>
+  </div>
 
-      <!-- Headline (hero metric + secondary stats + token row) -->
-      <section class="headline" aria-label="Headline metrics">
-        <div class="headline-top">
-          <!-- Hero -->
-          <div class="hero-cell">
+  <!-- Code analytics digest (SECONDARY) -->
+  <div class="metric-strip glass" style="margin-top:14px">
+    <div class="ms-cell primary">
+      <div class="ms-lbl">API equivalent <span class="chip" id="ms-period-chip">7d</span></div>
+      <div class="ms-val" id="ms-cost">—</div>
+      <div class="ms-sub">replaces <span id="ms-sub-cost">$200/mo</span> · <span class="savings" id="ms-savings">—</span></div>
+    </div>
+    <div class="ms-cell">
+      <div class="ms-lbl">Messages</div>
+      <div class="ms-val" id="ms-messages">—</div>
+      <div class="ms-sub" id="ms-tools">— tool calls</div>
+    </div>
+    <div class="ms-cell">
+      <div class="ms-lbl">Sessions</div>
+      <div class="ms-val" id="ms-sessions">—</div>
+      <div class="ms-sub" id="ms-subagents">— subagents</div>
+    </div>
+    <div class="ms-cell">
+      <div class="ms-lbl">Cache hit</div>
+      <div class="ms-val ok" id="ms-cachehit">—</div>
+      <div class="ms-sub" id="ms-cachereads">— reads</div>
+    </div>
+    <div class="ms-cell">
+      <div class="ms-lbl">Tokens</div>
+      <div class="ms-val" id="ms-tokens">—</div>
+      <div class="ms-sub" id="ms-token-split">—</div>
+    </div>
+    <div class="ms-cell">
+      <div class="ms-lbl">Return on sub <span class="chip">approx</span></div>
+      <div class="ms-val ok" id="ms-roi">—</div>
+      <div class="ms-sub" id="ms-roi-sub">—</div>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="row row-2" style="margin-top:14px">
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">Cost over time</h3>
+          <span class="card-sub" id="cost-meta">—</span>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="bar-chart" id="cost-chart"></div>
+        <div class="x-axis" id="cost-ticks"></div>
+      </div>
+    </div>
+
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">Peak hours</h3>
+          <span class="card-sub" id="peak-meta">local</span>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="peak-chart" id="peak-chart"></div>
+        <div class="x-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top projects + activity -->
+  <div class="row row-2" style="margin-top:14px">
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">By project</h3>
+          <span class="card-sub">cost · sessions · messages · tools</span>
+        </div>
+        <button class="btn-secondary" data-jump="projects">View all →</button>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Project</th>
+          <th style="width:18%"></th>
+          <th class="num">Cost</th>
+          <th class="num">Sess</th>
+          <th class="num">Msgs</th>
+          <th class="num">Tools</th>
+          <th class="num">Tokens</th>
+          <th class="num">Hit</th>
+        </tr></thead>
+        <tbody id="proj-body"></tbody>
+      </table>
+    </div>
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">By activity</h3>
+          <span class="card-sub">primary intent</span>
+        </div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Activity</th>
+          <th style="width:42%"></th>
+          <th class="num">Calls</th>
+          <th class="num">Share</th>
+        </tr></thead>
+        <tbody id="act-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent sessions teaser -->
+  <div class="glass card" style="margin-top:14px">
+    <div class="card-head">
+      <div class="card-title-row">
+        <h3 class="card-title">Recent sessions</h3>
+        <span class="card-sub">latest 5 · ★ in top-cost</span>
+      </div>
+      <button class="btn-secondary" data-jump="sessions">All sessions →</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Started</th>
+        <th>Project</th>
+        <th>Model</th>
+        <th>Task</th>
+        <th class="num">Duration</th>
+        <th class="num">Calls</th>
+        <th class="num">Hit</th>
+        <th class="num">Cost</th>
+      </tr></thead>
+      <tbody id="sess-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ SESSIONS ═══════════════════════════════ -->
+<section data-panel="sessions" hidden>
+  <div class="glass card">
+    <div class="card-head">
+      <div class="card-title-row">
+        <h3 class="card-title">Sessions</h3>
+        <span class="card-sub" id="sessions-count">—</span>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Started</th>
+        <th>Project</th>
+        <th>Model</th>
+        <th>Task</th>
+        <th class="num">Duration</th>
+        <th class="num">Calls</th>
+        <th class="num">Tokens</th>
+        <th class="num">Hit</th>
+        <th class="num">Cost</th>
+      </tr></thead>
+      <tbody id="sess-full-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ PROJECTS ═══════════════════════════════ -->
+<section data-panel="projects" hidden>
+  <div class="glass card">
+    <div class="card-head">
+      <div class="card-title-row">
+        <h3 class="card-title">All projects</h3>
+        <span class="card-sub" id="projects-count">—</span>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Project</th>
+        <th style="width:24%"></th>
+        <th class="num">Cost</th>
+        <th class="num">Sessions</th>
+        <th class="num">Messages</th>
+        <th class="num">Tools</th>
+        <th class="num">Tokens</th>
+        <th class="num">Hit</th>
+      </tr></thead>
+      <tbody id="proj-full-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ TOOLS ═══════════════════════════════ -->
+<section data-panel="tools" hidden>
+  <div class="row row-3">
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">Core tools</h3>
+          <span class="card-sub">claude-code primitives</span>
+        </div>
+      </div>
+      <div id="core-tools"></div>
+    </div>
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">Shell commands</h3>
+          <span class="card-sub">via Bash</span>
+        </div>
+      </div>
+      <div id="shell-tools"></div>
+    </div>
+    <div class="glass card">
+      <div class="card-head">
+        <div class="card-title-row">
+          <h3 class="card-title">MCP servers</h3>
+          <span class="card-sub">connected</span>
+        </div>
+      </div>
+      <div id="mcp-tools"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ MODELS ═══════════════════════════════ -->
+<section data-panel="models" hidden>
+  <div class="glass card">
+    <div class="card-head">
+      <div class="card-title-row">
+        <h3 class="card-title">By model</h3>
+        <span class="card-sub">cost · cache · share</span>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Model</th>
+        <th style="width:32%"></th>
+        <th class="num">Cost</th>
+        <th class="num">Calls</th>
+        <th class="num">Hit</th>
+        <th class="num">Avg / call</th>
+      </tr></thead>
+      <tbody id="models-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ SETTINGS ═══════════════════════════════ -->
+<section data-panel="settings" hidden>
+  <div class="glass card" style="padding:0">
+    <div class="set-grid">
+      <aside class="set-side glass-pill" style="border-radius:14px;margin:14px 0 14px 14px;align-self:start">
+        <button class="active" data-set="general">General</button>
+        <button data-set="pricing">Pricing & ROI</button>
+        <button data-set="sync">claude.ai sync</button>
+      </aside>
+      <div style="padding:24px 24px 24px 0">
+
+        <div class="set-section" data-set-panel="general">
+          <h2>General</h2>
+          <p class="set-desc">Server, port, and runtime preferences.</p>
+          <div class="set-row">
             <div>
-              <div class="hero-label-row">
-                <span class="hero-eyebrow">API equivalent</span>
-                <span class="hero-period-pill" id="hero-period">7d</span>
-              </div>
-              <div class="hero-value mono" id="hero-cost">—</div>
-              <div class="hero-caption">
-                At observed token usage, your <span class="accent" id="hero-sub-cost">$200/mo</span> subscription replaces this much retail API spend.
-                <span class="secondary" id="hero-net-savings"></span>
-              </div>
+              <div class="set-label">Local port</div>
+              <div class="set-help">The dashboard server binds to this port on localhost.</div>
             </div>
+            <input class="input" id="set-port" value="3456" readonly />
+          </div>
+          <div class="set-row">
             <div>
-              <svg class="hero-spark" viewBox="0 0 100 42" preserveAspectRatio="none" id="hero-spark"></svg>
-              <div class="hero-spark-ticks">
-                <span id="hero-spark-start">start</span>
-                <span>now</span>
-              </div>
+              <div class="set-label">Show menu bar app</div>
+              <div class="set-help">Compact glanceable popover in the macOS menu bar.</div>
             </div>
+            <div class="toggle on" id="set-menubar"></div>
           </div>
-
-          <!-- Messages -->
-          <div class="secondary-cell">
+          <div class="set-row">
             <div>
-              <div class="lbl">Messages</div>
-              <div class="val mono" id="sec-messages">—</div>
-              <div class="sub" id="sec-messages-sub">— tool calls</div>
+              <div class="set-label">Default period</div>
+              <div class="set-help">Period selected when the dashboard opens.</div>
             </div>
-            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" data-spark="messages"></svg>
+            <select class="input" id="set-default-period">
+              <option value="today">Today</option>
+              <option value="7d" selected>7 days</option>
+              <option value="30d">30 days</option>
+              <option value="month">Month</option>
+            </select>
           </div>
+        </div>
 
-          <!-- Sessions -->
-          <div class="secondary-cell">
+        <div class="set-section" data-set-panel="pricing" hidden style="margin-top:24px">
+          <h2 style="font-size:14px">Pricing & ROI</h2>
+          <p class="set-desc">Configure how Clauge calculates the API replacement value.</p>
+          <div class="set-row">
             <div>
-              <div class="lbl">Sessions</div>
-              <div class="val mono" id="sec-sessions">—</div>
-              <div class="sub" id="sec-sessions-sub">— subagents</div>
+              <div class="set-label">Subscription cost (monthly)</div>
+              <div class="set-help">Used for the API replacement value calc.</div>
             </div>
-            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" data-spark="sessions"></svg>
+            <input class="input" id="set-sub-cost" value="$200.00" readonly />
           </div>
-
-          <!-- Cache hit -->
-          <div class="secondary-cell">
+          <div class="set-row">
             <div>
-              <div class="lbl">Cache hit</div>
-              <div class="val mono ok" id="sec-cachehit">—</div>
-              <div class="sub" id="sec-cachehit-sub">— cached reads</div>
+              <div class="set-label">Pricing source</div>
+              <div class="set-help">Where Clauge fetches per-token model rates.</div>
             </div>
-            <svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" data-spark="cachehit"></svg>
+            <span class="tag" id="set-pricing-source">—</span>
           </div>
         </div>
 
-        <!-- Token tier breakdown -->
-        <div class="headline-tokens">
-          <div class="token-cell"><div class="lbl">Input</div><div class="val mono" data-tok="input">—</div></div>
-          <div class="token-cell"><div class="lbl">Output</div><div class="val mono" data-tok="output">—</div></div>
-          <div class="token-cell"><div class="lbl">Cache read</div><div class="val mono" data-tok="cacheRead">—</div></div>
-          <div class="token-cell"><div class="lbl">Cache 5m</div><div class="val mono" data-tok="cache5m">—</div></div>
-          <div class="token-cell"><div class="lbl">Cache 1h</div><div class="val mono" data-tok="cache1h">—</div></div>
-          <div class="token-cell"><div class="lbl">Net cache savings</div><div class="val mono ok" data-tok="netSavings">—</div></div>
+        <div class="set-section" data-set-panel="sync" hidden style="margin-top:24px">
+          <h2 style="font-size:14px">claude.ai sync</h2>
+          <p class="set-desc">Browser extension polls every minute and POSTs to localhost.</p>
+          <div class="set-row">
+            <div>
+              <div class="set-label">Sync method</div>
+              <div class="set-help">Browser extension or one-shot bookmarklet.</div>
+            </div>
+            <span class="tag" id="set-sync-status">checking…</span>
+          </div>
+          <div class="set-row">
+            <div>
+              <div class="set-label">Last sync</div>
+              <div class="set-help mono" id="set-last-sync">—</div>
+            </div>
+            <button class="btn-secondary" id="set-sync-refresh">Refresh</button>
+          </div>
         </div>
-      </section>
 
-      <!-- Daily cost + Peak hours -->
-      <section class="row-2col">
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>Cost over time</h3>
-              <span class="sub" id="daily-meta">—</span>
-            </div>
-          </div>
-          <div class="chart-wrap" id="daily-chart"></div>
-          <div class="x-ticks" id="daily-ticks"></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>Peak hours</h3>
-              <span class="sub" id="peak-sub">distribution by hour (local)</span>
-            </div>
-          </div>
-          <div class="peak-wrap" id="peak-chart"></div>
-          <div class="peak-ticks">
-            <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
-          </div>
-        </div>
-      </section>
+      </div>
+    </div>
+  </div>
+</section>
 
-      <!-- Projects + Activity -->
-      <section class="row-1-4-1">
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>By project</h3>
-              <span class="sub">cost · sessions · messages · tools</span>
-            </div>
-          </div>
-          <table class="bd-table" data-tbl="projects">
-            <thead><tr>
-              <th>Project</th>
-              <th class="bar-cell"></th>
-              <th class="num">Cost</th>
-              <th class="num">Sess</th>
-              <th class="num">Msgs</th>
-              <th class="num">Tools</th>
-              <th class="num">Tokens</th>
-              <th class="num">Hit</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>By activity</h3>
-              <span class="sub">primary intent (heuristic)</span>
-            </div>
-          </div>
-          <table class="bd-table" data-tbl="activity">
-            <thead><tr>
-              <th>Activity</th>
-              <th class="bar-cell-thin"></th>
-              <th class="num">Calls</th>
-              <th class="num">Share</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
+<!-- ═══════════════════════════════ ABOUT ═══════════════════════════════ -->
+<section data-panel="about" hidden>
+  <div class="glass about">
+    <div>
+      <div class="about-mark">
+        <img src="/clauge-icon-512.svg" alt="Clauge" />
+      </div>
+      <h1>Clauge</h1>
+      <div class="ver" id="about-version">v0.4.0 · MIT · clauding-lab</div>
+      <p class="desc">
+        Token analytics and subscription value dashboard for Claude Code and claude.ai. Local Node + HTML, <span class="mono" style="color:var(--brand-2)">npx</span>-installable. Browser extension auto-syncs claude.ai plan usage.
+      </p>
+      <div class="about-links">
+        <a href="https://github.com/clauding-lab/clauge" target="_blank" rel="noopener"><span>GitHub repository</span><span class="arrow">→</span></a>
+        <a href="https://github.com/clauding-lab/clauge/blob/main/CHANGELOG.md" target="_blank" rel="noopener"><span>Changelog</span><span class="arrow">→</span></a>
+        <a href="https://github.com/clauding-lab/clauge/issues" target="_blank" rel="noopener"><span>Report an issue</span><span class="arrow">→</span></a>
+      </div>
+    </div>
 
-      <!-- By Model + tool lists in one 4-col row -->
-      <section class="row-4col">
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>By model</h3>
-              <span class="sub">cost · share</span>
-            </div>
-          </div>
-          <table class="bd-table" data-tbl="models">
-            <thead><tr>
-              <th>Model</th>
-              <th class="bar-cell"></th>
-              <th class="num">Cost</th>
-              <th class="num">Calls</th>
-              <th class="num">Hit</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>Core tools</h3>
-              <span class="sub">claude-code primitives</span>
-            </div>
-          </div>
-          <div class="tool-list" data-tools="core"></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>Shell commands</h3>
-              <span class="sub">via Bash tool</span>
-            </div>
-          </div>
-          <div class="tool-list" data-tools="shell"></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>MCP servers</h3>
-              <span class="sub">connected providers</span>
-            </div>
-          </div>
-          <div class="tool-list" data-tools="mcp"></div>
-        </div>
-      </section>
+    <div>
+      <h3>What it does</h3>
+      <ul class="feat">
+        <li><b>Per-session tracking</b><span>Tokens · cost · model · cache · primary task type</span></li>
+        <li><b>Per-project rollup</b><span>Cost · sessions · messages · tools · hit %</span></li>
+        <li><b>Cache analytics</b><span>Net savings · 5m vs 1h tier separation</span></li>
+        <li><b>Plan tracking</b><span>5h, 7d, Sonnet, Opus, Design rings</span></li>
+        <li><b>Task classification</b><span>Coding · debug · test · plan · git ops · build</span></li>
+        <li><b>API replacement value</b><span>Honest framing · observed token usage</span></li>
+      </ul>
 
-      <!-- Sessions full width at bottom -->
-      <section>
-        <div class="card">
-          <div class="card-head">
-            <div class="title-row">
-              <h3>Sessions</h3>
-              <span class="sub" id="sessions-count">—</span>
-            </div>
-          </div>
-          <table class="bd-table" data-tbl="sessions">
-            <thead><tr>
-              <th>Started</th>
-              <th>Project</th>
-              <th>Model</th>
-              <th>Task</th>
-              <th class="num">Duration</th>
-              <th class="num">Calls</th>
-              <th class="num">Tokens</th>
-              <th class="num">Hit</th>
-              <th class="num">Cost</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
+      <h3>Roadmap</h3>
+      <div class="roadmap">
+        <div><span class="ver-tag">v0.4</span>Liquid Glass redesign — popover + dashboard, proxy_fetch IPC bug fix</div>
+        <div><span class="ver-tag">v0.3</span>Native desktop app — Tauri menu bar + dashboard window</div>
+        <div><span class="ver-tag">v0.2</span>Browser extension auto-sync, ROI hero, peak hours</div>
+        <div><span class="ver-tag">v0.1</span>npx-installable HTML dashboard, per-project + per-model rollup</div>
+      </div>
 
-      <footer class="foot">
-        clauge · <a href="/api/health">health</a> · <a href="/api/config">config</a>
-      </footer>
-    </main>
+      <h3>Credits</h3>
+      <div class="roadmap">
+        <div>Pricing data from <span class="mono" style="color:var(--brand-2)">LiteLLM</span> · model_prices_and_context_window.json</div>
+        <div>Built with Hono · Inter · JetBrains Mono · Tauri</div>
+      </div>
+    </div>
+  </div>
+</section>
 
-    <script src="/app.js" type="module"></script>
-  </body>
+<footer class="foot">
+  clauge <span id="foot-version">v0.4.0</span> · <a href="/api/health">health</a> · <a href="/api/config">config</a>
+</footer>
+
+</main>
+
+<script src="/app.js" type="module"></script>
+</body>
 </html>

@@ -1,8 +1,32 @@
-// Clauge V2.1 dashboard — warm-dark palette, hero metric, denser layout.
-// Vanilla JS, no build step, no Chart.js — all sparklines and bar charts
-// rendered as inline SVG / CSS.
+// Clauge dashboard v0.4.0 — Liquid Glass.
+//
+// Vanilla JS, no framework, no build step. Mock data from the design handoff
+// has been replaced with live calls to the existing /api/* endpoints. The
+// initial-load retry-with-backoff (v0.3.1's Bug #5 fix, T32) is preserved
+// because the WebView still races the SEA sidecar bind during cold start.
 
-const state = { period: '7d', project: '' };
+// ─── State ────────────────────────────────────────────────
+const state = {
+  period: '7d',
+  tab: 'overview',
+  // Cached so tab switches don't re-fetch when the user just toggled tabs.
+  // refreshAll() repopulates these on every period switch / refresh.
+  data: {
+    summary: null,
+    cache: null,
+    sessions: null,
+    daily: null,
+    hours: null,
+    projects: null,
+    activity: null,
+    tools: null,
+    models: null,
+    usage: null,
+    expensive: null,
+    health: null,
+    roi: null,
+  },
+};
 
 const PERIOD_LABELS = {
   today: 'Today',
@@ -12,9 +36,9 @@ const PERIOD_LABELS = {
   all: 'All',
 };
 
-// ─── formatters ───────────────────────────────────────────
+// ─── Formatters ───────────────────────────────────────────
 const fmtUSD = (n) =>
-  n == null
+  n == null || !Number.isFinite(n)
     ? '—'
     : new Intl.NumberFormat('en-US', {
         style: 'currency',
@@ -22,16 +46,15 @@ const fmtUSD = (n) =>
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(n);
-const fmtUSDLong = fmtUSD;
 
 const fmtInt = (n) =>
-  n == null ? '—' : new Intl.NumberFormat('en-US').format(Math.round(n));
+  n == null || !Number.isFinite(n) ? '—' : new Intl.NumberFormat('en-US').format(Math.round(n));
 
 const fmtPct = (frac, digits = 0) =>
-  frac == null ? '—' : `${(frac * 100).toFixed(digits)}%`;
+  frac == null || !Number.isFinite(frac) ? '—' : `${(frac * 100).toFixed(digits)}%`;
 
 const fmtTokens = (n) => {
-  if (n == null) return '—';
+  if (n == null || !Number.isFinite(n)) return '—';
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
@@ -40,8 +63,7 @@ const fmtTokens = (n) => {
 
 const fmtTime = (iso) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleString('en-US', {
+  return new Date(iso).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -64,19 +86,27 @@ const fmtAgo = (iso) => {
 };
 
 const fmtRelative = (iso) => {
-  if (!iso) return '';
+  if (!iso) return '—';
   const ms = Date.parse(iso) - Date.now();
-  if (!Number.isFinite(ms)) return '';
-  if (ms <= 0) return 'resets now';
+  if (!Number.isFinite(ms)) return '—';
+  if (ms <= 0) return 'now';
   const m = Math.floor(ms / 60000);
   const h = Math.floor(m / 60);
   const d = Math.floor(h / 24);
-  if (d > 0) return `in ${d}d ${h % 24}h`;
-  if (h > 0) return `in ${h}h ${m % 60}m`;
-  return `in ${m}m`;
+  if (d > 0) return `${d}d ${h % 24}h`;
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${m}m`;
 };
 
-// ─── api ──────────────────────────────────────────────────
+const TZ_LABEL = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
+  } catch {
+    return 'local';
+  }
+})();
+
+// ─── API ──────────────────────────────────────────────────
 async function api(path, params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = qs ? `${path}?${qs}` : path;
@@ -84,30 +114,17 @@ async function api(path, params = {}) {
   if (!res.ok) throw new Error(`${path} → ${res.status}`);
   return res.json();
 }
-function commonParams() {
-  const p = { period: state.period };
-  if (state.project) p.project = state.project;
-  return p;
-}
+function commonParams() { return { period: state.period }; }
 
-// ─── helpers ──────────────────────────────────────────────
+// ─── HTML helpers ─────────────────────────────────────────
 function escapeHtml(s) {
+  if (s == null) return '';
   return String(s)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-}
-
-function totalTokensOf(t) {
-  return (
-    (t?.inputTokens || 0) +
-    (t?.outputTokens || 0) +
-    (t?.cacheRead || 0) +
-    (t?.cacheCreate5m || 0) +
-    (t?.cacheCreate1h || 0)
-  );
 }
 
 function modelClass(model) {
@@ -117,422 +134,238 @@ function modelClass(model) {
   if (model.includes('haiku')) return 'haiku';
   return '';
 }
-
-// ─── inline SVG sparklines ────────────────────────────────
-function pathFor(values, w, h, padX = 0, padY = 2) {
-  if (!values || values.length === 0) return { line: '', area: '' };
-  const max = Math.max(...values, 1);
-  const min = Math.min(0, ...values);
-  const range = max - min || 1;
-  const stepX = values.length > 1 ? (w - padX * 2) / (values.length - 1) : w;
-  const pts = values.map((v, i) => {
-    const x = padX + i * stepX;
-    const y = h - padY - ((v - min) / range) * (h - padY * 2);
-    return [x, y];
-  });
-  const line = pts
-    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`)
-    .join(' ');
-  const area = `${line} L${(padX + (values.length - 1) * stepX).toFixed(2)},${h} L${padX},${h} Z`;
-  return { line, area };
+function modelColorVar(cls) {
+  return cls === 'opus' ? 'var(--opus)'
+       : cls === 'haiku' ? 'var(--haiku)'
+       : 'var(--sonnet)';
 }
 
-function renderSpark(svg, values, opts = {}) {
-  if (!svg) return;
-  const w = Number(svg.getAttribute('viewBox')?.split(' ')[2] ?? 100);
-  const h = Number(svg.getAttribute('viewBox')?.split(' ')[3] ?? 28);
-  const color = opts.color ?? 'var(--brand)';
-  const fillOn = opts.fill !== false;
-  while (svg.firstChild) svg.removeChild(svg.firstChild);
-  if (!values || values.length === 0) return;
-  const ns = 'http://www.w3.org/2000/svg';
-  const id = 'sp_' + Math.random().toString(36).slice(2, 8);
-  const { line, area } = pathFor(values, w, h);
-
-  if (fillOn) {
-    const defs = document.createElementNS(ns, 'defs');
-    const grad = document.createElementNS(ns, 'linearGradient');
-    grad.setAttribute('id', id);
-    grad.setAttribute('x1', '0');
-    grad.setAttribute('y1', '0');
-    grad.setAttribute('x2', '0');
-    grad.setAttribute('y2', '1');
-    const s1 = document.createElementNS(ns, 'stop');
-    s1.setAttribute('offset', '0%');
-    s1.setAttribute('stop-color', color);
-    s1.setAttribute('stop-opacity', '0.35');
-    const s2 = document.createElementNS(ns, 'stop');
-    s2.setAttribute('offset', '100%');
-    s2.setAttribute('stop-color', color);
-    s2.setAttribute('stop-opacity', '0');
-    grad.appendChild(s1);
-    grad.appendChild(s2);
-    defs.appendChild(grad);
-    svg.appendChild(defs);
-
-    const ap = document.createElementNS(ns, 'path');
-    ap.setAttribute('d', area);
-    ap.setAttribute('fill', `url(#${id})`);
-    svg.appendChild(ap);
-  }
-
-  const lp = document.createElementNS(ns, 'path');
-  lp.setAttribute('d', line);
-  lp.setAttribute('fill', 'none');
-  lp.setAttribute('stroke', color);
-  lp.setAttribute('stroke-width', '1.4');
-  lp.setAttribute('stroke-linecap', 'round');
-  lp.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(lp);
+function totalTokensOf(t) {
+  return (t?.inputTokens || 0) + (t?.outputTokens || 0)
+       + (t?.cacheRead || 0) + (t?.cacheCreate5m || 0) + (t?.cacheCreate1h || 0);
 }
 
-// ─── ring gauge for plan card ─────────────────────────────
-function gaugeColor(pct) {
-  if (pct == null) return 'var(--ok)';
-  if (pct >= 85) return 'var(--crit)';
-  if (pct >= 60) return 'var(--warn)';
-  return 'var(--brand)';
-}
-
-function gaugeHtml({ label, sub, metric }) {
-  if (!metric) return '';
-  const pct = metric.pct;
-  const r = 38;
+// ─── Big rings (overview plan-hero) ──────────────────────
+function bigRingHtml({ label, sub, metric, gradId }) {
+  const r = 56;
   const c = 2 * Math.PI * r;
-  const dash = pct == null ? 0 : Math.max(0, Math.min(100, pct)) / 100 * c;
-  const color = gaugeColor(pct);
-  const reset = fmtRelative(metric.resetsAt);
+  const pctFrac = metric?.pct == null ? 0 : Math.max(0, Math.min(100, metric.pct)) / 100;
+  const offset = c - pctFrac * c;
+  const tone = pctFrac >= 0.85 ? 'crit'
+             : pctFrac >= 0.6  ? 'amber'
+             : pctFrac >= 0.05 ? 'healthy'
+             : 'cool';
+  const pctNum = metric?.pct == null ? '—' : Math.round(metric.pct);
+  const reset = fmtRelative(metric?.resetsAt);
   return `
-    <div class="gauge">
-      <div class="ring-wrap">
-        <svg viewBox="0 0 92 92">
-          <circle cx="46" cy="46" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="8"/>
-          <circle cx="46" cy="46" r="${r}" fill="none"
-            stroke="${color}" stroke-width="8" stroke-linecap="round"
-            stroke-dasharray="${dash} ${c - dash}" />
+    <div class="ring-card">
+      <div class="big-ring ${tone}">
+        <svg viewBox="0 0 132 132" aria-hidden="true">
+          <defs>
+            <linearGradient id="${escapeHtml(gradId)}" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#e89478"/>
+              <stop offset="100%" stop-color="#b45c41"/>
+            </linearGradient>
+          </defs>
+          <circle cx="66" cy="66" r="${r}" fill="none"
+            stroke="rgba(255,240,230,0.06)" stroke-width="9"/>
+          <circle cx="66" cy="66" r="${r}" fill="none"
+            stroke="url(#${escapeHtml(gradId)})" stroke-width="9" stroke-linecap="round"
+            stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
         </svg>
-        <div class="ring-text">
-          <span class="ring-pct">
-            ${pct == null ? '—' : Math.round(pct) + '<span class="pct-sign">%</span>'}
-          </span>
-          <span class="ring-sub">${escapeHtml(sub ?? '')}</span>
-        </div>
+        <div class="ring-pct"><span class="big">${pctNum}</span><span class="pct-sym">%</span></div>
       </div>
-      <div class="ring-label-block">
-        <div class="ring-label">${escapeHtml(label)}</div>
-        <div class="ring-reset">${escapeHtml(reset || '')}</div>
+      <div class="ring-meta">
+        <div class="ring-label">${escapeHtml(label)} <span class="ring-window">${escapeHtml(sub)}</span></div>
+        <div class="ring-reset">resets in ${escapeHtml(reset)}</div>
       </div>
     </div>`;
 }
 
-// ─── plan card ────────────────────────────────────────────
-async function refreshPlanUsage() {
-  const data = await api('/api/usage');
-  const status = document.getElementById('plan-status');
-  const updated = document.getElementById('plan-updated');
-  const grid = document.getElementById('plan-grid');
-  const onboard = document.getElementById('plan-onboard');
-  const syncPill = document.getElementById('sync-pill');
-  const syncText = document.getElementById('sync-pill-text');
+// ─── Topbar plan-inline mini rings ────────────────────────
+function inlineMiniRingHtml({ pct, label }) {
+  const r = 8.5;
+  const c = 2 * Math.PI * r;
+  const pctFrac = pct == null ? 0 : Math.max(0, Math.min(100, pct)) / 100;
+  const offset = c - pctFrac * c;
+  const num = pct == null ? '—' : Math.round(pct);
+  return `
+    <div class="mini-ring" title="${escapeHtml(label)} ${num}%">
+      <svg viewBox="0 0 22 22" aria-hidden="true">
+        <circle cx="11" cy="11" r="${r}" fill="none" stroke="rgba(255,240,230,0.10)" stroke-width="2.5"/>
+        <circle cx="11" cy="11" r="${r}" fill="none" stroke="var(--brand)" stroke-width="2.5"
+          stroke-linecap="round" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
+      </svg>
+      <div class="lbl">${num}</div>
+    </div>`;
+}
 
-  if (!data.ingested) {
-    status.textContent = 'Not synced — install the auto-sync extension below';
-    updated.textContent = '';
-    grid.innerHTML = '';
-    onboard.hidden = false;
-    syncPill.className = 'sync-pill off';
-    syncText.textContent = 'not synced';
-    await renderInstallPanel();
+// ═══════════════════════════════════════════════════════════
+//  Refresh: plan capacity + finance
+// ═══════════════════════════════════════════════════════════
+function renderPlanCapacity() {
+  const usage = state.data.usage;
+  const planMeta = document.getElementById('plan-meta');
+  const planTag = document.getElementById('plan-status-tag');
+  const body = document.getElementById('plan-body');
+  const inline = document.getElementById('plan-inline');
+
+  if (!usage || !usage.ingested) {
+    planMeta.innerHTML = `<span class="dot-live" style="background:var(--text-3);box-shadow:none;animation:none"></span>not synced`;
+    planTag.textContent = '○ Awaiting sync';
+    planTag.style.background = 'var(--glass-2)';
+    planTag.style.color = 'var(--text-3)';
+    // Render four placeholder rings so the layout doesn't collapse.
+    body.innerHTML = ['Session', 'Weekly', 'Sonnet', 'Design']
+      .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
+      .join('');
+    inline.hidden = true;
     return;
   }
 
-  const isStale = Date.now() - Date.parse(data.ingestedAt) > 10 * 60_000;
-  syncPill.className = `sync-pill ${isStale ? 'stale' : ''}`;
-  syncText.textContent = isStale ? `stale · ${fmtAgo(data.ingestedAt)}` : `synced ${fmtAgo(data.ingestedAt)}`;
-
-  status.textContent = data.org?.name ? data.org.name : 'synced';
-  updated.textContent = `updated ${fmtAgo(data.ingestedAt)}`;
-
-  const plan = data.plan ?? {};
-  const gaugeDefs = [
-    { label: 'Session', sub: '5h', metric: plan.fiveHour },
+  const plan = usage.plan ?? {};
+  const gauges = [
+    { label: 'Session',    sub: '5h', metric: plan.fiveHour },
     { label: 'Weekly all', sub: '7d', metric: plan.sevenDay },
-    { label: 'Sonnet', sub: '7d', metric: plan.sevenDaySonnet },
-    { label: 'Opus', sub: '7d', metric: plan.sevenDayOpus },
-    { label: 'Design', sub: '7d', metric: plan.sevenDayOmelette },
-  ].filter((g) => g.metric);
+    { label: 'Sonnet',     sub: '7d', metric: plan.sevenDaySonnet },
+    { label: 'Design',     sub: '7d', metric: plan.sevenDayOmelette },
+  ];
+  body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
 
-  let html = gaugeDefs.map(gaugeHtml).join('');
-  if (plan.extraUsage && plan.extraUsage.enabled) {
-    const e = plan.extraUsage;
-    // claude.ai returns utilization=null when extra_usage is at $0 — compute it
-    // from used/limit so the cap-percent line and bar always have a value.
-    let computedPct = e.pct;
-    if (computedPct == null && e.limitDollars && Number.isFinite(e.limitDollars) && e.limitDollars > 0) {
-      computedPct = ((e.usedDollars ?? 0) / e.limitDollars) * 100;
-    }
-    const pct = Math.max(0, Math.min(100, computedPct ?? 0));
-    html += `
-      <div class="extra-usage-cell">
-        <div class="lbl">Extra usage</div>
-        <div class="row">
-          <span class="val">${fmtUSD(e.usedDollars)}</span>
-          <span class="cap">of ${fmtUSD(e.limitDollars)}</span>
-        </div>
-        <div style="margin-top: 10px;">
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-        </div>
-        <div class="foot">
-          <span>${computedPct == null ? '—' : computedPct.toFixed(1) + '%'} of cap</span>
-          <span>${e.currency || 'USD'}</span>
-        </div>
-      </div>`;
+  // Status tag based on the highest pct.
+  const maxPct = Math.max(...gauges.map((g) => g.metric?.pct ?? 0));
+  if (maxPct >= 85) {
+    planTag.textContent = '● Critical';
+    planTag.style.background = 'rgba(224,123,110,0.14)';
+    planTag.style.color = 'var(--crit)';
+  } else if (maxPct >= 60) {
+    planTag.textContent = '● Warming';
+    planTag.style.background = 'var(--warn-tint)';
+    planTag.style.color = 'var(--warn)';
   } else {
-    html += `<div class="extra-usage-cell" style="opacity:.5">
-      <div class="lbl">Extra usage</div>
-      <div class="row" style="margin-top:6px"><span class="val mono" style="font-size:14px;color:var(--text-3)">none configured</span></div>
-    </div>`;
+    planTag.textContent = '● Healthy';
+    planTag.style.background = 'var(--ok-tint)';
+    planTag.style.color = 'var(--ok)';
   }
 
-  // claude.ai current balance (the consumer-app balance — endpoint TBD)
-  const claudeBal = plan.claudeBalance;
-  if (claudeBal && claudeBal.currentBalance != null) {
-    html += `
-      <div class="balance-cell claude-balance">
-        <span class="lbl">claude.ai balance</span>
-        <span class="val">${fmtUSD(claudeBal.currentBalance)}</span>
-        <div class="meta">
-          <span>${escapeHtml(claudeBal.currency || 'USD')}</span>
-        </div>
-      </div>`;
+  // Sync line
+  planMeta.innerHTML = `<span class="dot-live"></span>synced ${escapeHtml(fmtAgo(usage.ingestedAt))} · auto-refresh 60s`;
+
+  // Topbar inline plan summary
+  const sevenDayCost = state.data.summary?.cost;
+  const balance = plan.claudeBalance?.currentBalance;
+  inline.hidden = false;
+  inline.innerHTML = `
+    ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
+    ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
+    ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
+    ${inlineMiniRingHtml({ pct: plan.sevenDayOmelette?.pct, label: 'Design' })}
+    <span class="sep"></span>
+    <span class="num-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
+    <span class="num">${escapeHtml(sevenDayCost != null ? fmtUSD(sevenDayCost) : '—')}</span>
+    ${balance != null ? `<span class="sep"></span><span class="num-lbl">bal</span><span class="num">${escapeHtml(fmtUSD(balance))}</span>` : ''}
+  `;
+}
+
+function renderFinanceSide() {
+  const usage = state.data.usage;
+  const plan = usage?.plan ?? {};
+  const extra = plan.extraUsage;
+  const usedEl = document.getElementById('extra-used');
+  const capEl = document.getElementById('extra-cap');
+  const barEl = document.getElementById('extra-bar');
+  const pctEl = document.getElementById('extra-pct');
+  const currEl = document.getElementById('extra-currency');
+
+  if (extra && extra.enabled) {
+    const used = extra.usedDollars ?? 0;
+    const limit = extra.limitDollars ?? 0;
+    usedEl.textContent = used.toFixed(2);
+    capEl.textContent = limit > 0 ? `/ $${limit.toFixed(2)}` : '';
+    let pct = extra.pct;
+    if ((pct == null || !Number.isFinite(pct)) && limit > 0) pct = (used / limit) * 100;
+    pct = Math.max(0, Math.min(100, pct ?? 0));
+    barEl.style.width = `${pct.toFixed(1)}%`;
+    pctEl.textContent = `${pct.toFixed(1)}% of cap`;
+    currEl.textContent = extra.currency || 'USD';
   } else {
-    html += `
-      <div class="balance-cell claude-balance empty">
-        <span class="lbl">claude.ai balance</span>
-        <span class="val">—</span>
-        <div class="meta">
-          <span>endpoint not yet identified</span>
-        </div>
-      </div>`;
+    usedEl.textContent = '0.00';
+    capEl.textContent = '';
+    barEl.style.width = '0%';
+    pctEl.textContent = 'not configured';
+    currEl.textContent = 'USD';
   }
 
-  // API console balance (console.anthropic.com prepaid credits)
-  const bal = plan.balance;
-  if (bal && bal.currentBalance != null) {
-    const reloadCls = bal.autoReloadEnabled ? 'reload-on' : 'reload-off';
-    const reloadTxt = bal.autoReloadEnabled ? `auto-reload ${fmtUSD(bal.autoReloadAmount)}` : 'auto-reload off';
-    html += `
-      <div class="balance-cell api-balance">
-        <span class="lbl">API console balance</span>
-        <span class="val">${fmtUSD(bal.currentBalance)}</span>
-        <div class="meta">
-          <span class="${reloadCls}">${escapeHtml(reloadTxt)}</span>
-          <span>${escapeHtml(bal.currency || 'USD')}</span>
-        </div>
-      </div>`;
+  // claude.ai balance side card
+  const bal = plan.claudeBalance;
+  const valEl = document.getElementById('claude-balance-val');
+  const ccyEl = document.getElementById('claude-balance-currency');
+  const footEl = document.getElementById('claude-balance-foot');
+  if (bal && Number.isFinite(bal.currentBalance)) {
+    valEl.textContent = bal.currentBalance.toFixed(2);
+    ccyEl.textContent = bal.currency || 'USD';
+    footEl.textContent = usage?.ingestedAt ? `refreshed ${fmtAgo(usage.ingestedAt)}` : '';
   } else {
-    html += `
-      <div class="balance-cell api-balance empty">
-        <span class="lbl">API console balance</span>
-        <span class="val">—</span>
-        <div class="meta">
-          <span>platform.claude.com not connected</span>
-        </div>
-      </div>`;
+    valEl.textContent = '—';
+    ccyEl.textContent = 'USD';
+    footEl.textContent = 'sync to view';
   }
-  grid.innerHTML = html;
-
-  onboard.hidden = !isStale;
-  if (!onboard.hidden) await renderInstallPanel();
 }
 
-// ─── install panel ────────────────────────────────────────
-const CWS_URL = '';
-let _installPanelReady = false;
-async function renderInstallPanel() {
-  if (_installPanelReady) return;
-  const installBtn = document.getElementById('install-extension');
-  const installMeta = document.getElementById('install-meta');
-  if (CWS_URL) {
-    installBtn.setAttribute('href', CWS_URL);
-    installBtn.setAttribute('target', '_blank');
-    installMeta.textContent = 'Chrome Web Store';
+// ═══════════════════════════════════════════════════════════
+//  Refresh: code analytics digest strip
+// ═══════════════════════════════════════════════════════════
+function renderMetricStrip() {
+  const summary = state.data.summary;
+  const cache = state.data.cache;
+  const sessions = state.data.sessions;
+  const roi = state.data.roi;
+  const health = state.data.health;
+
+  document.getElementById('ms-period-chip').textContent = PERIOD_LABELS[state.period] ?? state.period;
+
+  document.getElementById('ms-cost').textContent = fmtUSD(summary?.cost);
+  const subCost = roi?.subscriptionCost ?? health?.subscriptionCost ?? 200;
+  document.getElementById('ms-sub-cost').textContent = `${fmtUSD(subCost)}/mo`;
+
+  const savings = cache?.netSavingsUSD;
+  document.getElementById('ms-savings').textContent =
+    savings != null ? `${fmtUSD(savings)} cache savings` : '—';
+
+  document.getElementById('ms-messages').textContent = fmtInt(summary?.messageCount);
+  document.getElementById('ms-tools').textContent = `${fmtInt(summary?.toolCallCount)} tool calls`;
+
+  document.getElementById('ms-sessions').textContent = fmtInt(summary?.sessionCount ?? sessions?.count);
+  document.getElementById('ms-subagents').textContent = `${fmtInt(summary?.subagentTurnCount)} subagents`;
+
+  document.getElementById('ms-cachehit').textContent = fmtPct(cache?.hitRate, 1);
+  const reads = summary?.tokens?.cacheRead;
+  document.getElementById('ms-cachereads').textContent = `${fmtTokens(reads)} cached reads`;
+
+  const totalTok = summary?.totalTokens ?? totalTokensOf(summary?.tokens ?? {});
+  document.getElementById('ms-tokens').textContent = fmtTokens(totalTok);
+  const inTok = summary?.tokens?.inputTokens;
+  const outTok = summary?.tokens?.outputTokens;
+  document.getElementById('ms-token-split').textContent =
+    `${fmtTokens(inTok)} in · ${fmtTokens(outTok)} out`;
+
+  // ROI: roi.netValue + roi.multiplier (computed by lib/roi-calculator.js).
+  // Show return-on-subscription as netValue / subscriptionCost when both present.
+  if (roi && Number.isFinite(roi.netValue) && Number.isFinite(roi.subscriptionCost) && roi.subscriptionCost > 0) {
+    const ret = (roi.netValue / roi.subscriptionCost) * 100;
+    document.getElementById('ms-roi').textContent = `${Math.round(ret)}%`;
+    const mult = roi.multiplier ? `${roi.multiplier.toFixed(1)}×` : '';
+    document.getElementById('ms-roi-sub').textContent =
+      `${mult} · ${fmtUSD(roi.netValue)} net value`;
   } else {
-    installMeta.textContent = 'see install options below';
-    installBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const details = document.querySelector('.plan-alternates');
-      if (details) {
-        details.open = true;
-        details.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    });
+    document.getElementById('ms-roi').textContent = '—';
+    document.getElementById('ms-roi-sub').textContent = '—';
   }
-  const link = document.getElementById('bookmarklet-link');
-  if (link) {
-    const data = await api('/api/bookmarklet');
-    link.setAttribute('href', data.href);
-  }
-  _installPanelReady = true;
 }
 
-// ─── headline ─────────────────────────────────────────────
-async function refreshHeadline() {
-  const isToday = state.period === 'today';
-  const [summary, cache, sessions, daily, hours] = await Promise.all([
-    api('/api/summary', commonParams()),
-    api('/api/cache', commonParams()),
-    api('/api/sessions', commonParams()),
-    api('/api/daily', commonParams()),
-    isToday ? api('/api/hours', commonParams()) : Promise.resolve(null),
-  ]);
-
-  // Hero
-  const roi = await api('/api/roi', commonParams());
-  document.getElementById('hero-cost').textContent = fmtUSD(summary.cost);
-  document.getElementById('hero-period').textContent = PERIOD_LABELS[state.period] ?? state.period;
-  document.getElementById('hero-sub-cost').textContent = `${fmtUSD(roi.subscriptionCost)}/mo`;
-  document.getElementById('hero-net-savings').textContent =
-    cache.netSavingsUSD != null
-      ? ` Net cache savings ${fmtUSD(cache.netSavingsUSD)}.`
-      : '';
-
-  // Hero spark — hourly when 'today', else daily
-  const heroSeries = isToday
-    ? (hours?.hours ?? []).map((h) => h.cost)
-    : daily.days.map((d) => d.totalCost);
-  renderSpark(document.getElementById('hero-spark'), heroSeries);
-  document.getElementById('hero-spark-start').textContent = isToday
-    ? '00:00'
-    : (daily.days[0]?.date ?? 'start');
-
-  // Secondary: messages / sessions / cache hit
-  document.getElementById('sec-messages').textContent = fmtInt(summary.messageCount);
-  document.getElementById('sec-messages-sub').textContent =
-    `${fmtInt(summary.toolCallCount)} tool calls`;
-  renderSpark(
-    document.querySelector('[data-spark="messages"]'),
-    daily.days.map((d) => d.sessionCount),
-    { color: 'var(--text-3)', fill: false }
-  );
-
-  document.getElementById('sec-sessions').textContent = fmtInt(summary.sessionCount);
-  document.getElementById('sec-sessions-sub').textContent =
-    `${fmtInt(summary.subagentTurnCount)} subagents`;
-  renderSpark(
-    document.querySelector('[data-spark="sessions"]'),
-    daily.days.map((d) => d.sessionCount),
-    { color: 'var(--text-3)', fill: false }
-  );
-
-  document.getElementById('sec-cachehit').textContent = fmtPct(cache.hitRate, 1);
-  document.getElementById('sec-cachehit-sub').textContent =
-    `${fmtTokens(summary.tokens.cacheRead)} cached reads`;
-  renderSpark(
-    document.querySelector('[data-spark="cachehit"]'),
-    cache.dailyTrend.map((d) => (d.hitRate ?? 0) * 100),
-    { color: 'var(--ok)' }
-  );
-
-  // Token tier breakdown
-  const tk = summary.tokens || {};
-  document.querySelector('[data-tok="input"]').textContent = fmtTokens(tk.inputTokens);
-  document.querySelector('[data-tok="output"]').textContent = fmtTokens(tk.outputTokens);
-  document.querySelector('[data-tok="cacheRead"]').textContent = fmtTokens(tk.cacheRead);
-  document.querySelector('[data-tok="cache5m"]').textContent = fmtTokens(tk.cacheCreate5m);
-  document.querySelector('[data-tok="cache1h"]').textContent = fmtTokens(tk.cacheCreate1h);
-  document.querySelector('[data-tok="netSavings"]').textContent = fmtUSD(cache.netSavingsUSD);
-
-  return { sessions, daily, hours, isToday };
-}
-
-// ─── cost over time chart (daily or hourly) ───────────────
-function renderCostChart({ daily, hours, isToday }) {
-  const wrap = document.getElementById('daily-chart');
-  const ticks = document.getElementById('daily-ticks');
-  const meta = document.getElementById('daily-meta');
-
-  if (isToday) {
-    const list = utcHoursToLocal(hours?.hours);
-    meta.textContent = `24 hours (${TZ_LABEL})`;
-    if (list.every((h) => h.cost === 0)) {
-      wrap.innerHTML = `<div class="empty" style="width:100%">no data</div>`;
-      ticks.innerHTML = '';
-      return;
-    }
-    const max = Math.max(...list.map((h) => h.cost), 0.0001);
-    const nowHour = new Date().getHours();
-    let html = '<div class="gridlines"><div></div><div></div><div></div><div></div></div>';
-    for (const h of list) {
-      const heightPct = (h.cost / max) * 100;
-      const cls = h.hour === nowHour ? 'now' : h.hour > nowHour ? 'future' : '';
-      html += `
-        <div class="bar-col ${cls}" title="${String(h.hour).padStart(2,'0')}:00 ${TZ_LABEL} — ${fmtUSDLong(h.cost)}">
-          <div class="bar" style="height:${Math.max(heightPct, 0.5).toFixed(1)}%"></div>
-        </div>`;
-    }
-    wrap.innerHTML = html;
-    ticks.innerHTML = `
-      <span style="flex:1;text-align:left">00</span>
-      <span style="flex:1;text-align:center">06</span>
-      <span style="flex:1;text-align:center">12</span>
-      <span style="flex:1;text-align:center">18</span>
-      <span style="flex:1;text-align:right">23</span>`;
-    return;
-  }
-
-  const days = daily.days ?? [];
-  meta.textContent = `${days.length} day${days.length === 1 ? '' : 's'}`;
-  if (days.length === 0) {
-    wrap.innerHTML = `<div class="empty" style="width:100%">no data</div>`;
-    ticks.innerHTML = '';
-    return;
-  }
-  const max = Math.max(...days.map((d) => d.totalCost), 1);
-  const todayDate = new Date().toISOString().slice(0, 10);
-  let html = '<div class="gridlines"><div></div><div></div><div></div><div></div></div>';
-  for (const d of days) {
-    const h = (d.totalCost / max) * 100;
-    const cls = d.date === todayDate ? 'now' : '';
-    html += `
-      <div class="bar-col ${cls}" title="${d.date}: ${fmtUSDLong(d.totalCost)}">
-        <div class="bar" style="height:${h.toFixed(1)}%"></div>
-      </div>`;
-  }
-  wrap.innerHTML = html;
-  const tickLabels = pickTicks(days.map((d) => d.date), 5);
-  ticks.innerHTML = tickLabels
-    .map((t) => `<span style="flex:1;text-align:${t.align}">${escapeHtml(t.label)}</span>`)
-    .join('');
-}
-
-function pickTicks(labels, count) {
-  if (labels.length === 0) return [];
-  if (labels.length <= count) {
-    return labels.map((l, i) => ({
-      label: shortDate(l),
-      align: i === 0 ? 'left' : i === labels.length - 1 ? 'right' : 'center',
-    }));
-  }
-  const step = (labels.length - 1) / (count - 1);
-  return Array.from({ length: count }, (_, i) => {
-    const idx = Math.round(i * step);
-    return {
-      label: shortDate(labels[idx]),
-      align: i === 0 ? 'left' : i === count - 1 ? 'right' : 'center',
-    };
-  });
-}
-
-function shortDate(iso) {
-  if (!iso) return '';
-  const [, m, d] = iso.split('-');
-  return m && d ? `${m}/${d}` : iso;
-}
-
-// ─── timezone helpers ────────────────────────────────────
-// /api/hours returns 24 buckets indexed by UTC hour. Remap to the user's
-// local timezone so the chart's hour-0 column = user's local midnight.
+// ═══════════════════════════════════════════════════════════
+//  Refresh: cost over time chart
+// ═══════════════════════════════════════════════════════════
 function utcHoursToLocal(hours) {
   const out = new Array(24).fill(null).map((_, i) => ({ hour: i, calls: 0, cost: 0 }));
   for (const h of hours ?? []) {
@@ -544,167 +377,240 @@ function utcHoursToLocal(hours) {
   return out;
 }
 
-const TZ_LABEL = (() => {
-  try {
-    const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return z || 'local';
-  } catch {
-    return 'local';
+function pickTicks(labels, count) {
+  if (labels.length === 0) return [];
+  if (labels.length <= count) {
+    return labels.map((l) => shortDate(l));
   }
-})();
+  const step = (labels.length - 1) / (count - 1);
+  return Array.from({ length: count }, (_, i) => shortDate(labels[Math.round(i * step)]));
+}
 
-// ─── peak hours ───────────────────────────────────────────
-async function refreshPeakHours() {
-  const data = await api('/api/hours', commonParams());
-  const hours = utcHoursToLocal(data.hours);
+function shortDate(iso) {
+  if (!iso) return '';
+  const [, m, d] = iso.split('-');
+  return m && d ? `${m}/${d}` : iso;
+}
+
+function renderCostChart() {
+  const wrap = document.getElementById('cost-chart');
+  const ticks = document.getElementById('cost-ticks');
+  const meta = document.getElementById('cost-meta');
+  const isToday = state.period === 'today';
+
+  if (isToday) {
+    const list = utcHoursToLocal(state.data.hours?.hours);
+    meta.textContent = `24 hours (${TZ_LABEL})`;
+    if (list.every((h) => h.cost === 0)) {
+      wrap.innerHTML = '<div class="empty" style="width:100%">no data</div>';
+      ticks.innerHTML = '';
+      return;
+    }
+    const max = Math.max(...list.map((h) => h.cost), 0.0001);
+    const nowHour = new Date().getHours();
+    let html = '<div class="gridline" style="bottom:25%"></div><div class="gridline" style="bottom:50%"></div><div class="gridline" style="bottom:75%"></div>';
+    for (const h of list) {
+      const heightPct = (h.cost / max) * 100;
+      const cls = h.hour === nowHour ? 'now' : h.hour > nowHour ? 'dim' : '';
+      html += `<div class="bar ${cls}" style="height:${Math.max(heightPct, 0.5).toFixed(1)}%" title="${String(h.hour).padStart(2,'0')}:00 — ${fmtUSD(h.cost)}"></div>`;
+    }
+    wrap.innerHTML = html;
+    ticks.innerHTML = '<span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>';
+    return;
+  }
+
+  const days = state.data.daily?.days ?? [];
+  meta.textContent = `${days.length} day${days.length === 1 ? '' : 's'}`;
+  if (days.length === 0) {
+    wrap.innerHTML = '<div class="empty" style="width:100%">no data</div>';
+    ticks.innerHTML = '';
+    return;
+  }
+  const max = Math.max(...days.map((d) => d.totalCost), 1);
+  const todayDate = new Date().toISOString().slice(0, 10);
+  let html = '<div class="gridline" style="bottom:25%"></div><div class="gridline" style="bottom:50%"></div><div class="gridline" style="bottom:75%"></div>';
+  for (const d of days) {
+    const h = (d.totalCost / max) * 100;
+    const cls = d.date === todayDate ? 'now' : '';
+    html += `<div class="bar ${cls}" style="height:${h.toFixed(1)}%" title="${escapeHtml(d.date)}: ${fmtUSD(d.totalCost)}"></div>`;
+  }
+  wrap.innerHTML = html;
+  const labels = pickTicks(days.map((d) => d.date), 5);
+  ticks.innerHTML = labels.map((l) => `<span>${escapeHtml(l)}</span>`).join('');
+}
+
+function renderPeakHours() {
+  const data = state.data.hours;
   const wrap = document.getElementById('peak-chart');
-  const sub = document.getElementById('peak-sub');
-  if (sub) sub.textContent = `distribution by hour (${TZ_LABEL})`;
-  if (hours.length === 0 || hours.every((h) => h.calls === 0)) {
-    wrap.innerHTML = `<div class="empty" style="width:100%">no data</div>`;
+  const meta = document.getElementById('peak-meta');
+  meta.textContent = TZ_LABEL;
+  if (!data) {
+    wrap.innerHTML = '<div class="empty" style="width:100%">no data</div>';
+    return;
+  }
+  const hours = utcHoursToLocal(data.hours);
+  if (hours.every((h) => h.calls === 0)) {
+    wrap.innerHTML = '<div class="empty" style="width:100%">no data</div>';
     return;
   }
   const max = Math.max(...hours.map((h) => h.calls), 1);
   wrap.innerHTML = hours
     .map((h) => {
       const pct = (h.calls / max) * 100;
-      const isPeak = pct > 70;
-      return `<div class="pcol ${isPeak ? 'peak' : ''}" style="height:${Math.max(3, pct)}%" title="${String(h.hour).padStart(2,'0')}:00 ${TZ_LABEL} — ${h.calls} calls"></div>`;
+      const hot = pct > 55;
+      return `<div class="bar ${hot ? 'hot' : ''}" style="height:${Math.max(2, pct).toFixed(1)}%" title="${String(h.hour).padStart(2,'0')}:00 — ${h.calls} calls"></div>`;
     })
     .join('');
 }
 
-// ─── tables ───────────────────────────────────────────────
-function barCellHtml(value, max, color) {
-  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
-  return `<td class="bar-cell">
-    <div class="bar-track">
-      <div class="bar-fill" style="width:${pct.toFixed(1)}%${color ? `;background:${color}` : ''}"></div>
-    </div>
-  </td>`;
-}
+// ═══════════════════════════════════════════════════════════
+//  Refresh: tables
+// ═══════════════════════════════════════════════════════════
+function renderProjectsTable() {
+  const list = state.data.projects?.projects ?? [];
+  document.getElementById('tab-badge-projects').textContent = String(list.length);
+  const tb = document.getElementById('proj-body');
+  const fullTb = document.getElementById('proj-full-body');
+  document.getElementById('projects-count').textContent = `${list.length} project${list.length === 1 ? '' : 's'}`;
 
-async function refreshProjectsTable() {
-  const data = await api('/api/projects', commonParams());
-  const list = data.projects ?? [];
-  const tb = document.querySelector('[data-tbl="projects"] tbody');
   if (list.length === 0) {
-    tb.innerHTML = `<tr><td colspan="8" class="empty">no projects</td></tr>`;
+    tb.innerHTML = '<tr><td colspan="8" class="empty">no projects</td></tr>';
+    fullTb.innerHTML = '<tr><td colspan="8" class="empty">no projects</td></tr>';
     return;
   }
   const max = Math.max(...list.map((p) => p.totalCost), 1);
-  tb.innerHTML = list
-    .map((p) => `<tr>
-      <td class="mono">${escapeHtml(p.project ?? '—')}</td>
-      ${barCellHtml(p.totalCost, max)}
-      <td class="num">${fmtUSDLong(p.totalCost)}</td>
-      <td class="num muted">${fmtInt(p.sessionCount)}</td>
-      <td class="num muted">${fmtInt(p.messageCount)}</td>
-      <td class="num muted">${fmtInt(p.toolCallCount)}</td>
-      <td class="num muted">${fmtTokens(p.totalTokens)}</td>
-      <td class="num ${p.cacheHitRate > 0.7 ? 'ok' : 'muted'}">${fmtPct(p.cacheHitRate, 0)}</td>
-    </tr>`)
-    .join('');
+  const rowFor = (p) => {
+    const proj = p.project ?? '—';
+    const slashIdx = proj.indexOf('/');
+    const projHtml = slashIdx > 0
+      ? `${escapeHtml(proj.slice(0, slashIdx))}<span class="slash">/</span>${escapeHtml(proj.slice(slashIdx + 1))}`
+      : escapeHtml(proj);
+    const pct = (p.totalCost / max) * 100;
+    return `<tr>
+      <td class="proj">${projHtml}</td>
+      <td><div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%"></div></div></td>
+      <td class="num">${escapeHtml(fmtUSD(p.totalCost))}</td>
+      <td class="num dim">${escapeHtml(fmtInt(p.sessionCount))}</td>
+      <td class="num dim">${escapeHtml(fmtInt(p.messageCount))}</td>
+      <td class="num dim">${escapeHtml(fmtInt(p.toolCallCount))}</td>
+      <td class="num dim">${escapeHtml(fmtTokens(p.totalTokens))}</td>
+      <td class="num ${p.cacheHitRate > 0.7 ? 'ok' : 'dim'}">${escapeHtml(fmtPct(p.cacheHitRate, 0))}</td>
+    </tr>`;
+  };
+  tb.innerHTML = list.slice(0, 6).map(rowFor).join('');
+  fullTb.innerHTML = list.map(rowFor).join('');
 }
 
-const ACT_COLORS = [
-  'var(--act-1)', 'var(--act-2)', 'var(--act-3)', 'var(--act-4)',
-  'var(--act-5)', 'var(--act-6)', 'var(--act-7)', 'var(--act-8)',
-];
-
-async function refreshActivityTable() {
-  const data = await api('/api/tasks', commonParams());
-  const list = data.tasks ?? [];
-  const tb = document.querySelector('[data-tbl="activity"] tbody');
+function renderActivityTable() {
+  const list = state.data.activity?.tasks ?? [];
+  const tb = document.getElementById('act-body');
   if (list.length === 0) {
-    tb.innerHTML = `<tr><td colspan="4" class="empty">no activity</td></tr>`;
+    tb.innerHTML = '<tr><td colspan="4" class="empty">no activity</td></tr>';
     return;
   }
   const total = list.reduce((s, x) => s + x.turns, 0);
+  const colors = ['var(--act-1)', 'var(--act-2)', 'var(--act-3)', 'var(--act-4)', 'var(--act-5)', 'var(--act-6)', 'var(--act-7)', 'var(--act-8)'];
   tb.innerHTML = list
     .map((x, i) => {
-      const color = ACT_COLORS[i] ?? 'var(--act-8)';
+      const c = colors[i] ?? colors[colors.length - 1];
       const pct = total === 0 ? 0 : (x.turns / total) * 100;
       return `<tr>
-        <td><span class="dot-tag" style="background:${color}"></span>${escapeHtml(x.category)}</td>
-        <td class="bar-cell-thin">
-          <div class="bar-track" style="height:4px">
-            <div class="bar-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div>
-          </div>
-        </td>
-        <td class="num">${fmtInt(x.turns)}</td>
-        <td class="num muted">${fmtPct(x.pctOfTotal, 1)}</td>
+        <td><span class="dot" style="background:${c}"></span>${escapeHtml(x.category)}</td>
+        <td><div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%;background:${c}"></div></div></td>
+        <td class="num">${escapeHtml(fmtInt(x.turns))}</td>
+        <td class="num dim-2">${escapeHtml(fmtPct(x.pctOfTotal, 1))}</td>
       </tr>`;
     })
     .join('');
 }
 
-async function refreshModelsTable() {
-  const data = await api('/api/models', commonParams());
-  const list = data.models ?? [];
-  const tb = document.querySelector('[data-tbl="models"] tbody');
+function renderModelsTable() {
+  const list = state.data.models?.models ?? [];
+  const tb = document.getElementById('models-body');
   if (list.length === 0) {
-    tb.innerHTML = `<tr><td colspan="5" class="empty">no models</td></tr>`;
+    tb.innerHTML = '<tr><td colspan="6" class="empty">no models</td></tr>';
     return;
   }
   const totalCost = list.reduce((s, m) => s + m.cost, 0) || 1;
   tb.innerHTML = list
     .map((m) => {
       const cls = modelClass(m.model);
-      const color = cls === 'opus' ? 'var(--opus)' : cls === 'haiku' ? 'var(--haiku)' : 'var(--sonnet)';
+      const c = modelColorVar(cls);
+      const avg = m.turnCount > 0 ? m.cost / m.turnCount : null;
+      const pct = (m.cost / totalCost) * 100;
       return `<tr>
-        <td class="mono"><span class="dot-tag" style="background:${color}"></span>${escapeHtml(m.model)}</td>
-        ${barCellHtml(m.cost, totalCost, color)}
-        <td class="num">${fmtUSDLong(m.cost)}</td>
-        <td class="num muted">${fmtInt(m.turnCount)}</td>
-        <td class="num muted">${fmtPct(m.cacheHitRate, 0)}</td>
+        <td class="proj"><span class="dot" style="background:${c}"></span>${escapeHtml(m.model)}</td>
+        <td><div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%;background:${c}"></div></div></td>
+        <td class="num">${escapeHtml(fmtUSD(m.cost))}</td>
+        <td class="num dim">${escapeHtml(fmtInt(m.turnCount))}</td>
+        <td class="num ${m.cacheHitRate > 0.7 ? 'ok' : 'dim'}">${escapeHtml(fmtPct(m.cacheHitRate, 0))}</td>
+        <td class="num dim">${avg == null ? '—' : escapeHtml(fmtUSD(avg))}</td>
       </tr>`;
     })
     .join('');
 }
 
-async function refreshSessionsTable(sessions) {
-  const tb = document.querySelector('[data-tbl="sessions"] tbody');
-  const expensive = await api('/api/sessions/expensive', { ...commonParams(), limit: 5 });
-  const expensiveIds = new Set(expensive.top.map((t) => t.sessionId));
+function renderSessionsTable() {
+  const sessions = state.data.sessions;
+  const expensive = state.data.expensive;
+  if (!sessions) return;
+  const all = sessions.sessions ?? [];
+  const expensiveIds = new Set((expensive?.top ?? []).map((t) => t.sessionId));
+  document.getElementById('tab-badge-sessions').textContent = String(all.length);
   document.getElementById('sessions-count').textContent =
-    `${sessions.count} session${sessions.count === 1 ? '' : 's'}`;
-  const sorted = [...sessions.sessions].sort((a, b) =>
-    (b.startedAt || '').localeCompare(a.startedAt || '')
-  );
-  const top = sorted.slice(0, 80);
-  if (top.length === 0) {
-    tb.innerHTML = `<tr><td colspan="9" class="empty">no sessions in this period</td></tr>`;
-    return;
-  }
-  tb.innerHTML = top
-    .map((s) => {
-      const hot = expensiveIds.has(s.sessionId);
-      const dur = s.durationMs ? `${Math.round(s.durationMs / 60000)}m` : '—';
-      const model = s.byModel?.[0]?.model ?? '—';
-      const cls = modelClass(model);
-      return `<tr>
-        <td class="muted mono">${hot ? '<span class="hot-mark">★</span>' : ''}${escapeHtml(fmtTime(s.startedAt))}</td>
-        <td class="mono">${escapeHtml(s.project ?? '—')}</td>
-        <td class="mono model-color ${cls}">${escapeHtml(model)}</td>
-        <td><span class="task-pill">${escapeHtml(s.tasks?.primary ?? '—')}</span></td>
-        <td class="num muted">${dur}</td>
-        <td class="num muted">${fmtInt(s.turnCount)}</td>
-        <td class="num muted">${fmtTokens(totalTokensOf(s.tokens))}</td>
-        <td class="num ${s.cacheHitRate > 0.7 ? 'ok' : 'muted'}">${fmtPct(s.cacheHitRate, 0)}</td>
-        <td class="num" style="font-weight:600">${fmtUSDLong(s.cost)}</td>
-      </tr>`;
-    })
-    .join('');
+    `${all.length} session${all.length === 1 ? '' : 's'}`;
+
+  const sorted = [...all].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+  const rowFor = (s) => {
+    const hot = expensiveIds.has(s.sessionId);
+    const dur = s.durationMs ? `${Math.round(s.durationMs / 60000)}m` : '—';
+    const model = s.byModel?.[0]?.model ?? '—';
+    const cls = modelClass(model);
+    return `<tr>
+      <td class="dim">${hot ? '<span class="hot-mark">★</span>' : ''}<span class="mono" style="font-size:11px">${escapeHtml(fmtTime(s.startedAt))}</span></td>
+      <td class="proj">${escapeHtml(s.project ?? '—')}</td>
+      <td class="proj model-color ${cls}" style="font-size:11px">${escapeHtml(model)}</td>
+      <td><span class="tag">${escapeHtml(s.tasks?.primary ?? '—')}</span></td>
+      <td class="num dim">${escapeHtml(dur)}</td>
+      <td class="num dim">${escapeHtml(fmtInt(s.turnCount))}</td>
+      <td class="num ${s.cacheHitRate > 0.7 ? 'ok' : 'dim'}">${escapeHtml(fmtPct(s.cacheHitRate, 0))}</td>
+      <td class="num" style="font-weight:600">${escapeHtml(fmtUSD(s.cost))}</td>
+    </tr>`;
+  };
+  // Recent (overview) — same shape minus the Tokens column.
+  const recentRow = (s) => {
+    const hot = expensiveIds.has(s.sessionId);
+    const dur = s.durationMs ? `${Math.round(s.durationMs / 60000)}m` : '—';
+    const model = s.byModel?.[0]?.model ?? '—';
+    const cls = modelClass(model);
+    return `<tr>
+      <td class="dim">${hot ? '<span class="hot-mark">★</span>' : ''}<span class="mono" style="font-size:11px">${escapeHtml(fmtTime(s.startedAt))}</span></td>
+      <td class="proj">${escapeHtml(s.project ?? '—')}</td>
+      <td class="proj model-color ${cls}" style="font-size:11px">${escapeHtml(model)}</td>
+      <td><span class="tag">${escapeHtml(s.tasks?.primary ?? '—')}</span></td>
+      <td class="num dim">${escapeHtml(dur)}</td>
+      <td class="num dim">${escapeHtml(fmtInt(s.turnCount))}</td>
+      <td class="num ${s.cacheHitRate > 0.7 ? 'ok' : 'dim'}">${escapeHtml(fmtPct(s.cacheHitRate, 0))}</td>
+      <td class="num" style="font-weight:600">${escapeHtml(fmtUSD(s.cost))}</td>
+    </tr>`;
+  };
+  // Recent: top 5 by recency
+  const recent = sorted.slice(0, 5);
+  document.getElementById('sess-body').innerHTML = recent.length
+    ? recent.map(recentRow).join('')
+    : '<tr><td colspan="8" class="empty">no sessions in this period</td></tr>';
+  // Full table: top 80 by recency (matches v0.3.x cap to avoid jank at 5000 rows)
+  document.getElementById('sess-full-body').innerHTML = sorted.length
+    ? sorted.slice(0, 80).map(rowFor).join('')
+    : '<tr><td colspan="9" class="empty">no sessions in this period</td></tr>';
 }
 
-// ─── tool lists ──────────────────────────────────────────
-async function refreshToolLists() {
-  const data = await api('/api/tools', commonParams());
+function renderToolLists() {
+  const data = state.data.tools;
   function fill(key, items) {
-    const wrap = document.querySelector(`[data-tools="${key}"]`);
+    const wrap = document.getElementById(`${key}-tools`);
     if (!items || items.length === 0) {
-      wrap.innerHTML = `<div class="empty">none</div>`;
+      wrap.innerHTML = '<div class="empty">none</div>';
       return;
     }
     const max = Math.max(...items.map((x) => x.count), 1);
@@ -713,47 +619,187 @@ async function refreshToolLists() {
       .map((x) => {
         const pct = (x.count / max) * 100;
         return `<div class="tool-row">
-          <span class="name">${escapeHtml(x.name)}</span>
+          <span class="tool-name">${escapeHtml(x.name)}</span>
           <div class="bar-track" style="height:4px"><div class="bar-fill" style="width:${pct.toFixed(1)}%"></div></div>
-          <span class="calls">${fmtInt(x.count)}</span>
+          <span class="tool-count">${escapeHtml(fmtInt(x.count))}</span>
         </div>`;
       })
       .join('');
   }
-  fill('core', data.coreTools);
-  fill('shell', data.shellCommands);
-  fill('mcp', data.mcpServers);
+  fill('core', data?.coreTools);
+  fill('shell', data?.shellCommands);
+  fill('mcp', data?.mcpServers);
 }
 
-// ─── exports ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+//  Settings tab — read-only mirror of /api/health + /api/usage
+// ═══════════════════════════════════════════════════════════
+function renderSettings() {
+  const health = state.data.health;
+  const usage = state.data.usage;
+  if (health) {
+    document.getElementById('set-port').value = String(health.pid ? location.port || 3456 : 3456);
+    if (health.subscriptionCost != null) {
+      document.getElementById('set-sub-cost').value = `$${Number(health.subscriptionCost).toFixed(2)}`;
+    }
+    if (health.pricing?.source) {
+      const tag = document.getElementById('set-pricing-source');
+      tag.textContent = health.pricing.source;
+      tag.style.background = 'var(--ok-tint)';
+      tag.style.color = 'var(--ok)';
+    }
+  }
+  const syncTag = document.getElementById('set-sync-status');
+  const lastSync = document.getElementById('set-last-sync');
+  if (usage?.ingested) {
+    const stale = Date.now() - Date.parse(usage.ingestedAt) > 10 * 60_000;
+    syncTag.textContent = stale ? '● Stale' : '● Active';
+    syncTag.style.background = stale ? 'var(--warn-tint)' : 'var(--ok-tint)';
+    syncTag.style.color = stale ? 'var(--warn)' : 'var(--ok)';
+    lastSync.textContent = new Date(usage.ingestedAt).toLocaleString();
+  } else {
+    syncTag.textContent = '○ Not connected';
+    syncTag.style.background = 'var(--glass-2)';
+    syncTag.style.color = 'var(--text-3)';
+    lastSync.textContent = 'never';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Tab + period segmented control morphing indicator
+// ═══════════════════════════════════════════════════════════
+function moveIndicator(seg, indId) {
+  const ind = document.getElementById(indId);
+  const sel = seg.querySelector('[aria-selected="true"]');
+  if (!sel || !ind) return;
+  const segRect = seg.getBoundingClientRect();
+  const r = sel.getBoundingClientRect();
+  ind.style.left = (r.left - segRect.left) + 'px';
+  ind.style.width = r.width + 'px';
+}
+
+function bindSegments() {
+  const periodSeg = document.getElementById('period-seg');
+  periodSeg.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      periodSeg.querySelectorAll('button').forEach((b) => b.removeAttribute('aria-selected'));
+      btn.setAttribute('aria-selected', 'true');
+      state.period = btn.dataset.period;
+      moveIndicator(periodSeg, 'period-ind');
+      refreshAll();
+    });
+  });
+
+  const tabs = document.getElementById('tabs');
+  function switchTab(name) {
+    state.tab = name;
+    tabs.querySelectorAll('button').forEach((b) => {
+      b.removeAttribute('aria-selected');
+      if (b.dataset.tab === name) b.setAttribute('aria-selected', 'true');
+    });
+    document.querySelectorAll('[data-panel]').forEach((p) => {
+      p.hidden = p.dataset.panel !== name;
+    });
+    moveIndicator(tabs, 'tab-ind');
+    if (name === 'settings') renderSettings();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  tabs.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+  document.querySelectorAll('[data-jump]').forEach((b) => {
+    b.addEventListener('click', () => switchTab(b.dataset.jump));
+  });
+
+  // Settings sub-nav
+  document.querySelectorAll('.set-side button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.set-side button').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      document.querySelectorAll('[data-set-panel]').forEach((p) => {
+        p.hidden = p.dataset.setPanel !== b.dataset.set;
+      });
+    });
+  });
+
+  // Initialize indicator positions after layout settles. Two passes — once
+  // immediately so the user sees something, once after fonts have loaded so
+  // tab widths are correct on first paint.
+  requestAnimationFrame(() => {
+    moveIndicator(periodSeg, 'period-ind');
+    moveIndicator(tabs, 'tab-ind');
+  });
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      moveIndicator(periodSeg, 'period-ind');
+      moveIndicator(tabs, 'tab-ind');
+    });
+  }
+  window.addEventListener('resize', () => {
+    moveIndicator(periodSeg, 'period-ind');
+    moveIndicator(tabs, 'tab-ind');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Export link
+// ═══════════════════════════════════════════════════════════
 function setExportLinks() {
   const params = new URLSearchParams({ period: state.period });
-  if (state.project) params.set('project', state.project);
   document.getElementById('export-csv').setAttribute('href', `/api/export?format=csv&${params}`);
-  document.getElementById('export-json').setAttribute('href', `/api/export?format=json&${params}`);
 }
 
-// ─── orchestrate ─────────────────────────────────────────
-/**
- * Run a single refresh pass against the API. Returns true on success, false on
- * failure. Errors are swallowed (the caller decides whether to retry); the
- * body's `loading` class is always removed.
- */
+// ═══════════════════════════════════════════════════════════
+//  Header version
+// ═══════════════════════════════════════════════════════════
+function renderHeaderMeta() {
+  const v = state.data.health?.version ?? '0.4.0';
+  document.getElementById('brand-meta').textContent = `v${v} · localhost:${location.port || 3456}`;
+  document.getElementById('about-version').textContent = `v${v} · MIT · clauding-lab`;
+  document.getElementById('foot-version').textContent = `v${v}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Refresh orchestration (preserves v0.3.1 retry-with-backoff)
+// ═══════════════════════════════════════════════════════════
 async function refreshAll() {
   document.body.classList.add('loading');
   try {
     setExportLinks();
-    const headlinePack = await refreshHeadline();
-    await Promise.all([
-      refreshPlanUsage(),
-      refreshPeakHours(),
-      refreshProjectsTable(),
-      refreshActivityTable(),
-      refreshModelsTable(),
-      refreshToolLists(),
-      refreshSessionsTable(headlinePack.sessions),
-    ]);
-    renderCostChart(headlinePack);
+    const isToday = state.period === 'today';
+    const [health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi] =
+      await Promise.all([
+        api('/api/health'),
+        api('/api/summary', commonParams()),
+        api('/api/cache', commonParams()),
+        api('/api/sessions', commonParams()),
+        api('/api/daily', commonParams()),
+        // peak-hours panel always shows today's hour distribution; the
+        // cost-over-time chart re-uses /api/hours when state.period === 'today'.
+        api('/api/hours', commonParams()),
+        api('/api/projects', commonParams()),
+        api('/api/tasks', commonParams()),
+        api('/api/tools', commonParams()),
+        api('/api/models', commonParams()),
+        api('/api/usage'),
+        api('/api/sessions/expensive', { ...commonParams(), limit: 5 }),
+        api('/api/roi', commonParams()),
+      ]);
+
+    state.data = { health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi };
+
+    renderHeaderMeta();
+    renderPlanCapacity();
+    renderFinanceSide();
+    renderMetricStrip();
+    renderCostChart();
+    renderPeakHours();
+    renderProjectsTable();
+    renderActivityTable();
+    renderModelsTable();
+    renderSessionsTable();
+    renderToolLists();
+    if (state.tab === 'settings') renderSettings();
     return true;
   } catch (err) {
     console.error('refreshAll failed', err);
@@ -764,29 +810,24 @@ async function refreshAll() {
 }
 
 /**
- * Initial load helper (v0.3.1, Bug #5 fix).
+ * Initial load helper (preserved from v0.3.1, Bug #5 fix / T32).
  *
- * The Tauri dashboard window opens before the SEA sidecar is guaranteed
- * to have parsed all JSONL files and bound its port (a 100–500ms race in
- * the v0.3.0 smoke test). The first `refreshAll()` therefore frequently
- * threw `Failed to fetch`, the dashboard stayed blank, and the user had
- * to manually refresh.
+ * The Tauri dashboard window opens before the SEA sidecar is guaranteed to
+ * have parsed all JSONL files and bound its port (a 100–500ms race in v0.3.0
+ * smoke testing). The first refreshAll() therefore frequently threw
+ * `Failed to fetch`, the dashboard stayed blank, and the user had to manually
+ * reload.
  *
- * Strategy: keep retrying the initial load with exponential backoff
- * (300ms, 600ms, 1.2s, 2.4s, capped at 4s) for up to 30 seconds. Once
- * the first refresh succeeds, switch to the normal user-driven model.
- *
- * Why not retry-forever-on-every-error? Because subsequent
- * user-triggered refreshes (period switch, search) shouldn't paper over
- * real network failures with infinite retries — the user would rather
- * see an obvious empty state than a frozen UI. Startup is the one
- * window where retries are unambiguously the right call.
+ * Strategy: keep retrying initial load with exponential backoff
+ * (300ms, 600ms, 1.2s, 2.4s, capped at 4s) for up to 30s. Once the first
+ * refresh succeeds, switch to the normal user-driven model. Subsequent
+ * user-triggered refreshes (period switch, refresh button) DO NOT retry —
+ * the user would rather see an obvious empty state than a silently-frozen UI.
  */
 async function initialLoad() {
   const MAX_TOTAL_MS = 30_000;
   const start = Date.now();
   let delay = 300;
-  // First attempt immediately, no wait
   while (true) {
     const ok = await refreshAll();
     if (ok) {
@@ -806,30 +847,33 @@ async function initialLoad() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════════════════════════
 function bindControls() {
-  for (const btn of document.querySelectorAll('.period-switcher button')) {
-    btn.addEventListener('click', () => {
-      for (const b of document.querySelectorAll('.period-switcher button'))
-        b.removeAttribute('aria-selected');
-      btn.setAttribute('aria-selected', 'true');
-      state.period = btn.dataset.period;
-      refreshAll();
-    });
-  }
-  let tmr;
-  document.getElementById('project-filter').addEventListener('input', (e) => {
-    clearTimeout(tmr);
-    tmr = setTimeout(() => {
-      state.project = e.target.value.trim();
-      refreshAll();
-    }, 220);
+  document.getElementById('btn-refresh').addEventListener('click', () => {
+    refreshAll();
   });
+  // Reuse the sync settings button as a manual-refresh shortcut.
+  const syncRefresh = document.getElementById('set-sync-refresh');
+  if (syncRefresh) {
+    syncRefresh.addEventListener('click', () => refreshAll());
+  }
 }
 
+bindSegments();
 bindControls();
 initialLoad();
 
-// Auto-refresh the plan-usage card every 60s.
-setInterval(() => {
-  refreshPlanUsage().catch((err) => console.error('plan refresh', err));
+// Auto-refresh the plan-usage card every 60s — picks up new bookmarklet/
+// extension ingest without a full dashboard refresh.
+setInterval(async () => {
+  try {
+    state.data.usage = await api('/api/usage');
+    renderPlanCapacity();
+    renderFinanceSide();
+    if (state.tab === 'settings') renderSettings();
+  } catch (err) {
+    console.error('plan auto-refresh', err);
+  }
 }, 60_000);
