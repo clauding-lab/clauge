@@ -519,6 +519,22 @@ async function listenWithRetry(startPort) {
 
 const { server, port: BOUND_PORT } = await listenWithRetry(PORT);
 const url = `http://localhost:${BOUND_PORT}`;
+
+// Install signal handlers BEFORE announcing the listening port. Otherwise a
+// fast caller (test harness, Tauri parent) can SIGTERM us between the log line
+// and the handler install, and Node's default action (terminate by signal)
+// runs — leaving the file dirty (no graceful close, possibly partial writes).
+const shutdown = (signal) => {
+  console.log(`\n[Clauge] ${signal} received — shutting down`);
+  // Bypass HTTP keep-alive drain so idle sockets don't keep the server alive
+  // for ~5s after close(). Available since Node 18.2; optional-chained for
+  // safety against future @hono/node-server changes.
+  server.closeAllConnections?.();
+  server.close(() => process.exit(0));
+};
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
 console.log(`[Clauge] Listening on ${url}`);
 console.log(`[Clauge] CLAUDE_DIR=${CLAUDE_DIR}`);
 console.error(`${PORT_MARKER_PREFIX}${BOUND_PORT}`);  // for Tauri sidecar parser
@@ -528,10 +544,3 @@ if (process.env.NO_OPEN !== '1') {
     console.log('[Clauge] (could not auto-open browser; visit URL manually)');
   });
 }
-
-const shutdown = (signal) => {
-  console.log(`\n[Clauge] ${signal} received — shutting down`);
-  server.close(() => process.exit(0));
-};
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));

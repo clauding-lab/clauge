@@ -2,9 +2,13 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
 const SERVER_BIN = process.env.CLAUGE_SERVER_BIN ?? 'node';
 const SERVER_ARGS = process.env.CLAUGE_SERVER_BIN ? [] : ['server.js'];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function startServer(envOverrides = {}) {
   const child = spawn(SERVER_BIN, SERVER_ARGS, {
@@ -102,5 +106,66 @@ describe('port fallback', () => {
       child.kill('SIGTERM');
       await new Promise((r) => child.once('exit', r));
     }
+  });
+});
+
+describe('SIGTERM graceful shutdown', () => {
+  it('exits with code 0 within 2s of SIGTERM', async () => {
+    const child = spawn(SERVER_BIN, SERVER_ARGS, {
+      env: { ...process.env, PORT: '3503', NO_OPEN: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await new Promise((r) => {
+      const onD = (b) => b.toString().includes('Listening on') && (child.stdout.off('data', onD), r());
+      child.stdout.on('data', onD);
+    });
+
+    const exitPromise = new Promise((resolve) => child.on('exit', (code) => resolve(code)));
+    const startMs = Date.now();
+    child.kill('SIGTERM');
+    const code = await Promise.race([
+      exitPromise,
+      sleep(2500).then(() => 'TIMEOUT'),
+    ]);
+
+    if (code === 'TIMEOUT') child.kill('SIGKILL');
+    assert.notEqual(code, 'TIMEOUT', 'server exited within 2.5s');
+    assert.equal(code, 0, 'clean exit code');
+    assert.ok(Date.now() - startMs < 2500, 'shutdown was prompt');
+  });
+
+  it('persists in-flight /api/usage/ingest before exit', async () => {
+    const claugeDir = await mkdtemp(`${tmpdir()}/clauge-test-`);
+    const child = spawn(SERVER_BIN, SERVER_ARGS, {
+      env: { ...process.env, PORT: '3504', NO_OPEN: '1', HOME: claugeDir },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await new Promise((r) => {
+      const onD = (b) => b.toString().includes('Listening on') && (child.stdout.off('data', onD), r());
+      child.stdout.on('data', onD);
+    });
+
+    // The ingest route requires { usage: ... }; balance is optional and lands
+    // in normalized.balance after normalizeBalance() runs.
+    const ingestRes = await fetch('http://127.0.0.1:3504/api/usage/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usage: { seven_day: { utilization: 0.5 } },
+        balance: { amount: 1000, currency: 'USD' },
+      }),
+    });
+    assert.equal(ingestRes.status, 200);
+
+    child.kill('SIGTERM');
+    await new Promise((r) => child.on('exit', r));
+
+    const persisted = JSON.parse(
+      await readFile(`${claugeDir}/.clauge/usage.json`, 'utf8')
+    );
+    assert.ok(
+      persisted.normalized && persisted.normalized.balance,
+      'balance was persisted before shutdown'
+    );
   });
 });
