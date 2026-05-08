@@ -39,35 +39,48 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'        # release tags: v0.3.0
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'      # pre-release tags: v0.3.0-rc1
 
 # Required so tauri-action can create the GitHub Release and upload assets.
 permissions:
   contents: write
 
+# Queue overlapping tag pushes rather than racing them.  cancel-in-progress is
+# false on purpose: a release build that's already producing signed artifacts
+# should not be killed mid-build by a second tag — let it finish, then run the
+# next one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build universal macOS DMG
-    runs-on: macos-latest
-    timeout-minutes: 45
+    # Pinned to macos-14 (Sonoma, arm64) for reproducibility.  GitHub bumps
+    # the `macos-latest` alias every ~12 months without notice; an explicit
+    # version label means the release pipeline doesn't silently change OS
+    # under us between V3.x point releases.
+    runs-on: macos-14
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: 'npm'
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-05-08
         with:
           targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: './src-tauri -> target'
 
@@ -78,12 +91,40 @@ jobs:
       # tests are red.  The SEA + tauri-driver smoke suites are skipped here
       # (SEA smoke needs the binaries built first; tauri-driver doesn't run
       # on macOS yet — both are tracked elsewhere).
+      #
+      # SKIP_SEA_SMOKE=1 is critical: without it, sea-smoke.test.js auto-runs
+      # `bash scripts/build-sidecar.sh` to produce the SEA binary, which
+      # tauri-action's beforeBuildCommand then rebuilds again from scratch
+      # below — wasting ~10 min and doubling exposure to nodejs.org flake.
+      # The tauri-action invocation IS the SEA build smoke test in CI.
       - name: Run JS unit tests
+        env:
+          SKIP_SEA_SMOKE: '1'
         run: npm test
 
       - name: Run Rust unit tests
         working-directory: src-tauri
-        run: cargo test
+        run: cargo test --locked
+
+      # Boolean presence check on the updater signing secrets.  If either is
+      # missing, fail BEFORE invoking tauri-action — otherwise tauri-action
+      # silently produces an unsigned .app.tar.gz.sig and we'd publish a
+      # broken updater payload.  Do not echo lengths, hashes, or any portion
+      # of the secret values; presence-only.
+      - name: Verify signing secrets are present
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is empty or unset. Refusing to publish unsigned release." >&2
+            exit 1
+          fi
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is empty or unset." >&2
+            exit 1
+          fi
+          echo "Signing secrets present."
 
       # tauri-action invokes `cargo tauri build`, which honours
       # `build.beforeBuildCommand` from src-tauri/tauri.conf.json
@@ -95,7 +136,7 @@ jobs:
       # That matches the universal-apple-darwin Tauri externalBin
       # convention, so the SEA sidecar ships in the universal app bundle.
       - name: Build, sign, and publish DMG
-        uses: tauri-apps/tauri-action@v0.6.2
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: 'true'
