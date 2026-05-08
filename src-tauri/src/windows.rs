@@ -30,7 +30,8 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 ///
 /// Vibrancy: on macOS, `NSVisualEffectMaterial::Popover` is applied with
 /// `NSVisualEffectState::Active` (always-on, never dims with focus changes)
-/// and a 12.0pt corner radius matching the popover's CSS border-radius.
+/// and a 14.0pt corner radius matching the popover's CSS border-radius
+/// (popover/popover.css `#root { border-radius: 14px }`).
 pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("popover").is_some() {
         return Ok(());
@@ -56,7 +57,7 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
             &win,
             NSVisualEffectMaterial::Popover,
             Some(NSVisualEffectState::Active),
-            Some(12.0),
+            Some(14.0), // matches popover.css #root border-radius (T16)
         ) {
             log::warn!("Failed to apply popover vibrancy: {}", e);
         }
@@ -73,9 +74,10 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
 ///
 /// macOS does not expose tray icon coordinates through Tauri's public API
 /// (NSStatusItem frame lookup requires Cocoa interop we haven't wired yet).
-/// As a stopgap, we place the popover 16px from the right edge and 32px below
-/// the menu bar — close enough to the menu bar tray icon to feel anchored,
-/// without hard-coding the exact tray icon x-coordinate.
+/// As a stopgap, we place the popover 16pt from the right edge and 32pt below
+/// the menu bar (logical points, not physical pixels — see body comment) —
+/// close enough to the menu bar tray icon to feel anchored, without
+/// hard-coding the exact tray icon x-coordinate.
 ///
 /// TODO(v0.3.0.x): Replace with actual tray-icon position via NSStatusItem
 /// frame lookup once a Cocoa interop helper exists. The position should
@@ -84,17 +86,25 @@ pub fn position_popover_under_tray(app: &tauri::AppHandle) -> tauri::Result<()> 
     let popover = app
         .get_webview_window("popover")
         .ok_or(tauri::Error::WebviewNotFound)?;
-    let monitor = popover
-        .current_monitor()?
-        .ok_or(tauri::Error::WebviewNotFound)?;
-    let monitor_size = monitor.size();
-    let win_size = popover.outer_size()?;
+    let Some(monitor) = popover.current_monitor()? else {
+        log::debug!("Skipping popover positioning: no current monitor");
+        return Ok(());
+    };
+    // Convert physical pixel sizes to logical points so the 16/32 constants
+    // mean what they say on Retina (scale_factor 2.0). tao's
+    // set_outer_position internally converts physical → logical, which would
+    // halve our intended offsets and slide the popover under the menu bar
+    // on every modern Mac. Using LogicalPosition skips that conversion.
+    let scale = monitor.scale_factor();
+    let monitor_logical = monitor.size().to_logical::<f64>(scale);
+    let win_logical = popover.outer_size()?.to_logical::<f64>(scale);
 
     // Anchor near top-right of the menu bar (placeholder positioning).
-    let x = (monitor_size.width as i32) - (win_size.width as i32) - 16;
-    let y = 32;
+    // 16pt clearance from the right edge, 32pt below the menu bar.
+    let x = monitor_logical.width - win_logical.width - 16.0;
+    let y = 32.0;
 
-    popover.set_position(tauri::PhysicalPosition::new(x, y))?;
+    popover.set_position(tauri::LogicalPosition::new(x, y))?;
     Ok(())
 }
 

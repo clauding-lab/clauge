@@ -56,7 +56,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             "tray:check_updates" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::ipc::check_for_updates(app).await;
+                    if let Err(e) = crate::ipc::check_for_updates(app).await {
+                        log::warn!("Failed to check for updates: {}", e);
+                    }
                 });
             }
             "tray:quit" => {
@@ -78,10 +80,14 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 
 fn show_dashboard(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.set_focus();
-    } else {
-        crate::windows::create_dashboard(app).ok();
+        if let Err(e) = w.show() {
+            log::warn!("Failed to show dashboard: {}", e);
+        }
+        if let Err(e) = w.set_focus() {
+            log::warn!("Failed to focus dashboard: {}", e);
+        }
+    } else if let Err(e) = crate::windows::create_dashboard(app) {
+        log::warn!("Failed to create dashboard: {}", e);
     }
 }
 

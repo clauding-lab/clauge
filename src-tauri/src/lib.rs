@@ -31,6 +31,12 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ipc::AppState::default())
         .setup(|app| {
+            // Build the popover FIRST so tray/menu handlers (and Cmd+,) always
+            // have a window to show, even if subsequent setup steps fail.
+            // T17 dropped the conf.json windows[] entry, so this is the single
+            // source of truth for popover creation.
+            crate::windows::create_popover(app.handle())?;
+
             crate::tray::init(app.handle())?;
 
             // Native macOS app-wide menu (Clauge / Edit / View / Window / Help).
@@ -45,6 +51,13 @@ pub fn run() {
             app.on_menu_event(|app, event| match event.id().0.as_str() {
                 "menu:preferences" => {
                     if let Some(w) = app.get_webview_window("popover") {
+                        // Position before showing so Cmd+, anchors the popover
+                        // to the menu bar even when the user hasn't clicked
+                        // the tray icon yet (otherwise the popover appears at
+                        // the OS-default center-screen position).
+                        if let Err(e) = crate::windows::position_popover_under_tray(app) {
+                            log::warn!("Failed to position popover from menu: {}", e);
+                        }
                         if let Err(e) = w.show() {
                             log::warn!("Failed to show popover from menu: {}", e);
                         }
@@ -81,8 +94,6 @@ pub fn run() {
                 }
                 _ => {}
             });
-
-            crate::windows::create_popover(app.handle())?;
 
             // Cold-start: discover an external clauge-server first; fall back to
             // spawning + supervising our sidecar binary. Runs in a detached async
