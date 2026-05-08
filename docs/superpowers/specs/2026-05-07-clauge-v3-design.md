@@ -272,6 +272,11 @@ User: ⌘Q  OR  Tray → Quit  OR  red close button on dashboard
 
 If V3 was running as client (sidecar owned by external clauge), no SIGTERM is sent.
 
+**Sidecar-side details (material to the 2s grace window):**
+
+- The SIGTERM handler calls `server.close()` to stop accepting new connections, then `server.closeAllConnections()` to destroy idle HTTP keep-alive sockets. Without `closeAllConnections()`, `@hono/node-server`'s default keep-alive drain holds the server open for ~5s — longer than the Tauri parent's 2s grace window, which would force every quit through SIGKILL even on a healthy sidecar.
+- Signal handlers (SIGINT, SIGTERM) are installed **before** the `Listening on …` and `CLAUGE_BOUND_PORT=…` log emissions. The Tauri parent reads the port marker as soon as it appears on stderr, so a SIGTERM can race the handler-install on cold start; installing handlers first makes that race graceful instead of a default-action terminate-by-signal (which would skip the pending-write flush).
+
 ## 7. Error handling
 
 **Principle:** silent recovery > toast notification > user action prompt.

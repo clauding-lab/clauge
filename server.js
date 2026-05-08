@@ -526,11 +526,13 @@ const url = `http://localhost:${BOUND_PORT}`;
 // runs — leaving the file dirty (no graceful close, possibly partial writes).
 const shutdown = (signal) => {
   console.log(`\n[Clauge] ${signal} received — shutting down`);
-  // Bypass HTTP keep-alive drain so idle sockets don't keep the server alive
-  // for ~5s after close(). Available since Node 18.2; optional-chained for
-  // safety against future @hono/node-server changes.
-  server.closeAllConnections?.();
+  // Order matters: server.close(cb) first so the callback is queued and we
+  // stop accepting new connections; then closeAllConnections() destroys idle
+  // keep-alive sockets, which lets the close() callback fire promptly instead
+  // of waiting ~5s for the HTTP keep-alive drain. Available since Node 18.2;
+  // optional-chained for safety against future @hono/node-server changes.
   server.close(() => process.exit(0));
+  server.closeAllConnections?.();
 };
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));

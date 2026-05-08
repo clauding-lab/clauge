@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 const SERVER_BIN = process.env.CLAUGE_SERVER_BIN ?? 'node';
@@ -134,38 +134,60 @@ describe('SIGTERM graceful shutdown', () => {
     assert.ok(Date.now() - startMs < 2500, 'shutdown was prompt');
   });
 
-  it('persists in-flight /api/usage/ingest before exit', async () => {
+  it('persists completed /api/usage/ingest across SIGTERM', async () => {
+    // The /api/usage/ingest route awaits usageStore.save() before responding,
+    // so a 200 means the write already landed on disk. This test verifies the
+    // shutdown path doesn't corrupt or truncate that completed write — which
+    // is the actual contract spec §6.7 promises (response handlers awaiting
+    // writes have returned before close()).
     const claugeDir = await mkdtemp(`${tmpdir()}/clauge-test-`);
-    const child = spawn(SERVER_BIN, SERVER_ARGS, {
-      env: { ...process.env, PORT: '3504', NO_OPEN: '1', HOME: claugeDir },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    await new Promise((r) => {
-      const onD = (b) => b.toString().includes('Listening on') && (child.stdout.off('data', onD), r());
-      child.stdout.on('data', onD);
-    });
+    try {
+      const child = spawn(SERVER_BIN, SERVER_ARGS, {
+        env: { ...process.env, PORT: '3504', NO_OPEN: '1', HOME: claugeDir },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      await new Promise((r) => {
+        const onD = (b) => b.toString().includes('Listening on') && (child.stdout.off('data', onD), r());
+        child.stdout.on('data', onD);
+      });
 
-    // The ingest route requires { usage: ... }; balance is optional and lands
-    // in normalized.balance after normalizeBalance() runs.
-    const ingestRes = await fetch('http://127.0.0.1:3504/api/usage/ingest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        usage: { seven_day: { utilization: 0.5 } },
-        balance: { amount: 1000, currency: 'USD' },
-      }),
-    });
-    assert.equal(ingestRes.status, 200);
+      // The ingest route requires { usage: ... }; balance is optional and lands
+      // in normalized.balance after normalizeBalance() runs.
+      const ingestRes = await fetch('http://127.0.0.1:3504/api/usage/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usage: { seven_day: { utilization: 0.5 } },
+          balance: { amount: 1000, currency: 'USD' },
+        }),
+      });
+      assert.equal(ingestRes.status, 200);
 
-    child.kill('SIGTERM');
-    await new Promise((r) => child.on('exit', r));
+      child.kill('SIGTERM');
+      // Bound the wait so a regression in the shutdown handler can't hang the
+      // suite indefinitely. Mirrors the timeout pattern in the prior test.
+      const exited = await Promise.race([
+        new Promise((r) => child.on('exit', () => r('exit'))),
+        sleep(2500).then(() => 'TIMEOUT'),
+      ]);
+      if (exited === 'TIMEOUT') {
+        child.kill('SIGKILL');
+        await new Promise((r) => child.on('exit', r));
+        throw new Error('child did not exit within 2.5s of SIGTERM');
+      }
 
-    const persisted = JSON.parse(
-      await readFile(`${claugeDir}/.clauge/usage.json`, 'utf8')
-    );
-    assert.ok(
-      persisted.normalized && persisted.normalized.balance,
-      'balance was persisted before shutdown'
-    );
+      const persisted = JSON.parse(
+        await readFile(`${claugeDir}/.clauge/usage.json`, 'utf8')
+      );
+      // Tie the persisted record back to what was actually sent so a future
+      // regression that writes a default-shaped record (instead of the real
+      // payload) would be caught.
+      assert.ok(persisted.normalized, 'normalized snapshot persisted');
+      assert.ok(persisted.normalized.balance, 'balance was persisted');
+      assert.equal(persisted.normalized.balance.currency, 'USD');
+      assert.equal(persisted.rawBalance.amount, 1000);
+    } finally {
+      await rm(claugeDir, { recursive: true, force: true });
+    }
   });
 });
