@@ -16,7 +16,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg"],
+    "targets": ["app", "dmg"],
     "externalBin": ["binaries/clauge-server"],
     "macOS": {
       "minimumSystemVersion": "12.0"
