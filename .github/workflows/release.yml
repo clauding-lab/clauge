@@ -1,0 +1,116 @@
+# Clauge V3 release pipeline (T25).
+#
+# Triggered on every `v*` tag push. Runs the unit-test gate, builds a
+# Universal (arm64 + x86_64) macOS DMG with a Tauri-keypair-signed updater
+# payload, and publishes the artifacts to a non-draft GitHub Release tied
+# to the tag.
+#
+# Updater publication (T26 dependency)
+# ------------------------------------
+# tauri-action emits `latest.json` and uploads it to the Release alongside
+# the .dmg, .app.tar.gz, and .app.tar.gz.sig artifacts.  The updater
+# endpoint configured in src-tauri/tauri.conf.json points at
+# https://clauding-lab.github.io/clauge/latest.json — i.e. the gh-pages
+# branch.  This workflow does NOT push to gh-pages: that branch is bootstrapped
+# manually in T26 (`git checkout --orphan gh-pages` + `gh-pages` Pages source
+# enabled in repo Settings).  Once gh-pages exists, a follow-up step (or a
+# separate `peaceiris/actions-gh-pages` job) can copy the latest.json out of
+# the Release and into gh-pages on each tag.  Until then, the .json sitting on
+# the Release is harmless — the updater simply won't find it at the configured
+# endpoint, which matches the V3.0 unsigned-and-manual-first-install posture.
+#
+# E2E gap
+# -------
+# `npm run test:e2e` is intentionally NOT invoked here.  tauri-driver 2.0.6
+# does not support macOS (Appium Mac2 Driver integration is upstream TODO);
+# the suite at test/e2e/v3.test.ts is staged but unrunnable on macOS runners.
+# See docs/RELEASE_CHECKLIST.md "E2E manual gaps" for the manual smoke that
+# replaces it pre-tag.
+#
+# Tauri 2.x signing env-var names
+# -------------------------------
+# This workflow uses TAURI_SIGNING_PRIVATE_KEY and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD (Tauri 2.x).  The earlier 1.x names
+# (TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD) are NOT recognised by the 2.x
+# updater bundler and would cause silent unsigned-payload failures.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Required so tauri-action can create the GitHub Release and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build universal macOS DMG
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # Fail fast: don't waste 10+ minutes on a Tauri build if the JS or Rust
+      # tests are red.  The SEA + tauri-driver smoke suites are skipped here
+      # (SEA smoke needs the binaries built first; tauri-driver doesn't run
+      # on macOS yet — both are tracked elsewhere).
+      - name: Run JS unit tests
+        run: npm test
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test
+
+      # tauri-action invokes `cargo tauri build`, which honours
+      # `build.beforeBuildCommand` from src-tauri/tauri.conf.json
+      # (currently `bash ../scripts/build-sidecar.sh`).  The sidecar
+      # script auto-detects the runner's native arch and downloads the
+      # other-arch Node tarball from nodejs.org, producing both
+      # clauge-server-aarch64-apple-darwin and
+      # clauge-server-x86_64-apple-darwin under src-tauri/binaries/.
+      # That matches the universal-apple-darwin Tauri externalBin
+      # convention, so the SEA sidecar ships in the universal app bundle.
+      - name: Build, sign, and publish DMG
+        uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: 'true'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Clauge ${{ github.ref_name }}'
+          releaseDraft: false
+          prerelease: false
+          # Universal binary: lipo-merged arm64 + x86_64 in a single .app.
+          # The SEA sidecar build script handles both arches itself, so we
+          # only need Tauri to produce the universal Rust shell.
+          args: '--target universal-apple-darwin'
+          # Emit and upload latest.json so the updater can consume it once
+          # gh-pages is initialised (T26).  Until then the file is just a
+          # passive Release asset.
+          includeUpdaterJson: true
