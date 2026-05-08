@@ -5,10 +5,25 @@
   "identifier": "com.clauding.clauge",
   "build": {
     "beforeBuildCommand": "bash ../scripts/build-sidecar.sh",
-    "frontendDist": "../public"
+    "frontendDist": "../popover"
   },
   "app": {
-    "windows": [],
+    "windows": [
+      {
+        "label": "popover",
+        "title": "Clauge",
+        "url": "index.html",
+        "width": 380,
+        "height": 600,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false
+      }
+    ],
     "security": {
       "csp": null
     },

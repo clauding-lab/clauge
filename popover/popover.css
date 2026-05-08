@@ -1,0 +1,229 @@
+/* Popover styles. Reuses tokens from public/styles.css concepts.
+   For self-containment within Tauri WebView, redeclare core tokens here. */
+
+:root {
+  --bg: rgba(20, 17, 15, 0.85);
+  --surface: rgba(28, 23, 20, 0.95);
+  --surface-2: rgba(40, 32, 28, 0.95);
+  --surface-3: rgba(58, 47, 40, 0.95);
+  --hairline: rgba(255, 240, 230, 0.06);
+  --hairline-2: rgba(255, 240, 230, 0.10);
+  --text: rgba(255, 240, 230, 0.92);
+  --text-2: rgba(255, 240, 230, 0.72);
+  --text-3: rgba(255, 240, 230, 0.50);
+  --text-4: rgba(255, 240, 230, 0.32);
+  --brand: #d97757;
+  --brand-2: #e89274;
+  --brand-tint: rgba(217, 119, 87, 0.10);
+  --ok: #6eb98a;
+  --ok-tint: rgba(110, 185, 138, 0.12);
+  --warn: #d9a657;
+  --crit: #d97757;
+  --opus: #b59cd6;
+  --sonnet: #7fb3a3;
+  --haiku: #d6c39c;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: transparent;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+}
+
+.mono { font-family: var(--mono); font-feature-settings: "tnum" 1; }
+
+#root {
+  width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-2);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.popover-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: linear-gradient(180deg, rgba(217,119,87,0.04), transparent);
+}
+.brand-mark {
+  width: 18px; height: 18px;
+  background: var(--brand);
+  border-radius: 4px;
+}
+.brand-name { font-size: 12.5px; font-weight: 600; }
+.status-badge {
+  font-size: 9.5px; padding: 1.5px 6px; border-radius: 4px;
+  background: var(--ok-tint); color: var(--ok);
+  display: inline-flex; align-items: center; gap: 5px;
+  letter-spacing: 0.04em;
+}
+.status-badge::before {
+  content: ""; width: 4px; height: 4px;
+  border-radius: 50%; background: var(--ok);
+}
+.header-spacer { flex: 1; }
+.icon-btn {
+  appearance: none;
+  width: 24px; height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: grid; place-items: center;
+  font-family: inherit;
+}
+.icon-btn:hover { background: var(--surface-3); color: var(--text); }
+
+/* Hero */
+#hero { padding: 16px 16px 4px; }
+.hero-label {
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+.hero-amount {
+  font-size: 36px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.spark {
+  margin-top: 10px;
+  height: 28px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* Ring strip */
+.ring-strip {
+  margin: 12px 12px 0;
+  padding: 12px 6px;
+  background: var(--bg);
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin: 14px 14px 0;
+  padding: 2px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+}
+.tab {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+}
+.tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 0 rgba(255,240,230,0.04) inset, 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.tab-content { padding: 10px 14px 14px; min-height: 130px; }
+
+/* Footer */
+.popover-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.footer-hint { font-size: 10px; color: var(--text-3); }
+.popover-footer a {
+  font-size: 11px;
+  color: var(--brand-2);
+  text-decoration: none;
+}
+
+/* Preferences panel — slides in over main view */
+.prefs-panel {
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+.prefs-panel[hidden] { display: none; }
+.prefs-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.prefs-list { list-style: none; padding: 8px; }
+.prefs-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+}
+.prefs-row + .prefs-row { margin-top: 2px; }
+.prefs-row:hover { background: var(--surface-2); }
+.prefs-btn {
+  appearance: none;
+  border: 1px solid var(--hairline-2);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.prefs-btn:hover { background: var(--surface-3); }
+.prefs-meta { color: var(--text-3); font-size: 11px; }
+
+/* Toggle */
+.toggle { position: relative; width: 32px; height: 18px; cursor: pointer; }
+.toggle input { display: none; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--surface-3);
+  border-radius: 999px;
+  transition: background 200ms;
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 14px; height: 14px;
+  background: var(--text);
+  border-radius: 50%;
+  top: 2px; left: 2px;
+  transition: left 200ms;
+}
+.toggle input:checked + .toggle-slider { background: var(--brand); }
+.toggle input:checked + .toggle-slider::before { left: 16px; }

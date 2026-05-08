@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clauge</title>
+  <link rel="stylesheet" href="popover.css">
+</head>
+<body>
+  <div id="root">
+    <header class="popover-header">
+      <span class="brand-mark"></span>
+      <span class="brand-name">Clauge</span>
+      <span id="status-badge" class="status-badge">live</span>
+      <span class="header-spacer"></span>
+      <button id="btn-dashboard" class="icon-btn" title="Open dashboard">↗</button>
+      <button id="btn-refresh" class="icon-btn" title="Refresh">↻</button>
+      <button id="btn-prefs" class="icon-btn" title="Preferences">⚙</button>
+    </header>
+
+    <section id="hero">
+      <div class="hero-label">Today · API equivalent</div>
+      <div id="hero-amount" class="hero-amount mono">—</div>
+      <div id="hero-spark" class="spark"></div>
+    </section>
+
+    <section id="rings" class="ring-strip"></section>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="today">Today</button>
+      <button class="tab" data-tab="recent">Recent</button>
+      <button class="tab" data-tab="models">Models</button>
+    </nav>
+
+    <section id="tab-content" class="tab-content"></section>
+
+    <footer class="popover-footer">
+      <span class="footer-hint mono">⌘D dashboard · ⌘R refresh</span>
+      <a href="#" id="footer-dashboard">Open dashboard →</a>
+    </footer>
+  </div>
+
+  <div id="prefs" class="prefs-panel" hidden>
+    <header class="prefs-header">
+      <button id="prefs-back" class="icon-btn" title="Back">←</button>
+      <span>Preferences</span>
+    </header>
+    <ul class="prefs-list">
+      <li class="prefs-row">
+        <span>Launch at login</span>
+        <label class="toggle">
+          <input type="checkbox" id="autostart-toggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </li>
+      <li class="prefs-row">
+        <span>Check for updates</span>
+        <button id="check-updates-btn" class="prefs-btn">Check now</button>
+      </li>
+      <li class="prefs-row">
+        <span>About</span>
+        <span id="about-version" class="mono prefs-meta">v0.3.0</span>
+      </li>
+    </ul>
+  </div>
+
+  <script type="module" src="popover.js"></script>
+</body>
+</html>
