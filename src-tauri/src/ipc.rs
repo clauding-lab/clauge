@@ -63,6 +63,19 @@ pub enum UpdateStatus {
     Installed,
 }
 
+/// Walk up `exe`'s ancestor path and return the first `.app` bundle dir.
+///
+/// Pure helper extracted from `check_for_updates` so the logic is testable
+/// without needing a tauri runtime. Returns `None` for dev-target paths
+/// (no `.app` in any ancestor) and the *innermost* `.app` for nested helper
+/// bundles, which matches what we want — strip quarantine from the bundle
+/// that actually contains the running executable.
+#[cfg(target_os = "macos")]
+fn find_app_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
+    exe.ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+}
+
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
     use tauri_plugin_notification::NotificationExt;
@@ -71,6 +84,12 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await {
         Ok(Some(update)) => {
+            // Capture version before `download_and_install` consumes `update`.
+            // Field is a public `String` on `tauri_plugin_updater::Update` (verified
+            // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
+            // a `version()` method.
+            let new_version = update.version.clone();
+
             update
                 .download_and_install(|_, _| {}, || {})
                 .await
@@ -84,18 +103,21 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
             // returns None and the xattr block silently skips. In production it
             // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
             // ancestors() walks up to the .app bundle.
+            //
+            // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
+            // dispatch a TOAST telling the user the update installed but Gatekeeper
+            // will reappear, with the right-click → Open workaround.
             #[cfg(target_os = "macos")]
             {
-                use std::process::Command;
+                use tokio::process::Command;
+                let mut xattr_failed = false;
                 if let Ok(exe) = std::env::current_exe() {
-                    if let Some(bundle) = exe
-                        .ancestors()
-                        .find(|p| p.extension().is_some_and(|e| e == "app"))
-                    {
+                    if let Some(bundle) = find_app_bundle(&exe) {
                         match Command::new("xattr")
                             .args(["-dr", "com.apple.quarantine"])
                             .arg(bundle)
                             .output()
+                            .await
                         {
                             Ok(out) if out.status.success() => {
                                 log::info!("Stripped quarantine from {:?}", bundle);
@@ -105,23 +127,40 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
                                     "xattr exited non-zero stripping quarantine: {}",
                                     String::from_utf8_lossy(&out.stderr)
                                 );
+                                xattr_failed = true;
                             }
                             Err(e) => {
                                 log::warn!("Failed to invoke xattr: {}", e);
+                                xattr_failed = true;
                             }
                         }
                     }
                 }
+
+                if xattr_failed {
+                    if let Err(e) = app
+                        .notification()
+                        .builder()
+                        .title("Clauge update issue")
+                        .body("Update installed but Gatekeeper warning will reappear. Right-click Clauge.app → Open after launch.")
+                        .show()
+                    {
+                        log::warn!("Failed to dispatch xattr-fail notification: {}", e);
+                    }
+                }
             }
 
-            // User-visible notification that update is installed.
+            // User-visible notification that update is installed (spec §6.5).
             // Platform-agnostic; capability `notification:default` is granted in
             // src-tauri/capabilities/main.json.
             if let Err(e) = app
                 .notification()
                 .builder()
                 .title("Clauge updated")
-                .body("Restart the app to apply the new version.")
+                .body(format!(
+                    "Updated to v{}. Restart the app to apply.",
+                    new_version
+                ))
                 .show()
             {
                 log::warn!("Failed to dispatch update notification: {}", e);
@@ -185,5 +224,36 @@ mod tests {
         let state = AppState::default();
         let err = read_port(&state).unwrap_err();
         assert!(err.contains("not yet set"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn find_app_bundle_returns_outer_for_application_path() {
+        let p = std::path::Path::new("/Applications/Clauge.app/Contents/MacOS/clauge");
+        assert_eq!(
+            find_app_bundle(p),
+            Some(std::path::Path::new("/Applications/Clauge.app"))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn find_app_bundle_returns_none_for_dev_target_path() {
+        let p = std::path::Path::new("/Users/x/projects/clauge/src-tauri/target/debug/clauge");
+        assert_eq!(find_app_bundle(p), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn find_app_bundle_returns_innermost_for_nested_helper() {
+        let p = std::path::Path::new(
+            "/Applications/Clauge.app/Contents/Frameworks/Helper.app/Contents/MacOS/h",
+        );
+        assert_eq!(
+            find_app_bundle(p),
+            Some(std::path::Path::new(
+                "/Applications/Clauge.app/Contents/Frameworks/Helper.app"
+            ))
+        );
     }
 }
