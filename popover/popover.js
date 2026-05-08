@@ -24,9 +24,19 @@ async function init() {
     invoke('check_for_updates').catch((err) => alert(`Update error: ${err}`));
   });
   const autoToggle = document.getElementById('autostart-toggle');
-  autoToggle.checked = await invoke('get_autostart').catch(() => true);
-  autoToggle.addEventListener('change', () => {
-    invoke('set_autostart', { enabled: autoToggle.checked });
+  autoToggle.checked = await invoke('get_autostart').catch((err) => {
+    console.warn('get_autostart failed; defaulting to off:', err);
+    return false;
+  });
+  autoToggle.addEventListener('change', async () => {
+    const desired = autoToggle.checked;
+    try {
+      await invoke('set_autostart', { enabled: desired });
+    } catch (err) {
+      console.error('set_autostart failed:', err);
+      autoToggle.checked = !desired;
+      // TODO(T18): surface inline error state instead of silent revert.
+    }
   });
 
   window.addEventListener('show-preferences', showPreferences);
@@ -48,6 +58,9 @@ async function openDashboard() {
 }
 
 async function refresh() {
+  // TODO(T18, spec §6.1/§8.5): switch endpoint to `/api/summary?period=7d`
+  // and additionally fetch `/api/usage` for balance card. The current
+  // `/api/sessions?period=today` is a T16 scaffold stub.
   const url = `http://127.0.0.1:${serverPort}/api/sessions?period=today`;
   try {
     const res = await fetch(url);

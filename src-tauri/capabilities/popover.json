@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "popover",
-  "description": "Tightened permissions for Clauge menu-bar popover (no shell, no privileged plugins)",
+  "description": "Tightened permissions for Clauge menu-bar popover. Only core:default + window-state:default are listed; custom invoke commands defined in src-tauri/src/ipc.rs (get_server_port, set_autostart, get_autostart, check_for_updates) work because no app-level ACL manifest exists. Adding capabilities/app.json or a manifest later will require listing each ipc:: command explicitly.",
   "windows": ["popover"],
   "permissions": [
     "core:default",

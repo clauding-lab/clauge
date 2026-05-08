@@ -37,6 +37,12 @@ html, body {
   -webkit-user-select: none;
 }
 
+/* Allow text selection on values users may want to copy. */
+.hero-amount, .prefs-meta {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .mono { font-family: var(--mono); font-feature-settings: "tnum" 1; }
 
 #root {

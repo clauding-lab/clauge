@@ -19,6 +19,12 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 /// Tauri's special-case in manager/webview.rs:452 that loads the asset root
 /// directly without a Url::join hop.
 ///
+/// NOTE: frontendDist (in tauri.conf.json) is rooted at "../popover" — Tauri's
+/// asset embedding only includes files under frontendDist. The dashboard window
+/// loads via WebviewUrl::External (HTTP from the SEA sidecar), independent of
+/// frontendDist. Future windows wanting to load a bundled HTML asset must EITHER
+/// place that asset under popover/ OR use WebviewUrl::External.
+///
 /// Vibrancy material is wired in Task 17 (window-vibrancy crate).
 pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("popover").is_some() {
