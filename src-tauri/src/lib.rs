@@ -34,34 +34,50 @@ pub fn run() {
             crate::tray::init(app.handle())?;
 
             // Native macOS app-wide menu (Clauge / Edit / View / Window / Help).
-            // Custom ids (`preferences`, `refresh`, `github`) are dispatched
-            // below; predefined items (Quit, Hide, Cut/Copy/Paste, Minimize…)
-            // are handled natively by Tauri/muda.
+            // Custom ids (`menu:preferences`, `menu:refresh`, `menu:github`)
+            // are dispatched below; predefined items (Quit, Hide,
+            // Cut/Copy/Paste, Minimize…) are handled natively by Tauri/muda.
+            // Ids carry a `menu:` prefix to disambiguate from tray.rs's
+            // `tray:` ids — see menu.rs module doc for why namespacing is
+            // required (Tauri menu event listeners are global).
             let menu = crate::menu::build(app.handle())?;
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| match event.id().0.as_str() {
-                "preferences" => {
+                "menu:preferences" => {
                     if let Some(w) = app.get_webview_window("popover") {
-                        let _ = w.show();
-                        let _ = w.set_focus();
-                        let _ = w.eval(
+                        if let Err(e) = w.show() {
+                            log::warn!("Failed to show popover from menu: {}", e);
+                        }
+                        if let Err(e) = w.set_focus() {
+                            log::warn!("Failed to focus popover from menu: {}", e);
+                        }
+                        if let Err(e) = w.eval(
                             "window.dispatchEvent(new CustomEvent('show-preferences'))",
-                        );
+                        ) {
+                            log::warn!("Failed to dispatch show-preferences event: {}", e);
+                        }
                     }
                 }
-                "refresh" => {
+                "menu:refresh" => {
                     if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.eval("location.reload()");
+                        if let Err(e) = w.eval("location.reload()") {
+                            log::warn!("Failed to reload dashboard: {}", e);
+                        }
                     }
                 }
-                "github" => {
+                "menu:github" => {
                     use tauri_plugin_shell::ShellExt;
                     // Rust-side shell.open() bypasses scope validation
                     // (tauri-plugin-shell open.rs:131), so no
                     // `shell:allow-open` capability is required for this call.
-                    let _ = app
+                    // TODO(deprecation): migrate to tauri-plugin-opener when
+                    // bumping Tauri. shell.open is #[deprecated(since = "2.1.0")].
+                    if let Err(e) = app
                         .shell()
-                        .open("https://github.com/clauding-lab/clauge", None);
+                        .open("https://github.com/clauding-lab/clauge", None)
+                    {
+                        log::warn!("Failed to open GitHub repository: {}", e);
+                    }
                 }
                 _ => {}
             });

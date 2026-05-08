@@ -99,7 +99,7 @@ External (unchanged):
 - WKWebView (automatic on macOS) — ~50% less memory than Electron
 - Window vibrancy on popover — `decorations: false`, `transparent: true`, `vibrancy: "popover"`
 - Pre-rendered popover — window created hidden at boot, shown on tray click (<50ms perceived latency)
-- Native macOS menu bar (File / Edit / View / Window / Help)
+- Native macOS menu bar (Clauge / Edit / View / Window / Help)
 - Tray right-click native menu (Open Dashboard / Preferences… / Check for Updates / Quit Clauge). Accelerators: ⌘Q for Quit Clauge (matches §6.7 quit flow), ⌘, for Preferences (macOS HIG default).
 
 ## 5. Components

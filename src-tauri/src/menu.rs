@@ -1,20 +1,21 @@
 //! Native macOS menu bar (Clauge / Edit / View / Window / Help).
 //!
-//! Constructs the application-wide menu. Custom item ids ("preferences",
-//! "refresh", "github") are dispatched by the `on_menu_event` handler wired
-//! up in `lib.rs::run`.
+//! Constructs the application-wide menu. Custom item ids (`menu:preferences`,
+//! `menu:refresh`, `menu:github`) are dispatched by the `on_menu_event`
+//! handler wired up in `lib.rs::run`.
 //!
 //! Generic over `R: Runtime` (per the plan): `build` only constructs menu
 //! structure and does not call any concrete-runtime IPC, so the generic
 //! signature compiles cleanly. The lib.rs caller passes a concrete
 //! `&AppHandle<Wry>` which unifies `R = Wry`.
 //!
-//! Note on id collision with `tray.rs`: tray uses ids `open_dashboard`,
-//! `preferences`, `check_updates`, `quit`. The "preferences" id overlaps,
-//! but that's fine — each menu (tray, app menu) registers its own
-//! `on_menu_event` handler scoped to its own builder, so they don't fight.
-//! Both handlers happen to run the same effect (show popover with
-//! preferences event), so behavior is consistent regardless.
+//! Id namespacing: ids carry a `menu:` prefix to disambiguate from `tray.rs`
+//! (which uses `tray:`). Tauri's menu event listeners are global — every
+//! registered handler fires for every menu event regardless of which menu
+//! produced it (see `tauri::manager::menu` `global_event_listeners`). Without
+//! the prefix, a click on the tray's "Preferences…" would also trip the
+//! lib.rs handler's `preferences` arm and vice versa, dispatching the
+//! `show-preferences` JS event twice once T17 wires up popover listeners.
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -31,7 +32,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &PredefinedMenuItem::about(app, Some("About Clauge"), None)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "preferences", "Preferences…", true, Some("Cmd+,"))?,
+            &MenuItem::with_id(app, "menu:preferences", "Preferences…", true, Some("Cmd+,"))?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -63,7 +64,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "View",
         true,
         &[
-            &MenuItem::with_id(app, "refresh", "Refresh", true, Some("Cmd+R"))?,
+            &MenuItem::with_id(app, "menu:refresh", "Refresh", true, Some("Cmd+R"))?,
             &PredefinedMenuItem::fullscreen(app, None)?,
         ],
     )?;
@@ -85,7 +86,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[&MenuItem::with_id(
             app,
-            "github",
+            "menu:github",
             "GitHub Repository",
             true,
             None::<&str>,

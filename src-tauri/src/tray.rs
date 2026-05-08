@@ -14,17 +14,25 @@ use tauri::{
 };
 
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
+    // Menu item ids are namespaced with `tray:` so they don't collide with
+    // the app menu's `menu:` ids. Tauri's menu event listeners are global
+    // (tray.on_menu_event and app.on_menu_event both push into the same
+    // app_handle.manager.menu.global_event_listeners vec), so EVERY listener
+    // fires for EVERY menu event regardless of source. Without namespacing,
+    // a click on the app menu's "Preferences…" would also fire this tray
+    // handler's "preferences" arm (and vice versa), causing dual-dispatch
+    // of the `show-preferences` JS event once T17's popover wires it up.
     let open_dashboard = MenuItem::with_id(
-        app, "open_dashboard", "Open Dashboard", true, None::<&str>,
+        app, "tray:open_dashboard", "Open Dashboard", true, None::<&str>,
     )?;
     let preferences = MenuItem::with_id(
-        app, "preferences", "Preferences…", true, Some("Cmd+,"),
+        app, "tray:preferences", "Preferences…", true, Some("Cmd+,"),
     )?;
     let check_updates = MenuItem::with_id(
-        app, "check_updates", "Check for Updates", true, None::<&str>,
+        app, "tray:check_updates", "Check for Updates", true, None::<&str>,
     )?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Clauge", true, Some("Cmd+Q"))?;
+    let quit = MenuItem::with_id(app, "tray:quit", "Quit Clauge", true, Some("Cmd+Q"))?;
 
     let menu = Menu::with_items(
         app,
@@ -39,19 +47,19 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().0.as_str() {
-            "open_dashboard" => {
+            "tray:open_dashboard" => {
                 show_dashboard(app);
             }
-            "preferences" => {
+            "tray:preferences" => {
                 show_popover_with_preferences(app);
             }
-            "check_updates" => {
+            "tray:check_updates" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = crate::ipc::check_for_updates(app).await;
                 });
             }
-            "quit" => {
+            "tray:quit" => {
                 app.exit(0);
             }
             _ => {}
