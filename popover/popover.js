@@ -16,7 +16,7 @@ const { invoke } = window.__TAURI__.core;
 // Track the popover state so we can repaint on data updates without a
 // re-fetch (e.g. tab switch or warning-state transition).
 let serverPort = 3456;
-let serverVersion = '0.4.0';
+let serverVersion = '0.4.3';
 
 // ─── helpers ──────────────────────────────────────────────
 function escapeHtml(s) {

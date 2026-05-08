@@ -89,19 +89,15 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Position the popover near the top-right of the active monitor (placeholder
-/// approximation for tray-anchored positioning).
+/// Position the popover centered horizontally under the tray icon, 6pt below
+/// its bottom edge. Falls back to top-right of the active monitor if
+/// `TrayIcon::rect()` returns None (cold start before `tray::init` or a
+/// removed NSStatusItem).
 ///
-/// macOS does not expose tray icon coordinates through Tauri's public API
-/// (NSStatusItem frame lookup requires Cocoa interop we haven't wired yet).
-/// As a stopgap, we place the popover 16pt from the right edge and 32pt below
-/// the menu bar (logical points, not physical pixels — see body comment) —
-/// close enough to the menu bar tray icon to feel anchored, without
-/// hard-coding the exact tray icon x-coordinate.
-///
-/// TODO(v0.3.0.x): Replace with actual tray-icon position via NSStatusItem
-/// frame lookup once a Cocoa interop helper exists. The position should
-/// nudge the popover so its top-center sits below the tray icon's center.
+/// Multi-monitor caveat: clamp uses the popover's current monitor, not the
+/// monitor containing the tray icon. On extended displays the popover may
+/// land off-screen if the tray sits on a secondary monitor whose bounds
+/// don't overlap the popover's. Tracked for v0.4.4.
 pub fn position_popover_under_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let popover = app
         .get_webview_window("popover")
@@ -110,19 +106,30 @@ pub fn position_popover_under_tray(app: &tauri::AppHandle) -> tauri::Result<()> 
         log::debug!("Skipping popover positioning: no current monitor");
         return Ok(());
     };
-    // Convert physical pixel sizes to logical points so the 16/32 constants
-    // mean what they say on Retina (scale_factor 2.0). tao's
-    // set_outer_position internally converts physical → logical, which would
-    // halve our intended offsets and slide the popover under the menu bar
-    // on every modern Mac. Using LogicalPosition skips that conversion.
+    // Math stays in logical points: tao's set_outer_position halves physical
+    // offsets on Retina, so Logical values keep gaps/clamps interpretable.
     let scale = monitor.scale_factor();
     let monitor_logical = monitor.size().to_logical::<f64>(scale);
     let win_logical = popover.outer_size()?.to_logical::<f64>(scale);
 
-    // Anchor near top-right of the menu bar (placeholder positioning).
-    // 16pt clearance from the right edge, 32pt below the menu bar.
-    let x = monitor_logical.width - win_logical.width - 16.0;
-    let y = 32.0;
+    let (x, y) = match app.tray_by_id("main").and_then(|t| t.rect().ok().flatten()) {
+        Some(rect) => {
+            let tray_pos = rect.position.to_logical::<f64>(scale);
+            let tray_size = rect.size.to_logical::<f64>(scale);
+            let raw_x = tray_pos.x + tray_size.width / 2.0 - win_logical.width / 2.0;
+            let raw_y = tray_pos.y + tray_size.height + 6.0;
+            // 8pt screen-edge margin; degenerate (negative-width) bound
+            // collapses to the lower bound — popover pinned at x=8.
+            let clamped_x = raw_x
+                .max(8.0)
+                .min((monitor_logical.width - win_logical.width - 8.0).max(8.0));
+            (clamped_x, raw_y)
+        }
+        None => {
+            log::warn!("Tray rect unavailable; falling back to corner positioning");
+            (monitor_logical.width - win_logical.width - 16.0, 32.0)
+        }
+    };
 
     popover.set_position(tauri::LogicalPosition::new(x, y))?;
     Ok(())
