@@ -734,6 +734,11 @@ function setExportLinks() {
 }
 
 // ─── orchestrate ─────────────────────────────────────────
+/**
+ * Run a single refresh pass against the API. Returns true on success, false on
+ * failure. Errors are swallowed (the caller decides whether to retry); the
+ * body's `loading` class is always removed.
+ */
 async function refreshAll() {
   document.body.classList.add('loading');
   try {
@@ -749,10 +754,55 @@ async function refreshAll() {
       refreshSessionsTable(headlinePack.sessions),
     ]);
     renderCostChart(headlinePack);
+    return true;
   } catch (err) {
     console.error('refreshAll failed', err);
+    return false;
   } finally {
     document.body.classList.remove('loading');
+  }
+}
+
+/**
+ * Initial load helper (v0.3.1, Bug #5 fix).
+ *
+ * The Tauri dashboard window opens before the SEA sidecar is guaranteed
+ * to have parsed all JSONL files and bound its port (a 100–500ms race in
+ * the v0.3.0 smoke test). The first `refreshAll()` therefore frequently
+ * threw `Failed to fetch`, the dashboard stayed blank, and the user had
+ * to manually refresh.
+ *
+ * Strategy: keep retrying the initial load with exponential backoff
+ * (300ms, 600ms, 1.2s, 2.4s, capped at 4s) for up to 30 seconds. Once
+ * the first refresh succeeds, switch to the normal user-driven model.
+ *
+ * Why not retry-forever-on-every-error? Because subsequent
+ * user-triggered refreshes (period switch, search) shouldn't paper over
+ * real network failures with infinite retries — the user would rather
+ * see an obvious empty state than a frozen UI. Startup is the one
+ * window where retries are unambiguously the right call.
+ */
+async function initialLoad() {
+  const MAX_TOTAL_MS = 30_000;
+  const start = Date.now();
+  let delay = 300;
+  // First attempt immediately, no wait
+  while (true) {
+    const ok = await refreshAll();
+    if (ok) {
+      console.log('[Clauge] Initial dashboard load succeeded');
+      return;
+    }
+    const elapsed = Date.now() - start;
+    if (elapsed >= MAX_TOTAL_MS) {
+      console.warn(
+        `[Clauge] Dashboard could not reach the API after ${Math.round(elapsed / 1000)}s. ` +
+        'Check that clauge-server is running on the expected port.'
+      );
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(Math.round(delay * 2), 4_000);
   }
 }
 
@@ -777,7 +827,7 @@ function bindControls() {
 }
 
 bindControls();
-refreshAll();
+initialLoad();
 
 // Auto-refresh the plan-usage card every 60s.
 setInterval(() => {
