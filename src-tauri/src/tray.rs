@@ -88,10 +88,22 @@ fn show_dashboard(app: &AppHandle) {
 fn toggle_popover(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("popover") {
         match w.is_visible() {
-            Ok(true) => { let _ = w.hide(); }
+            Ok(true) => {
+                if let Err(e) = w.hide() {
+                    log::warn!("Failed to hide popover: {}", e);
+                }
+            }
             _ => {
-                let _ = w.show();
-                let _ = w.set_focus();
+                // Position before showing so the popover appears in the right place.
+                if let Err(e) = crate::windows::position_popover_under_tray(app) {
+                    log::warn!("Failed to position popover: {}", e);
+                }
+                if let Err(e) = w.show() {
+                    log::warn!("Failed to show popover: {}", e);
+                }
+                if let Err(e) = w.set_focus() {
+                    log::warn!("Failed to focus popover: {}", e);
+                }
             }
         }
     }
@@ -99,8 +111,17 @@ fn toggle_popover(app: &AppHandle) {
 
 fn show_popover_with_preferences(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("popover") {
-        let _ = w.show();
-        let _ = w.set_focus();
-        let _ = w.eval("window.dispatchEvent(new CustomEvent('show-preferences'))");
+        if let Err(e) = crate::windows::position_popover_under_tray(app) {
+            log::warn!("Failed to position popover: {}", e);
+        }
+        if let Err(e) = w.show() {
+            log::warn!("Failed to show popover: {}", e);
+        }
+        if let Err(e) = w.set_focus() {
+            log::warn!("Failed to focus popover: {}", e);
+        }
+        if let Err(e) = w.eval("window.dispatchEvent(new CustomEvent('show-preferences'))") {
+            log::warn!("Failed to dispatch show-preferences event: {}", e);
+        }
     }
 }

@@ -6,11 +6,14 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Build the menu-bar popover window (frameless, transparent, hidden at boot).
 ///
-/// Idempotent: returns early if the window already exists. The "popover" label
-/// is also declared in `tauri.conf.json` `app.windows`, which means Tauri's
-/// startup pre-creates it before this function runs — the early-return guard
-/// handles that case so this can also be called as a fallback if the config
-/// path is ever changed.
+/// Idempotent: returns early if the window already exists. As of T17, the
+/// popover is *no longer* declared in `tauri.conf.json` `app.windows[]` — this
+/// function is now the single source of truth. Reason: a conf-declared window
+/// is created by Tauri before `setup()` runs, which means the vibrancy
+/// material applied here would never reach it (the early-return path would
+/// short-circuit before the `apply_vibrancy` call). Dropping the conf entry
+/// makes this function the canonical creator and ensures vibrancy is always
+/// applied.
 ///
 /// URL resolution note: `frontendDist` is set to `../popover` so embedded
 /// assets are rooted at the popover/ directory. `WebviewUrl::App("index.html")`
@@ -25,7 +28,9 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 /// frontendDist. Future windows wanting to load a bundled HTML asset must EITHER
 /// place that asset under popover/ OR use WebviewUrl::External.
 ///
-/// Vibrancy material is wired in Task 17 (window-vibrancy crate).
+/// Vibrancy: on macOS, `NSVisualEffectMaterial::Popover` is applied with
+/// `NSVisualEffectState::Active` (always-on, never dims with focus changes)
+/// and a 12.0pt corner radius matching the popover's CSS border-radius.
 pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("popover").is_some() {
         return Ok(());
@@ -44,9 +49,52 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     .visible(false)
     .build()?;
 
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+        if let Err(e) = apply_vibrancy(
+            &win,
+            NSVisualEffectMaterial::Popover,
+            Some(NSVisualEffectState::Active),
+            Some(12.0),
+        ) {
+            log::warn!("Failed to apply popover vibrancy: {}", e);
+        }
+    }
+
     if let Err(e) = win.hide() {
         log::warn!("Failed to hide popover after creation: {}", e);
     }
+    Ok(())
+}
+
+/// Position the popover near the top-right of the active monitor (placeholder
+/// approximation for tray-anchored positioning).
+///
+/// macOS does not expose tray icon coordinates through Tauri's public API
+/// (NSStatusItem frame lookup requires Cocoa interop we haven't wired yet).
+/// As a stopgap, we place the popover 16px from the right edge and 32px below
+/// the menu bar — close enough to the menu bar tray icon to feel anchored,
+/// without hard-coding the exact tray icon x-coordinate.
+///
+/// TODO(v0.3.0.x): Replace with actual tray-icon position via NSStatusItem
+/// frame lookup once a Cocoa interop helper exists. The position should
+/// nudge the popover so its top-center sits below the tray icon's center.
+pub fn position_popover_under_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let popover = app
+        .get_webview_window("popover")
+        .ok_or(tauri::Error::WebviewNotFound)?;
+    let monitor = popover
+        .current_monitor()?
+        .ok_or(tauri::Error::WebviewNotFound)?;
+    let monitor_size = monitor.size();
+    let win_size = popover.outer_size()?;
+
+    // Anchor near top-right of the menu bar (placeholder positioning).
+    let x = (monitor_size.width as i32) - (win_size.width as i32) - 16;
+    let y = 32;
+
+    popover.set_position(tauri::PhysicalPosition::new(x, y))?;
     Ok(())
 }
 

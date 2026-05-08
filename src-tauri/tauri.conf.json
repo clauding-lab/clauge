@@ -8,22 +8,7 @@
     "frontendDist": "../popover"
   },
   "app": {
-    "windows": [
-      {
-        "label": "popover",
-        "title": "Clauge",
-        "url": "index.html",
-        "width": 380,
-        "height": 600,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "visible": false,
-        "focus": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     },
