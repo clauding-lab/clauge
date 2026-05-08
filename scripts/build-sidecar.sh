@@ -4,6 +4,7 @@ set -euo pipefail
 # Builds clauge-server as a Universal (arm64 + x86_64) Node SEA binary.
 # Output: src-tauri/binaries/clauge-server-aarch64-apple-darwin
 # Output: src-tauri/binaries/clauge-server-x86_64-apple-darwin
+# Output: src-tauri/binaries/clauge-server-universal-apple-darwin (lipo-merged)
 
 START=$SECONDS
 
@@ -106,7 +107,23 @@ OTHER_NODE="$TMP_DIR/node-v${NODE_VERSION}-darwin-${OTHER_ARCH}/bin/node"
 
 inject_sea "$OTHER_ARCH" "$OTHER_TRIPLE" "$OTHER_NODE"
 
-# 6. Cleanup blob + intermediate bundle
+# 6. lipo-merge the two per-arch SEA binaries into a single universal fat
+# binary.  Tauri 2.x's bundler, when invoked with --target universal-apple-darwin,
+# copies `binaries/clauge-server-universal-apple-darwin` into the .app — it does
+# NOT auto-merge per-arch binaries at bundle time, so we must produce the
+# universal here.  Per-arch binaries stay in place for non-universal builds.
+echo "[build-sidecar] lipo-merging arm64 + x86_64 into universal binary..."
+UNIVERSAL_OUT="$BIN_DIR/clauge-server-universal-apple-darwin"
+lipo -create \
+  "$BIN_DIR/clauge-server-aarch64-apple-darwin" \
+  "$BIN_DIR/clauge-server-x86_64-apple-darwin" \
+  -output "$UNIVERSAL_OUT"
+chmod +x "$UNIVERSAL_OUT"
+codesign --remove-signature "$UNIVERSAL_OUT" || true
+codesign --sign - --force --preserve-metadata=entitlements,requirements,flags,runtime "$UNIVERSAL_OUT"
+echo "[build-sidecar] Built $UNIVERSAL_OUT"
+
+# 7. Cleanup blob + intermediate bundle
 rm -f sea-prep.blob "$DIST/server.bundle.mjs"
 
 ELAPSED=$((SECONDS - START))
