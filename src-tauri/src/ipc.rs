@@ -97,6 +97,24 @@ pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 
+/// Show the dashboard window (creating it if it doesn't exist yet).
+///
+/// Concrete `tauri::AppHandle` (not the generic `<R: tauri::Runtime>` form
+/// from the plan draft) so the signature matches the other IPC commands in
+/// this file — Tauri's invoke_handler! generates uniform glue when all
+/// handlers use the same handle type.
+#[tauri::command]
+pub async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        w.show().map_err(|e| e.to_string())?;
+        w.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        crate::windows::create_dashboard(&app).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
