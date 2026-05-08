@@ -266,15 +266,15 @@ User: ⌘Q  OR  Tray → Quit  OR  red close button on dashboard
   ├─→ [Tauri main] save window state via tauri-plugin-window-state
   ├─→ [Tauri main] SIGTERM clauge-server sidecar
   │     └─→ sidecar flushes pending ~/.clauge writes → exit(0)
-  ├─→ [Tauri main] wait up to 2s; if sidecar alive, SIGKILL
+  ├─→ [Tauri main] wait up to 2.5s; if sidecar alive, SIGKILL
   └─→ [Tauri main] exit
 ```
 
 If V3 was running as client (sidecar owned by external clauge), no SIGTERM is sent.
 
-**Sidecar-side details (material to the 2s grace window):**
+**Sidecar-side details (material to the 2.5s grace window):**
 
-- The SIGTERM handler calls `server.close()` to stop accepting new connections, then `server.closeAllConnections()` to destroy idle HTTP keep-alive sockets. Without `closeAllConnections()`, `@hono/node-server`'s default keep-alive drain holds the server open for ~5s — longer than the Tauri parent's 2s grace window, which would force every quit through SIGKILL even on a healthy sidecar.
+- The SIGTERM handler calls `server.close()` to stop accepting new connections, then `server.closeAllConnections()` to destroy idle HTTP keep-alive sockets. Without `closeAllConnections()`, `@hono/node-server`'s default keep-alive drain holds the server open for ~5s — longer than the Tauri parent's 2.5s grace window, which would force every quit through SIGKILL even on a healthy sidecar.
 - Signal handlers (SIGINT, SIGTERM) are installed **before** the `Listening on …` and `CLAUGE_BOUND_PORT=…` log emissions. The Tauri parent reads the port marker as soon as it appears on stderr, so a SIGTERM can race the handler-install on cold start; installing handlers first makes that race graceful instead of a default-action terminate-by-signal (which would skip the pending-write flush).
 
 ## 7. Error handling
@@ -370,14 +370,15 @@ Respawn-anyway-on-3 is deliberate: the user keeps a working UI; they choose when
 `test/sea-smoke.test.js`, ~50 LOC. After `scripts/build-sidecar.sh`:
 
 1. Spawn `./dist/clauge-server` as subprocess
-2. Read stderr until "CLAUGE_BOUND_PORT=<N>"
+2. Wait for both startup markers in parallel: `Listening on …` on stdout AND `CLAUGE_BOUND_PORT=<N>` on stderr (both must arrive before progressing — they're emitted on independent streams)
 3. `curl http://127.0.0.1:<N>/api/health` → expect 200, `{ service: "clauge" }`
-4. `curl /api/summary?period=7d` → expect 200, valid JSON
+4. `curl /api/sessions?period=7d` → expect 200, valid JSON
 5. `process.kill('SIGTERM')`
-6. Assert clean exit within 2s
-7. Assert no orphan child processes
+6. Assert clean exit within 2.5s (matches the §6.7 grace-window cushion for `closeAllConnections`)
 
 Catches: bad SEA blob config, missing deps, broken port-fallback, hanging shutdown.
+
+Set `SKIP_SEA_SMOKE=1` to skip this layer (e.g. on fresh checkouts where the ~30s SEA build is unwanted).
 
 ### 8.4 Layer 3 — Rust unit tests (new)
 
