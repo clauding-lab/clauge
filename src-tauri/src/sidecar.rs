@@ -1,8 +1,9 @@
 //! Sidecar process lifecycle + crash circuit-breaker.
 //!
 //! Spawns the clauge-server SEA binary as a child process via tauri-plugin-shell.
-//! Tracks crash timestamps in a 60s sliding window. After 3 crashes, dispatches
-//! a one-shot notification but keeps respawning (with exponential backoff after #4+).
+//! Tracks crash timestamps in a 60s sliding window. After 3 crashes within 60s,
+//! dispatches a one-shot notification; from the 4th crash, respawns with
+//! exponential backoff (2s, 4s, 8s capped) until the window empties.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -11,7 +12,7 @@ use std::time::{Duration, Instant};
 pub struct CrashBreaker {
     crashes: VecDeque<Instant>,
     window: Duration,
-    pub notification_sent: bool,
+    notification_sent: bool,
 }
 
 impl CrashBreaker {
@@ -23,9 +24,16 @@ impl CrashBreaker {
         }
     }
 
+    /// Returns true if a notification has been emitted in the current window.
+    /// Resets to false when the 60s window empties.
+    pub fn was_notified(&self) -> bool {
+        self.notification_sent
+    }
+
     /// Record a crash. Returns the recommended action.
     pub fn record(&mut self, now: Instant) -> CrashAction {
-        // Drop entries outside the window
+        // Window is closed-closed: a crash at exactly t=now-window_secs is kept
+        // (matches the spec's "older than 60s" wording, which reads as strict >).
         while let Some(&front) = self.crashes.front() {
             if now.duration_since(front) > self.window {
                 self.crashes.pop_front();
@@ -64,6 +72,8 @@ impl CrashBreaker {
 pub enum CrashAction {
     SilentRespawn,
     NotifyAndRespawn,
+    /// Respawn after a delay. Schedule for crashes 4..=N within the window:
+    /// 2s, 4s, 8s, 8s, 8s, ... (capped at 8s).
     BackoffRespawn(Duration),
 }
 
@@ -120,6 +130,16 @@ mod tests {
     }
 
     #[test]
+    fn sixth_crash_caps_backoff_at_8s() {
+        let mut b = CrashBreaker::new();
+        for i in 0..5 {
+            b.record(t(i * 5));
+        }
+        let r = b.record(t(30));
+        assert!(matches!(r, CrashAction::BackoffRespawn(d) if d == Duration::from_secs(8)));
+    }
+
+    #[test]
     fn crashes_outside_window_are_dropped() {
         let mut b = CrashBreaker::new();
         b.record(t(0));
@@ -138,6 +158,35 @@ mod tests {
         // 4th crash → backoff, NOT a second notification
         let r = b.record(t(30));
         assert!(matches!(r, CrashAction::BackoffRespawn(_)));
-        assert!(b.notification_sent);
+        assert!(b.was_notified());
+    }
+
+    #[test]
+    fn notification_fires_again_in_new_window() {
+        let mut b = CrashBreaker::new();
+        // Window 1: 3 crashes → notify
+        b.record(t(0));
+        b.record(t(10));
+        assert_eq!(b.record(t(20)), CrashAction::NotifyAndRespawn);
+        assert!(b.was_notified());
+
+        // Long pause: window empties (>60s after the LAST crash at t(20))
+        // First crash in new window: t(81 + 0) — well clear of t(20) + 60s = t(80)
+        // The empty-deque check inside record() should reset notification_sent.
+        b.record(t(81));
+        b.record(t(85));
+        // 3rd crash in new window — should NOTIFY AGAIN
+        assert_eq!(b.record(t(90)), CrashAction::NotifyAndRespawn);
+    }
+
+    #[test]
+    fn crash_at_exact_60s_boundary_keeps_prior_entry() {
+        let mut b = CrashBreaker::new();
+        b.record(t(0)); // len=1
+        b.record(t(30)); // len=2 → silent
+        // 3rd crash exactly 60s after the FIRST one
+        // t(0) is at the strict-> boundary — should still be retained
+        // → 3rd crash → notify (proves the first entry wasn't pruned)
+        assert_eq!(b.record(t(60)), CrashAction::NotifyAndRespawn);
     }
 }

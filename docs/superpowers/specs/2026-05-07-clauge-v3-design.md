@@ -333,7 +333,7 @@ ON sidecar exit (non-zero):
   IF len(crashes) == 1:  silent respawn
   IF len(crashes) == 2:  silent respawn
   IF len(crashes) == 3:  send macOS notification, respawn anyway
-  IF len(crashes) >= 4:  respawn with exponential backoff (1s, 2s, 4s, 8s capped)
+  IF len(crashes) >= 4:  respawn with exponential backoff (2s, 4s, 8s capped) starting from the 4th crash within the window
 ```
 
 Respawn-anyway-on-3 is deliberate: the user keeps a working UI; they choose when to restart.
@@ -389,9 +389,16 @@ Set `SKIP_SEA_SMOKE=1` to skip this layer (e.g. on fresh checkouts where the ~30
 | `port_discovery::tests::probe_returns_false_when_no_server` | Nothing listening on 3456 → probe returns false → discover() returns `SpawnAt(3456)` |
 | `port_discovery::tests::probe_returns_true_for_clauge_response` | Mock `/api/health` returns `{ service: "clauge" }` → probe returns true → V3 must NOT spawn sidecar (uses `Share`) |
 | `port_discovery::tests::probe_returns_false_for_non_clauge_service` | Mock `/api/health` returns a non-clauge body → probe returns false → discover() still returns `SpawnAt(3456)`. Note: Rust always emits `SpawnAt(3456)` regardless; if 3456 is occupied by a non-clauge server, the Node sidecar's own port-fallback (3456→3460 via `listenWithRetry`, T6) handles it and reports the bound port via stderr `CLAUGE_BOUND_PORT=<n>` (consumed in T11). |
-| `crash_breaker::silent_for_first_three` | 3 crash timestamps in 60s → no notification |
-| `crash_breaker::backoff_after_fourth` | 4th crash → exponential backoff, single notification |
-| `crash_breaker::resets_after_window` | Crash, wait 61s, crash again → counts as first crash |
+| `sidecar::tests::first_crash_is_silent` | 1st crash within window → silent respawn |
+| `sidecar::tests::second_crash_within_60s_is_silent` | 2nd crash within 60s → silent respawn |
+| `sidecar::tests::third_crash_within_60s_notifies` | 3rd crash within 60s → one-shot macOS notification, respawn anyway |
+| `sidecar::tests::fourth_crash_within_60s_backs_off` | 4th crash → exponential backoff (2s) |
+| `sidecar::tests::fifth_crash_uses_4s_backoff` | 5th crash → 4s backoff |
+| `sidecar::tests::sixth_crash_caps_backoff_at_8s` | 6th+ crash → capped at 8s backoff (verifies `(n-3).min(3)` math) |
+| `sidecar::tests::crashes_outside_window_are_dropped` | Crash, wait >60s, crash again → counts as first crash |
+| `sidecar::tests::notification_does_not_repeat_within_same_window` | Once a window has notified, further crashes within it back off without re-notifying |
+| `sidecar::tests::notification_fires_again_in_new_window` | Notify in window 1 → window empties → 3 crashes in window 2 → notification fires again |
+| `sidecar::tests::crash_at_exact_60s_boundary_keeps_prior_entry` | Window pruning is closed-closed: a crash exactly at the 60s boundary retains the prior entry (strict `>` check) |
 | `ipc::get_server_port_returns_active_port` | IPC returns the port the sidecar bound |
 
 ### 8.5 Layer 4 — Tauri-driver E2E (new, tag/nightly only)
