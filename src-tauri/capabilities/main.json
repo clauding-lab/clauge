@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Default permissions for Clauge",
-  "windows": ["main", "popover"],
+  "description": "Default permissions for Clauge main (dashboard) window",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "shell:allow-spawn",
@@ -10,7 +10,6 @@
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
-    "updater:allow-check",
     "updater:default",
     "notification:default",
     "window-state:default",

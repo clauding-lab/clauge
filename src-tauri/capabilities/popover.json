@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "popover",
+  "description": "Tightened permissions for Clauge menu-bar popover (no shell, no privileged plugins)",
+  "windows": ["popover"],
+  "permissions": [
+    "core:default",
+    "window-state:default"
+  ]
+}

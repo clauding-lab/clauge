@@ -9,17 +9,47 @@ pub struct AppState {
     pub server_port: Arc<Mutex<Option<u16>>>,
 }
 
-#[tauri::command]
-pub fn get_server_port(state: State<AppState>) -> Result<u16, String> {
-    state
+impl AppState {
+    /// Set the bound sidecar port. Used by sidecar startup once the server reports ready.
+    pub fn set_port(&self, port: u16) -> Result<(), String> {
+        let mut guard = self
+            .server_port
+            .lock()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
+        *guard = Some(port);
+        Ok(())
+    }
+}
+
+/// Core read logic shared by the IPC command and its tests.
+///
+/// Tests exercise this directly so the lock-error mapping and `ok_or_else` chain
+/// are covered. The `let guard = ...` binding makes the deref explicit and
+/// survives a future change to a non-Copy port type.
+fn read_port(state: &AppState) -> Result<u16, String> {
+    let guard = state
         .server_port
         .lock()
-        .map_err(|e| format!("lock poisoned: {}", e))?
-        .ok_or_else(|| "server port not yet set".to_string())
+        .map_err(|e| format!("lock poisoned: {}", e))?;
+    guard.ok_or_else(|| "server port not yet set".to_string())
 }
 
 #[tauri::command]
-pub async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
+pub fn get_server_port(state: State<AppState>) -> Result<u16, String> {
+    read_port(&state)
+}
+
+/// Outcome of `check_for_updates`. Serialized as `"up_to_date"` or `"installed"`
+/// for the frontend to distinguish "nothing to do" from "restart pending".
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateStatus {
+    UpToDate,
+    Installed,
+}
+
+#[tauri::command]
+pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
     use tauri_plugin_updater::UpdaterExt;
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await {
@@ -28,9 +58,9 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
                 .download_and_install(|_, _| {}, || {})
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(())
+            Ok(UpdateStatus::Installed)
         }
-        Ok(None) => Ok(()),
+        Ok(None) => Ok(UpdateStatus::UpToDate),
         Err(e) => Err(e.to_string()),
     }
 }
@@ -60,15 +90,13 @@ mod tests {
     fn get_server_port_returns_when_set() {
         let state = AppState::default();
         *state.server_port.lock().unwrap() = Some(3456);
-        // Simulate the State<AppState> by directly calling logic
-        let port = state.server_port.lock().unwrap().clone();
-        assert_eq!(port, Some(3456));
+        assert_eq!(read_port(&state), Ok(3456));
     }
 
     #[test]
     fn get_server_port_errors_when_unset() {
         let state = AppState::default();
-        let port = state.server_port.lock().unwrap().clone();
-        assert_eq!(port, None);
+        let err = read_port(&state).unwrap_err();
+        assert!(err.contains("not yet set"));
     }
 }

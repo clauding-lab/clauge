@@ -14,6 +14,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // TODO(T18): configure store path/migration when popover settings handler lands.
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ipc::AppState::default())
         .invoke_handler(tauri::generate_handler![

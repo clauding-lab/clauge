@@ -116,7 +116,7 @@ External (unchanged):
 
 ### 5.1 Implementation specifics
 
-- **Popover-to-server transport:** plain `fetch()` to `http://127.0.0.1:<port>/api/*`, identical pattern to `public/app.js`. Tauri exposes a single IPC command, `get_server_port()`, called once at popover load. No data IPC layer.
+- **Popover-to-server transport:** plain `fetch()` to `http://127.0.0.1:<port>/api/*`, identical pattern to `public/app.js`. Tauri exposes a single **data-plane** IPC command — `get_server_port()` — called once at popover load. Control-plane IPCs (autostart toggle, update check, dashboard open, quit) are also registered but carry no domain data.
 - **Universal binary:** built via `lipo` from arm64 + x86_64 SEA outputs. One DMG works on Apple Silicon and Intel Macs.
 - **Dashboard window URL:** uses HTTP (`http://127.0.0.1:<port>/index.html`), not Tauri's `tauri://localhost` asset protocol. `public/app.js` runs unchanged. Trade-off: small HTTP overhead vs zero refactor risk.
 - **Settings storage:** `tauri-plugin-store` writes `~/Library/Application Support/com.clauding.clauge/settings.json`.
@@ -399,7 +399,8 @@ Set `SKIP_SEA_SMOKE=1` to skip this layer (e.g. on fresh checkouts where the ~30
 | `sidecar::tests::notification_does_not_repeat_within_same_window` | Once a window has notified, further crashes within it back off without re-notifying |
 | `sidecar::tests::notification_fires_again_in_new_window` | Notify in window 1 → window empties → 3 crashes in window 2 → notification fires again |
 | `sidecar::tests::crash_at_exact_60s_boundary_keeps_prior_entry` | Window pruning is closed-closed: a crash exactly at the 60s boundary retains the prior entry (strict `>` check) |
-| `ipc::get_server_port_returns_active_port` | IPC returns the port the sidecar bound |
+| `ipc::get_server_port_returns_when_set` | IPC returns the port the sidecar bound (via shared `read_port` helper) |
+| `ipc::get_server_port_errors_when_unset` | IPC surfaces an explicit error when the port has not been recorded yet |
 
 ### 8.5 Layer 4 — Tauri-driver E2E (new, tag/nightly only)
 
