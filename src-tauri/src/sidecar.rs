@@ -286,10 +286,20 @@ async fn spawn_one(
     app: &AppHandle,
     shutdown_notify: Option<&tokio::sync::Notify>,
 ) -> Result<(u16, Receiver<CommandEvent>, CommandChild), String> {
+    // NO_OPEN=1 suppresses server.js's `open(url)` call (server.js:594) which
+    // otherwise pops the user's default browser to http://localhost:<port>
+    // on every sidecar startup. Without this, every Clauge.app launch — and
+    // every crash-respawn — opens a fresh Chrome tab on top of the user's
+    // workspace. v0.3.0 manual smoke test reported this as Bug #3 ("Open
+    // Dashboard opens in system browser instead of Tauri webview"); the
+    // popover's Open Dashboard button was correctly creating a Tauri
+    // webview, but the sidecar's auto-open was racing the user and they
+    // saw Chrome appear first.
     let (mut rx, child): (Receiver<CommandEvent>, CommandChild) = app
         .shell()
         .sidecar("clauge-server")
         .map_err(|e| e.to_string())?
+        .env("NO_OPEN", "1")
         .spawn()
         .map_err(|e| e.to_string())?;
 

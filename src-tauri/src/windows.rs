@@ -132,6 +132,26 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         .unwrap_or(3456);
     let url = format!("http://127.0.0.1:{}/", port);
 
+    // Defensive `on_navigation` handler (v0.3.1, Bug #3 follow-up).
+    //
+    // Bug #3's primary cause was the sidecar's auto-open (server.js:594) —
+    // fixed by passing `NO_OPEN=1` in sidecar.rs. But a secondary path could
+    // still leak the dashboard out into the system browser: an anchor click
+    // inside the dashboard HTML pointing at an http(s) URL outside our own
+    // server. The current dashboard has two such anchors (links to
+    // claude.ai and github.com inside the install-extension panel) — those
+    // SHOULD open externally on click. We keep them working by returning
+    // `false` for off-host URLs (which lets Tauri's anchor-click fallback
+    // dispatch `Shell::open` for new-tab navigations) and `true` for our
+    // own server origin.
+    //
+    // Why this matters now: without an on_navigation handler, Tauri 2.x
+    // allows any navigation by default, which means a stray same-window
+    // `location.href = "https://example.com"` in the dashboard JS would
+    // navigate the dashboard webview AWAY from the API server. Returning
+    // `true` only for the SEA server's host:port pins the webview to its
+    // intended content.
+    let port_for_handler = port;
     let win = WebviewWindowBuilder::new(
         app,
         "main",
@@ -142,6 +162,20 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     .min_inner_size(900.0, 600.0)
     .resizable(true)
     .visible(true)
+    .on_navigation(move |u| {
+        // Allow our own SEA server (host MUST be 127.0.0.1 OR localhost,
+        // port MUST match the bound port). Block everything else from
+        // taking over the dashboard webview — anchor target=_blank links
+        // are handled by Tauri's separate new-window path, not here.
+        let host_ok = matches!(u.host_str(), Some("127.0.0.1") | Some("localhost"));
+        let port_ok = u.port_or_known_default() == Some(port_for_handler);
+        let scheme_ok = u.scheme() == "http";
+        let allowed = host_ok && port_ok && scheme_ok;
+        if !allowed {
+            log::info!("Blocked dashboard navigation to {}", u);
+        }
+        allowed
+    })
     .build()?;
 
     // Hide-on-close so reopens are instant (preserves window state + DOM).
