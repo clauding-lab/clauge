@@ -48,7 +48,8 @@ pub fn run() {
             // required (Tauri menu event listeners are global).
             let menu = crate::menu::build(app.handle())?;
             app.set_menu(menu)?;
-            // First-launch autostart enablement (spec §6.4 — default ON).
+            // First-launch autostart enablement (spec §3 Decision #8 + §4.2:
+            // "Launch at Login (default ON)"; toggle-OFF flow lives in §6.6).
             // Placed AFTER menu setup so menu/tray remain functional even if
             // the store fails to open. The store carries a `first_launch_done`
             // flag in settings.json (~/Library/Application Support/com.clauding.clauge/settings.json).
