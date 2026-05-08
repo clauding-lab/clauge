@@ -57,6 +57,21 @@ async function init() {
     b.addEventListener('click', () => switchTab(b.dataset.tab));
   });
 
+  // Read the running server's reported version so the about-line in the
+  // preferences panel always matches the binary that actually shipped, not
+  // the hardcoded number in the HTML. Failure here is fine — the placeholder
+  // text already in the DOM stays put.
+  fetchJson('/api/health')
+    .then((h) => {
+      const el = document.getElementById('about-version');
+      if (el && h?.version) el.textContent = `v${h.version}`;
+    })
+    .catch(() => {
+      // Best-effort. The health probe is also a useful early-warning canary
+      // for the popover's own refresh: if /api/health fails right at boot,
+      // the 10s setInterval below will eventually pick it up anyway.
+    });
+
   await refresh();
   setInterval(refresh, 10_000);
 }
