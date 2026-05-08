@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.0 (2026-05-08) — V3: Liquid Glass redesign + popover bug fix
+
+**Major redesign: new popover, full dashboard overhaul, canonical tray
+icon. Plus the bulletproof fix for the popover-empty bug that survived
+v0.3.1's CORS fix.**
+
+### Popover (300px, warm-dark glass)
+- New 5-section layout: Header / Plan capacity (4 mini rings:
+  Session/Weekly/Sonnet/Design) / Finance (Extra usage + Balance cards
+  with bars) / Today (Cost eq · Messages · Cache hit) / Footer
+  (kbd hints + "Open →").
+- Warning-state variant (240px, amber): single big ring + "Heads up · session ends in Xm" + suggestion to drop to haiku. Triggers when `plan.fiveHour.pct >= 85`.
+- Visual: warm-dark gradient (`#2a1812 → #0d0805`), brand orange `#d97757`, translucent glass with `backdrop-blur(60px) saturate(180%)`, dual rim-light borders, gradient bleed on the header. Inter UI + JetBrains Mono numerics with `tnum`.
+
+### Dashboard (7-tab Liquid Glass)
+- Tabs: Overview · Sessions (count) · Projects (count) · Tools · Models · Settings · About. Morphing brand-orange capsule indicator on tabs + period (`cubic-bezier(.2,.8,.2,1)`).
+- Period selector: Today / 7 days / 30 days / Month / All time.
+- Overview: Plan capacity hero (4 big rings + Extra usage + claude.ai balance side cards) → code analytics digest strip (API equivalent, Messages, Sessions, Cache hit, Tokens, Return on sub) → Cost over time + Peak hours charts → By project + By activity tables → Recent sessions teaser.
+- Settings tab: General / Pricing & ROI / claude.ai sync sub-panes (read-only mirror of `/api/health` + `/api/usage` for v0.4.0; editable settings deferred).
+- About tab: What it does / Roadmap / Credits.
+
+### Bug fix: popover-empty (T35)
+- v0.3.1 fixed CORS at the wire level (response includes `access-control-allow-origin: *`), but the popover STILL rendered empty. Root cause: WKWebView's mixed-content guard. Tauri 2.x's asset protocol routes the popover through `tauri://localhost` (or `https://tauri.localhost`) which WKWebView treats as a Mixed-Content secure context — cross-origin `fetch('http://127.0.0.1:port/api/...')` from such a context is silently dropped before the request leaves the webview.
+- Fix: new `proxy_fetch` IPC command that runs the request through Rust's `reqwest` (no fetch layer, no CORS, no mixed-content). Popover JS now calls `invoke('proxy_fetch', { path })` instead of native `fetch()`. Path validation restricts to `/api/*`.
+- Also enabled `tauri = { features = [..., "devtools"] }` so right-click → Inspect Element works in production v0.4.0+.
+
+### Tray icon (T38)
+- Replaced the Pillow-rendered programmatic gauge with a render derived from the canonical `public/clauge-menubar-18px.svg` brand mark. New pipeline (`scripts/render-tray-icon.sh`): flattens SVG colors to black via `sed` (preserve opacities for macOS template tinting), then `sips` renders to 22×22 + 44×44.
+
+### Tests
+- Cargo: 22 (was 21, added `proxy_fetch` path validation test).
+- Node: 109 unchanged.
+
 ## 0.2.0 (2026-05-06) — V2: claude.ai integration
 
 **Major addition: claude.ai plan usage tracking via browser extension or bookmarklet.**
