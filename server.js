@@ -485,16 +485,40 @@ app.get('/api/export', async (c) => {
 
 app.use('/*', serveStatic({ root: join(__dirname, 'public') }));
 
-const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
-  const url = `http://localhost:${info.port}`;
-  console.log(`[Clauge] Listening on ${url}`);
-  console.log(`[Clauge] CLAUDE_DIR=${CLAUDE_DIR}`);
-  if (process.env.NO_OPEN !== '1') {
-    open(url).catch(() => {
-      console.log('[Clauge] (could not auto-open browser; visit URL manually)');
-    });
+const PORT_RETRY_LIMIT = 5;
+
+async function listenWithRetry(startPort) {
+  for (let attempt = 0; attempt < PORT_RETRY_LIMIT; attempt++) {
+    const tryPort = startPort + attempt;
+    try {
+      const s = await new Promise((resolve, reject) => {
+        const ss = serve({ fetch: app.fetch, port: tryPort }, () => resolve(ss));
+        ss.once?.('error', reject);
+        // @hono/node-server may emit error via underlying http.Server
+        ss.server?.once('error', reject);
+      });
+      return { server: s, port: tryPort };
+    } catch (err) {
+      if (err.code !== 'EADDRINUSE') throw err;
+      console.log(`[Clauge] Port ${tryPort} in use; trying ${tryPort + 1}`);
+    }
   }
-});
+  throw new Error(
+    `[Clauge] All ports ${startPort}..${startPort + PORT_RETRY_LIMIT - 1} in use`
+  );
+}
+
+const { server, port: BOUND_PORT } = await listenWithRetry(PORT);
+const url = `http://localhost:${BOUND_PORT}`;
+console.log(`[Clauge] Listening on ${url}`);
+console.log(`[Clauge] CLAUDE_DIR=${CLAUDE_DIR}`);
+console.error(`CLAUGE_BOUND_PORT=${BOUND_PORT}`);  // for Tauri sidecar parser
+
+if (process.env.NO_OPEN !== '1') {
+  open(url).catch(() => {
+    console.log('[Clauge] (could not auto-open browser; visit URL manually)');
+  });
+}
 
 const shutdown = (signal) => {
   console.log(`\n[Clauge] ${signal} received — shutting down`);
