@@ -15,3 +15,6 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/
 sea-prep.blob
+# popover/* is the source of truth; build-sidecar.sh copies into public/popover/
+# at build time so SEA's wildcard static route serves the native NSPopover content.
+public/popover/

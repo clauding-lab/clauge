@@ -15,6 +15,19 @@ DIST="$REPO_ROOT/dist"
 BIN_DIR="$REPO_ROOT/src-tauri/binaries"
 mkdir -p "$DIST" "$BIN_DIR"
 
+# 0. Copy popover/* into public/popover/* so the SEA's wildcard
+#    serveStatic('/*', root: 'public') route serves the native NSPopover's
+#    WKWebView content (loaded as http://127.0.0.1:{port}/popover/index.html).
+#    Done at build time so the SEA blob includes everything in public/.
+echo "[build-sidecar] Copying popover assets into public/popover/..."
+mkdir -p "$REPO_ROOT/public/popover"
+cp "$REPO_ROOT/popover/"*.html "$REPO_ROOT/public/popover/"
+cp "$REPO_ROOT/popover/"*.css "$REPO_ROOT/public/popover/"
+cp "$REPO_ROOT/popover/"*.js "$REPO_ROOT/public/popover/"
+if [ -d "$REPO_ROOT/popover/fonts" ]; then
+  cp -r "$REPO_ROOT/popover/fonts" "$REPO_ROOT/public/popover/"
+fi
+
 # 1. Bundle server.js + lib/ into a single ESM file.
 # server.js uses top-level await and import.meta — ESM is the only viable bundle format.
 # The CJS bootstrap (scripts/sea-bootstrap.cjs) extracts the bundle from SEA assets
