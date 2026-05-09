@@ -52,7 +52,6 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            crate::tray::init(app.handle())?;
             crate::native_popover::init(app.handle())?;
 
             // Native macOS app-wide menu (Clauge / Edit / View / Window / Help).
