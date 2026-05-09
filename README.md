@@ -14,10 +14,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/clauge.svg" alt="license" /></a>
 </p>
 
-![Clauge dashboard](docs/screenshots/v0.5.0/dashboard.png)
+![Clauge dashboard](docs/screenshots/v0.5.0/dashboard-v2.png)
 
 <p align="center">
-  <img src="docs/screenshots/v0.5.0/popover.png" alt="Clauge menu-bar popover" width="380" />
+  <img src="docs/screenshots/v0.5.0/popover-v2.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
 > Status: **V3 — native macOS app** (universal Apple Darwin DMG, signed auto-updater) plus the existing `npx clauge` browser dashboard. v0.5.0 ships a native NSPopover menu-bar surface (persists across app deactivation) and a compact 1100×800 dashboard.
