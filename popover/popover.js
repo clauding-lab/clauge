@@ -1,17 +1,10 @@
-// Clauge popover (v0.4.0).
+// Clauge popover (v0.5.0).
 //
-// All sidecar fetches go through Tauri's `proxy_fetch` IPC, NOT native fetch.
-// See src-tauri/src/ipc.rs::proxy_fetch for the rationale — short version:
-// WKWebView's mixed-content guard (popover loads from tauri://localhost or
-// https://tauri.localhost; sidecar serves http://127.0.0.1:port) silently
-// drops fetch responses, even though the wire-level request succeeds with
-// CORS headers attached. Routing the request through Rust skips the entire
-// browser fetch layer.
-//
-// The dashboard window doesn't need this — it loads via WebviewUrl::External
-// pointed at the sidecar root, so its fetches are same-origin.
-
-const { invoke } = window.__TAURI__.core;
+// Loads inside the native NSPopover's WKWebView, served by the SEA sidecar at
+// http://127.0.0.1:{port}/popover/index.html — so /api/* fetches are
+// same-origin and the v0.4.x `proxy_fetch` IPC workaround is no longer needed.
+// JS → Rust messages (open_dashboard, resize) go through
+// window.webkit.messageHandlers.clauge (see native_popover.rs::ClaugeScriptHandler).
 
 // Track the popover state so we can repaint on data updates without a
 // re-fetch (e.g. tab switch or warning-state transition).
@@ -66,9 +59,11 @@ function fmtRelative(iso) {
   return `${m}m`;
 }
 
-// ─── proxy fetch (replaces native fetch) ──────────────────
+// ─── fetch ────────────────────────────────────────────────
 async function fetchJson(path) {
-  return await invoke('proxy_fetch', { path });
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`fetch ${path} failed: ${res.status}`);
+  return await res.json();
 }
 
 // ─── ring HTML helpers ────────────────────────────────────
@@ -164,7 +159,6 @@ function renderRings(usage) {
   const gauges = [
     { label: 'Session', pctFrac: (plan.fiveHour?.pct ?? 0) / 100, reset: fmtRelative(plan.fiveHour?.resetsAt) },
     { label: 'Weekly',  pctFrac: (plan.sevenDay?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDay?.resetsAt) },
-    { label: 'Sonnet',  pctFrac: (plan.sevenDaySonnet?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDaySonnet?.resetsAt) },
     { label: 'Design',  pctFrac: (plan.sevenDayOmelette?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDayOmelette?.resetsAt) },
   ];
   const root = document.getElementById('po-rings');
@@ -290,8 +284,29 @@ function renderToday({ summary, cache }) {
 // ─── orchestration ────────────────────────────────────────
 let lastUsage = null;
 
+// Reveal the loading overlay (clears `hidden` + `.fading` set by a previous
+// hide cycle). Called on every popover show via the `show-loading` event so
+// the user actually sees the overlay (without this the overlay was hidden
+// during the cold-start hydration of the invisible webview, before any
+// click). See lib.rs / tray.rs for the dispatch sites.
+function showLoading() {
+  const el = document.getElementById('po-loading');
+  if (!el) return;
+  el.removeAttribute('hidden');
+  el.classList.remove('fading');
+}
+
 async function refresh() {
   let healthOk = false;
+  let loadingHidden = false;
+  const hideLoading = () => {
+    if (loadingHidden) return;
+    loadingHidden = true;
+    const el = document.getElementById('po-loading');
+    if (!el) return;
+    el.classList.add('fading');
+    setTimeout(() => el.setAttribute('hidden', ''), 220);
+  };
   try {
     const [health, summary, cache, usage] = await Promise.all([
       fetchJson('/api/health').catch(() => null),
@@ -320,12 +335,37 @@ async function refresh() {
     // Hard failure — keep the static shell but flip the status pill.
     console.error('[Clauge popover] refresh failed:', err);
     renderHeader({ ingestedAt: null, healthOk: false });
+  } finally {
+    hideLoading();
+    resizeToContent();
   }
 }
 
-// ─── prefs panel ──────────────────────────────────────────
-function showPreferences() { document.getElementById('prefs').hidden = false; }
-function hidePreferences() { document.getElementById('prefs').hidden = true; }
+// Resize the popover's OS window to match the rendered #root height. This
+// kills the v0.4.x "ghost outline" — without it the OS window stays at a
+// fixed height while the actual content is shorter, so the vibrancy material
+// fills the empty bottom area as a visible rounded rectangle. Width stays
+// 360pt; only height tracks content.
+function resizeToContent() {
+  const tauri = window.__TAURI__?.window;
+  if (!tauri) return;
+  requestAnimationFrame(async () => {
+    try {
+      const root = document.getElementById('root');
+      if (!root) return;
+      // CSS `zoom` on <html> visually scales content but offsetHeight returns
+      // the UNZOOMED dimension. Multiply by the active zoom factor so the OS
+      // window matches the rendered (post-zoom) content height.
+      const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      const height = Math.ceil(root.offsetHeight * zoom);
+      // Sanity bounds — never shrink below 200pt or grow past 700pt.
+      if (height < 200 || height > 700) return;
+      await tauri.getCurrentWindow().setSize(new tauri.LogicalSize(360, height));
+    } catch (err) {
+      console.warn('[Clauge popover] resizeToContent failed:', err);
+    }
+  });
+}
 
 async function openDashboard() {
   await invoke('open_dashboard').catch((err) => console.error('open_dashboard failed:', err));
@@ -341,39 +381,27 @@ async function init() {
     console.warn('[Clauge popover] get_server_port failed; using fallback:', err);
   }
 
-  // Wire footer + prefs + dashboard buttons.
+  // Wire footer dashboard link.
   document.getElementById('footer-dashboard').addEventListener('click', (e) => {
     e.preventDefault();
     openDashboard();
   });
-  document.getElementById('prefs-back').addEventListener('click', hidePreferences);
-  document.getElementById('check-updates-btn').addEventListener('click', () => {
-    invoke('check_for_updates').catch((err) => console.error('check_for_updates failed:', err));
-  });
-  document.getElementById('prefs-dashboard-btn').addEventListener('click', openDashboard);
 
-  // Autostart toggle wiring (preserved from v0.3.x).
-  const autoToggle = document.getElementById('autostart-toggle');
-  autoToggle.checked = await invoke('get_autostart').catch((err) => {
-    console.warn('get_autostart failed; defaulting to off:', err);
-    return false;
+  // Native-side popover-show entry points (tray icon left-click, single-instance
+  // re-launch) dispatch this event from Rust via webview.eval. Rationale: the
+  // webview hydrates while the popover is hidden, so the original first-fetch
+  // hideLoading() runs before the user ever sees the surface. Re-showing the
+  // overlay on each open + kicking a fresh refresh gives the user a real
+  // hydration tell every time. See tray.rs::toggle_popover and lib.rs's
+  // single-instance handler for the dispatch sites.
+  window.addEventListener('show-loading', () => {
+    showLoading();
+    refresh();
   });
-  autoToggle.addEventListener('change', async () => {
-    const desired = autoToggle.checked;
-    try {
-      await invoke('set_autostart', { enabled: desired });
-    } catch (err) {
-      console.error('set_autostart failed; reverting toggle:', err);
-      autoToggle.checked = !desired;
-    }
-  });
-
-  // External event from native menu (Cmd+, or tray's Preferences menu).
-  // tray.rs and lib.rs both dispatch this CustomEvent on the popover webview.
-  window.addEventListener('show-preferences', showPreferences);
 
   // Keyboard shortcuts inside the popover. ⌘D opens the dashboard, ⌘R refreshes.
-  // (Cmd+, is handled at the native-menu level via menu.rs.)
+  // (Cmd+, is handled at the native-menu level via menu.rs and now opens the
+  // dashboard's Settings tab — see tray.rs::show_dashboard_with_settings.)
   document.addEventListener('keydown', (e) => {
     if (!e.metaKey) return;
     if (e.key === 'd' || e.key === 'D') {
@@ -384,16 +412,6 @@ async function init() {
       refresh();
     }
   });
-
-  // Read the running server version once for the about-line.
-  fetchJson('/api/health')
-    .then((h) => {
-      const el = document.getElementById('about-version');
-      if (el && h?.version) el.textContent = `v${h.version}`;
-    })
-    .catch(() => {
-      // Best-effort; the periodic refresh will pick it up later anyway.
-    });
 
   await refresh();
   setInterval(refresh, 10_000);
