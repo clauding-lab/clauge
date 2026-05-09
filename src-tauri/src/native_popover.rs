@@ -23,7 +23,7 @@ use objc2::runtime::NSObject;
 use objc2_foundation::NSObjectProtocol;
 
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSPopover, NSStatusItem};
+use objc2_app_kit::{NSMenu, NSMenuItem, NSPopover, NSStatusItem};
 
 #[cfg(target_os = "macos")]
 use objc2_web_kit::{WKScriptMessage, WKScriptMessageHandler, WKUserContentController, WKWebView};
@@ -78,6 +78,13 @@ static SCRIPT_HANDLER_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeScriptHand
 static APP_HANDLE_REF: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
+static MENU_REF: OnceLock<Mutex<Option<MainThreadCell<NSMenu>>>> = OnceLock::new();
+
+#[cfg(target_os = "macos")]
+static MENU_TARGET_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeMenuTarget>>>> =
+    OnceLock::new();
+
+#[cfg(target_os = "macos")]
 define_class!(
     // ClaugeStatusItemTarget receives -handleClick: from NSStatusBarButton.
     // Subclass exists only to provide an Objective-C action selector — no
@@ -106,7 +113,7 @@ define_class!(
                 }
             };
             let app = NSApplication::sharedApplication(mtm);
-            let event_type = unsafe { app.currentEvent() }.map(|e| e.r#type());
+            let event_type = app.currentEvent().map(|e| e.r#type());
 
             match event_type {
                 Some(NSEventType::RightMouseUp) => show_menu(sender),
@@ -217,8 +224,127 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
 }
 
 #[cfg(target_os = "macos")]
-fn show_menu(_sender: &objc2_app_kit::NSStatusBarButton) {
-    log::info!("native_popover: right-click — menu stub (Task 12 implements)");
+define_class!(
+    // ClaugeMenuTarget receives the right-click NSMenu actions. Same NSObject
+    // subclass pattern as ClaugeStatusItemTarget; one method per item.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "ClaugeMenuTarget"]
+    pub struct ClaugeMenuTarget;
+
+    unsafe impl NSObjectProtocol for ClaugeMenuTarget {}
+
+    impl ClaugeMenuTarget {
+        #[unsafe(method(menuOpenDashboard:))]
+        fn menu_open_dashboard(&self, _sender: &NSMenuItem) {
+            if let Some(app) = APP_HANDLE_REF.get() {
+                crate::tray::show_dashboard(app);
+            }
+        }
+
+        #[unsafe(method(menuPreferences:))]
+        fn menu_preferences(&self, _sender: &NSMenuItem) {
+            if let Some(app) = APP_HANDLE_REF.get() {
+                crate::tray::show_dashboard_with_settings(app);
+            }
+        }
+
+        #[unsafe(method(menuCheckUpdates:))]
+        fn menu_check_updates(&self, _sender: &NSMenuItem) {
+            let Some(app) = APP_HANDLE_REF.get() else {
+                return;
+            };
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = crate::ipc::check_for_updates(app).await {
+                    log::warn!("Failed to check for updates: {}", e);
+                }
+            });
+        }
+
+        #[unsafe(method(menuQuit:))]
+        fn menu_quit(&self, _sender: &NSMenuItem) {
+            if let Some(app) = APP_HANDLE_REF.get() {
+                app.exit(0);
+            }
+        }
+    }
+);
+
+#[cfg(target_os = "macos")]
+fn build_menu(mtm: objc2::MainThreadMarker) -> (Retained<NSMenu>, Retained<ClaugeMenuTarget>) {
+    use objc2_foundation::NSString;
+
+    let target: Retained<ClaugeMenuTarget> = unsafe {
+        let alloc = mtm.alloc::<ClaugeMenuTarget>();
+        objc2::msg_send![alloc, init]
+    };
+    let menu = NSMenu::new(mtm);
+
+    // (label, selector, key-equivalent). Cmd+, on Preferences mirrors the
+    // app menu shortcut; the others have no key-equivalent.
+    let items: [(&str, objc2::runtime::Sel, &str); 3] = [
+        ("Open Dashboard", objc2::sel!(menuOpenDashboard:), ""),
+        ("Preferences\u{2026}", objc2::sel!(menuPreferences:), ","),
+        ("Check for Updates", objc2::sel!(menuCheckUpdates:), ""),
+    ];
+    for (title, sel, key) in items {
+        let title_ns = NSString::from_str(title);
+        let key_ns = NSString::from_str(key);
+        let item = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                mtm.alloc::<NSMenuItem>(),
+                &title_ns,
+                Some(sel),
+                &key_ns,
+            )
+        };
+        unsafe { item.setTarget(Some(target.as_ref())) };
+        menu.addItem(&item);
+    }
+
+    let separator = NSMenuItem::separatorItem(mtm);
+    menu.addItem(&separator);
+
+    let quit_title = NSString::from_str("Quit Clauge");
+    let quit_key = NSString::from_str("q");
+    let quit_item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc::<NSMenuItem>(),
+            &quit_title,
+            Some(objc2::sel!(menuQuit:)),
+            &quit_key,
+        )
+    };
+    unsafe { quit_item.setTarget(Some(target.as_ref())) };
+    menu.addItem(&quit_item);
+
+    (menu, target)
+}
+
+#[cfg(target_os = "macos")]
+fn show_menu(sender: &objc2_app_kit::NSStatusBarButton) {
+    use objc2_app_kit::NSView;
+    use objc2_foundation::NSPoint;
+
+    let menu = match MENU_REF
+        .get()
+        .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+    {
+        Some(m) => m,
+        None => {
+            log::warn!("native_popover: show_menu but MENU_REF unset");
+            return;
+        }
+    };
+    // Anchor the menu under the bottom-left of the status item button so it
+    // appears below the icon, like the AppKit-default tray menu.
+    let view: &NSView = sender;
+    let location = NSPoint {
+        x: 0.0,
+        y: view.bounds().size.height,
+    };
+    menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(view));
 }
 
 #[cfg(target_os = "macos")]
@@ -383,6 +509,7 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
         .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
         .unwrap_or(3456);
     let (popover, webview, vc, script_handler) = create_popover(mtm, port);
+    let (menu, menu_target) = build_menu(mtm);
 
     // Stash all retained references. Without these, ARC drops the underlying
     // Cocoa objects after init() returns and the menu bar / popover stop
@@ -394,6 +521,8 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
     let _ = WEBVIEW_REF.set(Mutex::new(Some(MainThreadCell(webview))));
     let _ = VIEW_CONTROLLER_REF.set(Mutex::new(Some(MainThreadCell(vc))));
     let _ = SCRIPT_HANDLER_REF.set(Mutex::new(Some(MainThreadCell(script_handler))));
+    let _ = MENU_REF.set(Mutex::new(Some(MainThreadCell(menu))));
+    let _ = MENU_TARGET_REF.set(Mutex::new(Some(MainThreadCell(menu_target))));
 
     log::info!("native_popover: NSStatusItem + NSPopover created (port={})", port);
     Ok(())
