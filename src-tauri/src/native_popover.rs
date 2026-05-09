@@ -26,7 +26,7 @@ use objc2_foundation::NSObjectProtocol;
 use objc2_app_kit::{NSPopover, NSStatusItem};
 
 #[cfg(target_os = "macos")]
-use objc2_web_kit::WKWebView;
+use objc2_web_kit::{WKScriptMessage, WKScriptMessageHandler, WKUserContentController, WKWebView};
 
 // MainThreadCell wraps a Retained<T> for storage in a `static`. AppKit
 // objects (NSStatusItem, NSPopover, WKWebView, …) are main-thread-only and
@@ -69,6 +69,10 @@ static VIEW_CONTROLLER_REF: OnceLock<Mutex<Option<MainThreadCell<objc2_app_kit::
     OnceLock::new();
 
 #[cfg(target_os = "macos")]
+static SCRIPT_HANDLER_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeScriptHandler>>>> =
+    OnceLock::new();
+
+#[cfg(target_os = "macos")]
 define_class!(
     // ClaugeStatusItemTarget receives -handleClick: from NSStatusBarButton.
     // Subclass exists only to provide an Objective-C action selector — no
@@ -87,6 +91,71 @@ define_class!(
         }
     }
 );
+
+#[cfg(target_os = "macos")]
+define_class!(
+    // ClaugeScriptHandler bridges popover JS → Rust IPC. Registered on the
+    // WKWebView's user content controller under the name "clauge"; the
+    // popover JS calls window.webkit.messageHandlers.clauge.postMessage({...}).
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "ClaugeScriptHandler"]
+    pub struct ClaugeScriptHandler;
+
+    unsafe impl NSObjectProtocol for ClaugeScriptHandler {}
+
+    unsafe impl WKScriptMessageHandler for ClaugeScriptHandler {
+        #[unsafe(method(userContentController:didReceiveScriptMessage:))]
+        fn user_content_controller_did_receive_script_message(
+            &self,
+            _ucc: &WKUserContentController,
+            message: &WKScriptMessage,
+        ) {
+            // Body is typically NSDictionary{cmd, …}; per Apple docs,
+            // allowed JS-side types are NSNumber/NSString/NSDate/NSArray/
+            // NSDictionary/NSNull, so we cope with all-else by logging and
+            // dropping.
+            let body = unsafe { message.body() };
+            handle_script_message(&body);
+        }
+    }
+);
+
+#[cfg(target_os = "macos")]
+fn handle_script_message(body: &objc2::runtime::AnyObject) {
+    use objc2_foundation::{NSDictionary, NSString};
+
+    let dict: &NSDictionary = match body.downcast_ref::<NSDictionary>() {
+        Some(d) => d,
+        None => {
+            log::warn!("native_popover: script message body is not NSDictionary");
+            return;
+        }
+    };
+
+    let cmd_key = NSString::from_str("cmd");
+    let cmd_obj = dict.objectForKey(&cmd_key);
+    let cmd = match cmd_obj
+        .as_ref()
+        .and_then(|o| o.downcast_ref::<NSString>().map(|s| s.to_string()))
+    {
+        Some(c) => c,
+        None => {
+            log::warn!("native_popover: script message missing 'cmd' field");
+            return;
+        }
+    };
+
+    match cmd.as_str() {
+        "open_dashboard" => {
+            log::info!("native_popover: cmd=open_dashboard (handler stub — Task 9 wires)");
+        }
+        "resize" => {
+            log::info!("native_popover: cmd=resize (handler stub — Task 10 wires)");
+        }
+        other => log::warn!("native_popover: unknown script message cmd={}", other),
+    }
+}
 
 #[cfg(target_os = "macos")]
 fn toggle_popover(sender: &objc2_app_kit::NSStatusBarButton) {
@@ -109,13 +178,7 @@ fn toggle_popover(sender: &objc2_app_kit::NSStatusBarButton) {
         // NSStatusBarButton inherits from NSView; pass it as the positioning
         // view so AppKit anchors the popover under the menu-bar icon.
         let view: &NSView = sender;
-        unsafe {
-            popover.showRelativeToRect_ofView_preferredEdge(
-                view.bounds(),
-                view,
-                NSRectEdge::MinY,
-            );
-        }
+        popover.showRelativeToRect_ofView_preferredEdge(view.bounds(), view, NSRectEdge::MinY);
     }
 }
 
@@ -127,7 +190,9 @@ fn create_popover(
     Retained<NSPopover>,
     Retained<WKWebView>,
     Retained<objc2_app_kit::NSViewController>,
+    Retained<ClaugeScriptHandler>,
 ) {
+    use objc2::runtime::ProtocolObject;
     use objc2_app_kit::{NSPopoverBehavior, NSViewController};
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURL, NSURLRequest};
     use objc2_web_kit::WKWebViewConfiguration;
@@ -143,6 +208,18 @@ fn create_popover(
     let config: Retained<WKWebViewConfiguration> =
         unsafe { WKWebViewConfiguration::init(mtm.alloc::<WKWebViewConfiguration>()) };
 
+    // Build + register the script-message handler BEFORE the WKWebView is
+    // initialized — `addScriptMessageHandler:name:` retains the handler
+    // weakly, but timing-wise we want the bridge live before any page load.
+    let handler: Retained<ClaugeScriptHandler> = unsafe {
+        let alloc = mtm.alloc::<ClaugeScriptHandler>();
+        objc2::msg_send![alloc, init]
+    };
+    let ucc = unsafe { config.userContentController() };
+    let name = NSString::from_str("clauge");
+    let proto = ProtocolObject::from_ref(&*handler);
+    unsafe { ucc.addScriptMessageHandler_name(proto, &name) };
+
     let webview: Retained<WKWebView> = unsafe {
         WKWebView::initWithFrame_configuration(mtm.alloc::<WKWebView>(), frame, &config)
     };
@@ -152,7 +229,7 @@ fn create_popover(
     // once sidecar.rs reports its real port.
     let url_str = format!("http://127.0.0.1:{}/popover/index.html", server_port);
     let ns_url_str = NSString::from_str(&url_str);
-    if let Some(ns_url) = unsafe { NSURL::URLWithString(&ns_url_str) } {
+    if let Some(ns_url) = NSURL::URLWithString(&ns_url_str) {
         let request = NSURLRequest::requestWithURL(&ns_url);
         let _ = unsafe { webview.loadRequest(&request) };
     } else {
@@ -162,7 +239,7 @@ fn create_popover(
     // NSViewController wraps the WKWebView so NSPopover has a
     // contentViewController to host.
     let vc = NSViewController::new(mtm);
-    unsafe { vc.setView(&webview) };
+    vc.setView(&webview);
 
     // applicationDefined behavior is the load-bearing decision — the popover
     // ignores app deactivation and outside clicks. Animations stay off so
@@ -176,7 +253,7 @@ fn create_popover(
         height: 500.0,
     });
 
-    (popover, webview, vc)
+    (popover, webview, vc, handler)
 }
 
 #[cfg(target_os = "macos")]
@@ -231,16 +308,18 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
         .try_state::<crate::ipc::AppState>()
         .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
         .unwrap_or(3456);
-    let (popover, webview, vc) = create_popover(mtm, port);
+    let (popover, webview, vc, script_handler) = create_popover(mtm, port);
 
     // Stash all retained references. Without these, ARC drops the underlying
     // Cocoa objects after init() returns and the menu bar / popover stop
-    // working. NSStatusBarButton holds only a weak reference to its target.
+    // working. NSStatusBarButton holds only a weak reference to its target;
+    // WKUserContentController holds only a weak reference to message handlers.
     let _ = STATUS_ITEM_REF.set(Mutex::new(Some(MainThreadCell(status_item))));
     let _ = CLICK_TARGET_REF.set(Mutex::new(Some(MainThreadCell(target))));
     let _ = POPOVER_REF.set(Mutex::new(Some(MainThreadCell(popover))));
     let _ = WEBVIEW_REF.set(Mutex::new(Some(MainThreadCell(webview))));
     let _ = VIEW_CONTROLLER_REF.set(Mutex::new(Some(MainThreadCell(vc))));
+    let _ = SCRIPT_HANDLER_REF.set(Mutex::new(Some(MainThreadCell(script_handler))));
 
     log::info!("native_popover: NSStatusItem + NSPopover created (port={})", port);
     Ok(())
@@ -267,7 +346,7 @@ pub fn reload_for_port(app: &tauri::AppHandle, port: u16) {
 
         let url_str = format!("http://127.0.0.1:{}/popover/index.html", port);
         let ns_url_str = NSString::from_str(&url_str);
-        if let Some(ns_url) = unsafe { NSURL::URLWithString(&ns_url_str) } {
+        if let Some(ns_url) = NSURL::URLWithString(&ns_url_str) {
             let request = NSURLRequest::requestWithURL(&ns_url);
             let _ = unsafe { webview.loadRequest(&request) };
             log::info!("native_popover: WKWebView reloaded at {}", url_str);
