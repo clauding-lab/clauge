@@ -354,6 +354,33 @@
               <option value="month">Month</option>
             </select>
           </div>
+          <div class="set-row">
+            <div>
+              <div class="set-label">Launch at login</div>
+              <div class="set-help">Start Clauge automatically when you log in.</div>
+            </div>
+            <label class="toggle-wrap">
+              <input type="checkbox" id="set-autostart-toggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="set-row">
+            <div>
+              <div class="set-label">Updates</div>
+              <div class="set-help">Check for a newer Clauge release on GitHub.</div>
+            </div>
+            <div class="updates-row">
+              <span class="set-help mono" id="set-updates-status"></span>
+              <button class="btn-secondary" id="set-check-updates-btn">Check now</button>
+            </div>
+          </div>
+          <div class="set-row">
+            <div>
+              <div class="set-label">About</div>
+              <div class="set-help">Current Clauge version.</div>
+            </div>
+            <span class="mono" id="set-about-version">—</span>
+          </div>
         </div>
 
         <div class="set-section" data-set-panel="pricing" hidden style="margin-top:24px">

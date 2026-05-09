@@ -44,6 +44,11 @@ const ASSETS = [
   'public/clauge-icon-512.svg',
   'public/clauge-icon-fallback.png',
   'public/clauge-menubar-18px.svg',
+  'public/popover/index.html',
+  'public/popover/popover.js',
+  'public/popover/popover.css',
+  'public/popover/fonts/inter-latin-variable.woff2',
+  'public/popover/fonts/jetbrains-mono-latin-variable.woff2',
 ];
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clauge-sea-'));

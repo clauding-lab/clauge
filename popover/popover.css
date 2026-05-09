@@ -80,8 +80,11 @@ html, body {
 .mono { font-family: var(--mono); font-feature-settings: var(--tnum); }
 
 /* ── Root popover surface ──────────────────────────────────── */
+/* v0.5.0: width matches the NSPopover contentSize set in
+ * native_popover.rs::POPOVER_WIDTH (360pt). Was 300px in the v0.4.x Tauri
+ * WebviewWindow era; mismatch caused a 60pt gap on the right ("ghost"). */
 #root {
-  width: 300px;
+  width: 360px;
   background: linear-gradient(180deg, rgba(28, 20, 16, 0.78), rgba(20, 14, 10, 0.85));
   -webkit-backdrop-filter: blur(60px) saturate(180%);
           backdrop-filter: blur(60px) saturate(180%);
@@ -213,22 +216,24 @@ html, body {
 .sect-aux.ok { color: var(--ok); }
 
 /* ── Plan capacity rings ──────────────────────────────────── */
-/* 4 columns — Opus ring removed in v0.4.4. */
+/* 3 columns — Sonnet ring removed in v0.4.5; Opus removed in v0.4.4.
+ * Rings + labels scaled up in v0.5.0 for the wider 360pt NSPopover. */
 .po-rings {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  justify-items: center;
 }
 .po-ring-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 .mini-ring {
   position: relative;
-  width: 42px;
-  height: 42px;
+  width: 68px;
+  height: 68px;
 }
 .mini-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .mini-ring.healthy svg { filter: drop-shadow(0 2px 6px rgba(217, 119, 87, 0.28)); }
@@ -244,7 +249,7 @@ html, body {
   justify-content: center;
   gap: 1px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -270,24 +275,24 @@ html, body {
   -webkit-text-fill-color: transparent;
 }
 .mini-ring .pct .sym {
-  font-size: 6.5px;
+  font-size: 10px;
   color: var(--text-3);
   margin-left: 1px;
   align-self: center;
-  transform: translateY(-2.5px);
+  transform: translateY(-4px);
 }
 .po-ring-label {
-  font-size: 8.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text);
   text-align: center;
   line-height: 1.1;
 }
 .po-ring-reset {
-  font-size: 7.5px;
+  font-size: 11px;
   color: var(--text-3);
   text-align: center;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 /* ── Finance cards ────────────────────────────────────────── */

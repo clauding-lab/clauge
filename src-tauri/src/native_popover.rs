@@ -384,6 +384,21 @@ fn toggle_popover(sender: &objc2_app_kit::NSStatusBarButton) {
         // view so AppKit anchors the popover under the menu-bar icon.
         let view: &NSView = sender;
         popover.showRelativeToRect_ofView_preferredEdge(view.bounds(), view, NSRectEdge::MinY);
+
+        // Re-show the loading overlay + trigger a fresh /api/* refresh on every
+        // open. Without this, the popover hydrates while hidden during app
+        // boot — by the user's first click the spinner has long since faded
+        // and they only see the static shell while data fetches. The popover
+        // JS show-loading listener un-hides the overlay then refresh()es.
+        if let Some(webview) = WEBVIEW_REF.get().and_then(|m| {
+            m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get()))
+        }) {
+            use objc2_foundation::NSString;
+            let js = NSString::from_str("window.dispatchEvent(new CustomEvent('show-loading'))");
+            unsafe {
+                webview.evaluateJavaScript_completionHandler(&js, None);
+            }
+        }
     }
 }
 

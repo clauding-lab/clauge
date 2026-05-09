@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Default permissions for Clauge main (dashboard) window",
+  "description": "Default permissions for Clauge main (dashboard) window. The dashboard loads via WebviewUrl::External(http://127.0.0.1:<port>/) so the SEA sidecar serves it directly. By default Tauri 2 only injects window.__TAURI__ for tauri:// scheme content; the `remote.urls` block here opts the dashboard webview into IPC access for the bundled HTTP origins it actually loads.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
   "permissions": [
     "core:default",
     "shell:allow-spawn",

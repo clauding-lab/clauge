@@ -349,14 +349,20 @@ function renderMetricStrip() {
   document.getElementById('ms-token-split').textContent =
     `${fmtTokens(inTok)} in · ${fmtTokens(outTok)} out`;
 
-  // ROI: roi.netValue + roi.multiplier (computed by lib/roi-calculator.js).
-  // Show return-on-subscription as netValue / subscriptionCost when both present.
-  if (roi && Number.isFinite(roi.netValue) && Number.isFinite(roi.subscriptionCost) && roi.subscriptionCost > 0) {
-    const ret = (roi.netValue / roi.subscriptionCost) * 100;
-    document.getElementById('ms-roi').textContent = `${Math.round(ret)}%`;
-    const mult = roi.multiplier ? `${roi.multiplier.toFixed(1)}×` : '';
+  // ROI: API returns roiPct + apiReplacementValue + subscriptionCost (see
+  // server.js /api/roi). Show the percentage in the strip with a multiplier
+  // sub-line. Frontend used to read roi.netValue/multiplier but the API
+  // never exposed those names — fixed in v0.5.0.
+  if (
+    roi &&
+    Number.isFinite(roi.apiReplacementValue) &&
+    Number.isFinite(roi.subscriptionCost) &&
+    roi.subscriptionCost > 0
+  ) {
+    document.getElementById('ms-roi').textContent = `${Math.round(roi.roiPct)}%`;
+    const mult = roi.apiReplacementValue / roi.subscriptionCost;
     document.getElementById('ms-roi-sub').textContent =
-      `${mult} · ${fmtUSD(roi.netValue)} net value`;
+      `${mult.toFixed(1)}× · ${fmtUSD(roi.apiReplacementValue)} net value`;
   } else {
     document.getElementById('ms-roi').textContent = '—';
     document.getElementById('ms-roi-sub').textContent = '—';
@@ -641,6 +647,78 @@ function renderSettings() {
     syncTag.style.color = 'var(--text-3)';
     lastSync.textContent = 'never';
   }
+  // About version line — populate from /api/health.
+  const aboutVersion = document.getElementById('set-about-version');
+  if (aboutVersion && health?.version) aboutVersion.textContent = `v${health.version}`;
+  initSettingsGeneralControls();
+}
+
+// Tauri 2 ACL: dashboard is loaded via WebviewUrl::External (HTTP), so
+// custom invoke commands defined in src/ipc.rs are blocked with "Plugin not
+// found". We call the underlying tauri-plugin-autostart and tauri-plugin-updater
+// commands directly instead — those plugin permissions ARE listed in
+// capabilities/main.json (autostart:allow-* and updater:default).
+function getTauriInvoke() {
+  return globalThis.__TAURI__?.core?.invoke ?? null;
+}
+
+let settingsGeneralInitialized = false;
+
+async function initSettingsGeneralControls() {
+  const invoke = getTauriInvoke();
+  const autoToggle = document.getElementById('set-autostart-toggle');
+  const updatesBtn = document.getElementById('set-check-updates-btn');
+  const updatesStatus = document.getElementById('set-updates-status');
+  if (!autoToggle || !updatesBtn) return;
+
+  if (!invoke) {
+    // Browser mode (no Tauri host) — disable IPC-backed controls.
+    autoToggle.disabled = true;
+    autoToggle.title = 'Available in the desktop app';
+    updatesBtn.disabled = true;
+    updatesBtn.title = 'Available in the desktop app';
+    if (updatesStatus) updatesStatus.textContent = 'desktop only';
+    return;
+  }
+
+  try {
+    autoToggle.checked = !!(await invoke('plugin:autostart|is_enabled'));
+  } catch (err) {
+    console.warn('autostart is_enabled failed; defaulting toggle off:', err);
+    autoToggle.checked = false;
+  }
+
+  if (settingsGeneralInitialized) return;
+  settingsGeneralInitialized = true;
+
+  autoToggle.addEventListener('change', async () => {
+    const desired = autoToggle.checked;
+    try {
+      await invoke(desired ? 'plugin:autostart|enable' : 'plugin:autostart|disable');
+    } catch (err) {
+      console.error('autostart toggle failed; reverting:', err);
+      autoToggle.checked = !desired;
+    }
+  });
+
+  updatesBtn.addEventListener('click', async () => {
+    if (updatesBtn.disabled) return;
+    updatesBtn.disabled = true;
+    if (updatesStatus) updatesStatus.textContent = 'Checking…';
+    try {
+      const update = await invoke('plugin:updater|check');
+      if (updatesStatus) {
+        updatesStatus.textContent = update && update.available
+          ? `v${update.version} available — restart app to apply`
+          : 'Up to date';
+      }
+    } catch (err) {
+      console.error('updater check failed:', err);
+      if (updatesStatus) updatesStatus.textContent = 'Check failed';
+    } finally {
+      updatesBtn.disabled = false;
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -698,6 +776,13 @@ function bindSegments() {
         p.hidden = p.dataset.setPanel !== b.dataset.set;
       });
     });
+  });
+
+  // Native menu (tray right-click "Preferences…", App menu Settings, Cmd+,)
+  // dispatches this event via webview.eval — switch to the Settings tab.
+  window.addEventListener('show-settings', () => {
+    const settingsBtn = document.querySelector('[data-tab="settings"]');
+    if (settingsBtn) settingsBtn.click();
   });
 
   // Initialize indicator positions after layout settles. Two passes — once

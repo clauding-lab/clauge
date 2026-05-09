@@ -9,7 +9,7 @@
 // Track the popover state so we can repaint on data updates without a
 // re-fetch (e.g. tab switch or warning-state transition).
 let serverPort = 3456;
-let serverVersion = '0.4.4';
+let serverVersion = '0.5.0';
 
 // ─── helpers ──────────────────────────────────────────────
 function escapeHtml(s) {

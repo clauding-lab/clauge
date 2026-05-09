@@ -14,6 +14,11 @@
     "public/clauge-icon-1024.svg": "public/clauge-icon-1024.svg",
     "public/clauge-icon-512.svg": "public/clauge-icon-512.svg",
     "public/clauge-icon-fallback.png": "public/clauge-icon-fallback.png",
-    "public/clauge-menubar-18px.svg": "public/clauge-menubar-18px.svg"
+    "public/clauge-menubar-18px.svg": "public/clauge-menubar-18px.svg",
+    "public/popover/index.html": "public/popover/index.html",
+    "public/popover/popover.js": "public/popover/popover.js",
+    "public/popover/popover.css": "public/popover/popover.css",
+    "public/popover/fonts/inter-latin-variable.woff2": "public/popover/fonts/inter-latin-variable.woff2",
+    "public/popover/fonts/jetbrains-mono-latin-variable.woff2": "public/popover/fonts/jetbrains-mono-latin-variable.woff2"
   }
 }

@@ -158,10 +158,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  /* top padding clears the macOS traffic lights (lights sit ~12pt from top);
-   * left padding reserves horizontal space for them (lights extend to ~70px). */
-  padding: 18px 22px 12px 90px;
+  gap: 8px;
+  /* top padding clears the macOS overlay title bar; left padding reserves
+   * horizontal space for the traffic lights. v0.5.0: trimmed left padding
+   * 90 → 78 + horizontal 22 → 14 + gap 14 → 8 so the topbar fits comfortably
+   * in the new 1100pt wide window without forcing the period selector to
+   * wrap or pushing icons off-screen. */
+  padding: 18px 14px 12px 78px;
   background: linear-gradient(180deg, rgba(20, 16, 14, 0.7) 0%, rgba(20, 16, 14, 0.3) 100%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
           backdrop-filter: blur(24px) saturate(160%);
@@ -361,11 +364,13 @@ body {
 main {
   max-width: 1480px;
   margin: 0 auto;
-  padding: 18px 22px 64px;
+  /* v0.5.0: section padding + gap shrunk ~20% so the dashboard feels tighter
+   * in the new compact 1100×800 window without touching font sizes. */
+  padding: 14px 18px 51px;
   display: grid;
-  gap: 14px;
+  gap: 11px;
 }
-.row { display: grid; gap: 14px; }
+.row { display: grid; gap: 11px; }
 .row-2 { grid-template-columns: 2fr 1fr; }
 .row-2-eq { grid-template-columns: 1fr 1fr; }
 .row-3 { grid-template-columns: repeat(3, 1fr); }
@@ -374,13 +379,13 @@ main {
 /* ═══════════════════════════════════════════════════════════
    Card
    ═══════════════════════════════════════════════════════════ */
-.card { padding: 18px; }
+.card { padding: 14px; }
 .card-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 14px;
-  gap: 12px;
+  margin-bottom: 11px;
+  gap: 10px;
 }
 .card-title-row { display: flex; align-items: baseline; gap: 10px; }
 .card-title {
@@ -891,12 +896,12 @@ td.ok { color: var(--ok); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 6px 2px;
+  gap: 10px;
+  padding: 5px 2px;
 }
 .big-ring {
-  width: 110px;
-  height: 110px;
+  width: 88px;
+  height: 88px;
   position: relative;
 }
 .big-ring svg {
@@ -1085,7 +1090,55 @@ body.loading { cursor: progress; }
 /* ═══════════════════════════════════════════════════════════
    Responsive collapse
    ═══════════════════════════════════════════════════════════ */
-@media (max-width: 1180px) {
+/* v0.5.0: breakpoint dropped from 1180→900 so the new compact 1100×800
+ * default window keeps `.row-2` (charts side-by-side) and the rest of the
+ * 2-column layout. Below 900pt (when user manually resizes very narrow)
+ * we still collapse for usability. */
+/* iOS-style toggle for the Settings → General "Launch at login" row. */
+.toggle-wrap {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  cursor: pointer;
+}
+.toggle-wrap input { display: none; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 240, 230, 0.10);
+  border-radius: 999px;
+  transition: background 250ms var(--ease);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(180deg, #ffffff, #e8e0d8);
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: left 250ms var(--ease);
+}
+.toggle-wrap input:checked + .toggle-slider {
+  background: linear-gradient(180deg, var(--brand-2), var(--brand));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 2px 8px -1px rgba(217, 119, 87, 0.4);
+}
+.toggle-wrap input:checked + .toggle-slider::before { left: 18px; }
+
+/* Inline status + button pair for the Settings "Updates" row. */
+.updates-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
   .plan-hero { grid-template-columns: 1fr; }
   .plan-side { grid-template-columns: 1fr 1fr; }
   .metric-strip { grid-template-columns: 1fr 1fr 1fr; gap: 14px; }

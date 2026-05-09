@@ -68,7 +68,7 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         WebviewUrl::External(url.parse().unwrap()),
     )
     .title("Clauge")
-    .inner_size(1480.0, 1100.0)
+    .inner_size(1100.0, 800.0)
     .min_inner_size(900.0, 600.0)
     .resizable(true)
     .visible(true);
