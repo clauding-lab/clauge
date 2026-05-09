@@ -24,17 +24,91 @@
 
 ## Install
 
-### Native macOS app (v3, recommended)
+Three steps to a working setup: install the app, install the browser extension (optional but recommended for full claude.ai data), stay signed in to claude.ai.
 
-Download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag Clauge.app to Applications, and launch. The app sits in the menu bar — left-click for a glanceable popover (Plan Capacity rings + Finance + Today), right-click for Open Dashboard / Preferences / Check for Updates / Quit. Auto-updates from gh-pages on each launch.
+### Step 1 — Install the app
 
-### Browser dashboard (v2, still supported)
+**Option A — Native macOS app (recommended for the v3 menu-bar experience):**
+
+Download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag `Clauge.app` to Applications, and launch.
+
+The app sits in your menu bar:
+- **Left-click** the menu-bar icon → glanceable popover (Plan Capacity rings + Finance + Today)
+- **Right-click** → Open Dashboard / Preferences / Check for Updates / Quit
+- **Auto-updates** from gh-pages on every launch
+
+**Option B — Browser dashboard via npx (Linux, headless servers, or no-desktop-app preference):**
 
 ```bash
 npx clauge
 ```
 
-Installs from npm and opens **http://localhost:3456**. Reads from `~/.claude/projects/` by default. Same data model as the native app — pick whichever surface fits your workflow.
+Launches a Hono server at **http://localhost:3456**. Same data model as the native app — pick whichever surface fits your workflow.
+
+Either path reads from `~/.claude/projects/` (where Claude Code writes its session logs). **No sign-in needed for Claude Code data — it's already on your disk.** If you've ever used Claude Code on this machine, your dashboard populates immediately on first open.
+
+### Step 2 — Install the Clauge Sync browser extension (optional, recommended)
+
+Step 1 covers Claude Code (CLI) data. To also see your **claude.ai plan usage and prepaid balance** in the dashboard, install the Clauge Sync browser extension. It runs in your already-authenticated claude.ai tab and syncs your plan numbers to your local Clauge once a minute.
+
+**Install from Chrome Web Store (recommended):**
+
+→ [Clauge Sync on the Chrome Web Store](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga)
+
+Click "Add to Chrome." Works on Chrome, Edge, Brave, Arc, and any other Chromium-based browser.
+
+**Manual install (developer mode — only needed if you can't use the Web Store):**
+
+1. Clone this repo: `git clone https://github.com/clauding-lab/clauge.git`
+2. Open `chrome://extensions` in your browser
+3. Toggle **Developer mode** (top-right corner)
+4. Click **Load unpacked** and pick the `extension/` folder from this repo
+
+After install, pin the Clauge Sync icon to your toolbar so you can see sync status at a glance. Click the icon any time to force an immediate sync. Right-click → **Options** to change port or polling interval.
+
+### Step 3 — Sign in to claude.ai (and stay signed in)
+
+The extension uses your **existing claude.ai browser session** — it never asks you for an Anthropic API key, password, or token. Just:
+
+1. Open [claude.ai](https://claude.ai) in the same browser profile where you installed the extension
+2. Sign in with your Anthropic account as you normally would
+3. Stay signed in (don't sign out, don't run claude.ai in incognito mode unless you explicitly enable the extension in incognito)
+
+The extension polls `claude.ai/api/organizations/{uuid}/usage` once a minute *while you have an active claude.ai session* and POSTs the snapshot to your local Clauge dashboard. If you sign out of claude.ai, the extension goes quiet until you sign back in.
+
+### Alternative — one-shot bookmarklet (no extension)
+
+Don't want a persistent extension? The dashboard's **Settings → claude.ai sync** panel includes a draggable bookmarklet. Drag it to your bookmarks bar, open claude.ai, click the bookmark — your snapshot syncs once. Click again whenever you want a fresh number.
+
+| | Extension (Step 2) | Bookmarklet |
+|---|---|---|
+| Setup | One-time install | Drag a bookmark |
+| Refresh | Auto-sync every minute | Manual click |
+| Best for | Always-on tracking | Occasional check-ins |
+
+## How Clauge gets your data
+
+Clauge has **no login screen, no API key field, no Anthropic auth flow**. It is fundamentally different from a SaaS app.
+
+Think of it less like Notion / Linear / Slack (where you sign in to *their* server) and more like **Activity Monitor** or a **bash-history viewer** — a *reader* over data your other tools have already written to your machine. There's no remote service to authenticate against, so there's nothing to "sign in" to.
+
+### Two data sources, both auth-free
+
+| Source | What it covers | Where it comes from | Auth needed |
+|---|---|---|---|
+| Claude Code CLI logs | Per-session token usage, costs, models, tools, projects | `~/.claude/projects/**/*.jsonl` written by Claude Code itself | None — file-system access only |
+| claude.ai plan data | Plan rings (Session/All/Sonnet/Opus), prepaid balance, billing cap | Browser extension (or bookmarklet) running in your claude.ai tab, riding your existing browser cookies | Your normal claude.ai login — Clauge never sees your password |
+
+The extension/bookmarklet hitchhikes on **your** already-authenticated claude.ai session. Anthropic sees a request from your browser (where you're already signed in). Clauge sees an HTTP POST to its own port. **Clauge never holds an Anthropic API key, password, or session token.**
+
+This is the architectural elegance: nothing to leak, nothing to rotate, nothing to phish. It also means Clauge is **strictly local** — your usage data never leaves your machine. (Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md).)
+
+### What this means in practice
+
+- **No onboarding wizard, no account creation.** Install the app, open the dashboard. If you've used Claude Code on this machine, you'll see your data immediately.
+- **No accounts, no plans, no passwords held by Clauge.** Compromise the binary, you compromise nothing about your Anthropic identity.
+- **No telemetry.** Clauge never phones home — Clauding-Lab does not know you exist.
+- **The extension is optional.** The dashboard works fine without it; you just won't see claude.ai plan-ring data (the Claude Code CLI metrics are unaffected).
 
 ## What it does
 
@@ -56,7 +130,7 @@ Installs from npm and opens **http://localhost:3456**. Reads from `~/.claude/pro
 
 - **5 ring gauges** — Session (5h), All models (7d), Sonnet (7d), Opus (7d), Claude Design — green/amber/red by 60/85% thresholds, with reset countdowns
 - **Extra-usage card** — your billing cap with progress bar
-- **Auto-refresh every minute** via the [Clauge Sync](#claudeai-auto-sync) browser extension; the dashboard polls the local store and updates the gauges in place
+- **Auto-refresh every minute** via the [Clauge Sync](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) browser extension; the dashboard polls the local store and updates the gauges in place
 
 ### From source
 
@@ -68,25 +142,11 @@ node server.js
 
 Set `NO_OPEN=1` to skip the auto-open. Set `CLAUDE_DIR=~/somewhere-else` to read from a non-default location.
 
-## claude.ai auto-sync
+## Why claude.ai data needs the extension (background)
 
-claude.ai sits behind Cloudflare's bot challenge, so server-side fetch from this app can't reach the API directly. Auto-sync is therefore handled by a companion browser extension that runs in your already-authenticated tab.
+claude.ai sits behind Cloudflare's bot challenge, so a plain server-side `fetch` from Clauge cannot reach claude.ai's API directly — the request would be challenged or blocked. The extension solves this by running *inside* your already-authenticated browser tab, where Cloudflare sees you as the legitimate user. The extension's only job: fetch usage from your own session and POST the snapshot to your local Clauge.
 
-### Option A — browser extension (recommended)
-
-The **Clauge Sync** extension polls `claude.ai/api/organizations/{uuid}/usage` every minute (configurable) using your normal browser session and POSTs the snapshot to your local Clauge instance.
-
-- **Chrome Web Store:** *(pending review — link will appear here once published)*
-- **Manual install (developer mode):**
-  1. Open `chrome://extensions` and toggle **Developer mode**
-  2. Click **Load unpacked** and pick `extension/` from this repo
-  3. Make sure you're signed in to [claude.ai](https://claude.ai) in the same browser profile
-
-Click the toolbar icon at any time to force an immediate sync. Right-click → **Options** to change port or interval.
-
-### Option B — bookmarklet (no extension)
-
-The dashboard's "claude.ai plan usage" card includes a draggable bookmarklet. Drag it to your bookmarks bar, open claude.ai, click the bookmark — the snapshot syncs once. Reuse whenever you want a fresh number.
+This is also why there's no "API key field" anywhere in Clauge. There's no API key flow available to third parties for the personal-plan claude.ai endpoints — the only legitimate caller is the user's own browser. The extension is the well-behaved equivalent of "the user manually checking their plan page once a minute."
 
 ## How it works
 
@@ -162,10 +222,12 @@ npm start         # plain start
 
 ## What's coming
 
-- **Windows + Linux DMG/MSI builds** — same Tauri codebase, just need cross-compile setup
+- **Windows installer (v0.6.0)** — NSIS build via the same Tauri codebase, dashboard-only on Windows. Spec + plan in `docs/superpowers/`.
+- **Auto-detect missing extension + first-run install prompt** — detect whether Clauge Sync is installed and, if not, surface a Chrome Web Store install banner in the dashboard on first launch.
 - **Intelligence banner** with pace projections (priority rules: extra usage near cap, session reset imminent, weekly-vs-Sonnet routing hints, etc.)
 - **One-shot success rate** per task category
 - **Per-project drill-down view** with sessions, files edited, tools used
+- **Linux build** — separate menu-bar surface design (libappindicator vs Wayland portal) needed before this is real
 
 ## Why
 
