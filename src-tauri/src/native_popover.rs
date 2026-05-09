@@ -47,9 +47,22 @@ unsafe impl<T: objc2::Message> Sync for MainThreadCell<T> {}
 impl<T: objc2::Message> MainThreadCell<T> {
     #[allow(dead_code)]
     fn get(&self) -> Retained<T> {
+        debug_assert!(
+            objc2::MainThreadMarker::new().is_some(),
+            "MainThreadCell::get called off main thread — unsoundness; see module doc"
+        );
         self.0.clone()
     }
 }
+
+// Resize bounds for the popover's contentSize, mirrored from the popover JS
+// clamp in popover.js::resizeToContent. If you change one, change both.
+#[cfg(target_os = "macos")]
+const MIN_POPOVER_HEIGHT: f64 = 200.0;
+#[cfg(target_os = "macos")]
+const MAX_POPOVER_HEIGHT: f64 = 800.0;
+#[cfg(target_os = "macos")]
+const POPOVER_WIDTH: f64 = 360.0;
 
 #[cfg(target_os = "macos")]
 static STATUS_ITEM_REF: OnceLock<Mutex<Option<MainThreadCell<NSStatusItem>>>> = OnceLock::new();
@@ -205,7 +218,9 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
             // Bounds match popover.js's resizeToContent clamp; an out-of-range
             // value usually means a measurement bug on the JS side, so log
             // and refuse instead of forcing an absurd popover size.
-            if !height.is_finite() || !(200.0..=800.0).contains(&height) {
+            if !height.is_finite()
+                || !(MIN_POPOVER_HEIGHT..=MAX_POPOVER_HEIGHT).contains(&height)
+            {
                 log::warn!("native_popover: resize height {} out of bounds", height);
                 return;
             }
@@ -214,7 +229,7 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
                 .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
             {
                 popover.setContentSize(NSSize {
-                    width: 360.0,
+                    width: POPOVER_WIDTH,
                     height,
                 });
             }
@@ -390,7 +405,7 @@ fn create_popover(
     let frame = NSRect {
         origin: NSPoint { x: 0.0, y: 0.0 },
         size: NSSize {
-            width: 360.0,
+            width: POPOVER_WIDTH,
             height: 500.0,
         },
     };
@@ -439,7 +454,7 @@ fn create_popover(
     popover.setBehavior(NSPopoverBehavior::ApplicationDefined);
     popover.setAnimates(false);
     popover.setContentSize(NSSize {
-        width: 360.0,
+        width: POPOVER_WIDTH,
         height: 500.0,
     });
 
