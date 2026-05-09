@@ -92,7 +92,26 @@ define_class!(
     impl ClaugeStatusItemTarget {
         #[unsafe(method(handleClick:))]
         fn handle_click(&self, sender: &objc2_app_kit::NSStatusBarButton) {
-            toggle_popover(sender);
+            use objc2::MainThreadMarker;
+            use objc2_app_kit::{NSApplication, NSEventType};
+
+            // The NSStatusBarButton fires the same selector for both mouse
+            // buttons (we set sendActionOn:Left|Right above). NSApp tracks
+            // the most recent event globally — peek at its type to route.
+            let mtm = match MainThreadMarker::new() {
+                Some(m) => m,
+                None => {
+                    log::warn!("native_popover: handle_click off main thread; ignoring");
+                    return;
+                }
+            };
+            let app = NSApplication::sharedApplication(mtm);
+            let event_type = unsafe { app.currentEvent() }.map(|e| e.r#type());
+
+            match event_type {
+                Some(NSEventType::RightMouseUp) => show_menu(sender),
+                _ => toggle_popover(sender),
+            }
         }
     }
 );
@@ -195,6 +214,11 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
         }
         other => log::warn!("native_popover: unknown script message cmd={}", other),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn show_menu(_sender: &objc2_app_kit::NSStatusBarButton) {
+    log::info!("native_popover: right-click — menu stub (Task 12 implements)");
 }
 
 #[cfg(target_os = "macos")]
@@ -338,6 +362,13 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
                 button.setTarget(Some(target.as_ref()));
                 button.setAction(Some(sel!(handleClick:)));
             }
+            // NSStatusBarButton's default action mask is leftMouseUp only.
+            // Add rightMouseUp so the menu shortcut goes through the same
+            // selector — handle_click then differentiates by inspecting
+            // NSApp.currentEvent().type.
+            let mask = objc2_app_kit::NSEventMask::LeftMouseUp
+                | objc2_app_kit::NSEventMask::RightMouseUp;
+            button.sendActionOn(mask);
         }
     } else {
         log::warn!("native_popover: failed to decode tray-icon.png into NSImage");
