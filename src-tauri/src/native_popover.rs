@@ -72,6 +72,11 @@ static VIEW_CONTROLLER_REF: OnceLock<Mutex<Option<MainThreadCell<objc2_app_kit::
 static SCRIPT_HANDLER_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeScriptHandler>>>> =
     OnceLock::new();
 
+// Stash the AppHandle so the script handler and (later) menu actions can
+// reach the existing IPC layer without plumbing it through every closure.
+#[cfg(target_os = "macos")]
+static APP_HANDLE_REF: OnceLock<tauri::AppHandle> = OnceLock::new();
+
 #[cfg(target_os = "macos")]
 define_class!(
     // ClaugeStatusItemTarget receives -handleClick: from NSStatusBarButton.
@@ -148,7 +153,18 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
 
     match cmd.as_str() {
         "open_dashboard" => {
-            log::info!("native_popover: cmd=open_dashboard (handler stub — Task 9 wires)");
+            let Some(app) = APP_HANDLE_REF.get() else {
+                log::warn!("native_popover: open_dashboard but APP_HANDLE_REF unset");
+                return;
+            };
+            crate::tray::show_dashboard(app);
+            // Close the popover so it doesn't sit on top of the dashboard.
+            if let Some(popover) = POPOVER_REF
+                .get()
+                .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+            {
+                popover.close();
+            }
         }
         "resize" => {
             log::info!("native_popover: cmd=resize (handler stub — Task 10 wires)");
@@ -272,6 +288,9 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
             return Ok(());
         }
     };
+
+    // Make AppHandle available to script-handler / menu callbacks below.
+    let _ = APP_HANDLE_REF.set(app.clone());
 
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
