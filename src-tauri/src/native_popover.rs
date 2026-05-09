@@ -167,7 +167,31 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
             }
         }
         "resize" => {
-            log::info!("native_popover: cmd=resize (handler stub — Task 10 wires)");
+            use objc2_foundation::{NSNumber, NSSize};
+
+            let height_key = NSString::from_str("height");
+            let height_obj = dict.objectForKey(&height_key);
+            let height: f64 = height_obj
+                .as_ref()
+                .and_then(|o| o.downcast_ref::<NSNumber>())
+                .map(|n| n.doubleValue())
+                .unwrap_or(0.0);
+            // Bounds match popover.js's resizeToContent clamp; an out-of-range
+            // value usually means a measurement bug on the JS side, so log
+            // and refuse instead of forcing an absurd popover size.
+            if !height.is_finite() || !(200.0..=800.0).contains(&height) {
+                log::warn!("native_popover: resize height {} out of bounds", height);
+                return;
+            }
+            if let Some(popover) = POPOVER_REF
+                .get()
+                .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+            {
+                popover.setContentSize(NSSize {
+                    width: 360.0,
+                    height,
+                });
+            }
         }
         other => log::warn!("native_popover: unknown script message cmd={}", other),
     }
