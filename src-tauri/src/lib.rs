@@ -1,5 +1,6 @@
 mod ipc;
 mod menu;
+mod native_popover;
 mod port_discovery;
 mod sidecar;
 mod tray;
@@ -130,26 +131,7 @@ pub fn run() {
 
             app.on_menu_event(|app, event| match event.id().0.as_str() {
                 "menu:preferences" => {
-                    if let Some(w) = app.get_webview_window("popover") {
-                        // Position before showing so Cmd+, anchors the popover
-                        // to the menu bar even when the user hasn't clicked
-                        // the tray icon yet (otherwise the popover appears at
-                        // the OS-default center-screen position).
-                        if let Err(e) = crate::windows::position_popover_under_tray(app) {
-                            log::warn!("Failed to position popover from menu: {}", e);
-                        }
-                        if let Err(e) = w.show() {
-                            log::warn!("Failed to show popover from menu: {}", e);
-                        }
-                        if let Err(e) = w.set_focus() {
-                            log::warn!("Failed to focus popover from menu: {}", e);
-                        }
-                        if let Err(e) = w.eval(
-                            "window.dispatchEvent(new CustomEvent('show-preferences'))",
-                        ) {
-                            log::warn!("Failed to dispatch show-preferences event: {}", e);
-                        }
-                    }
+                    crate::tray::show_dashboard_with_settings(app);
                 }
                 "menu:refresh" => {
                     if let Some(w) = app.get_webview_window("main") {
