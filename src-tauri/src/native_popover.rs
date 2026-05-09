@@ -82,11 +82,42 @@ define_class!(
 
     impl ClaugeStatusItemTarget {
         #[unsafe(method(handleClick:))]
-        fn handle_click(&self, _sender: &objc2::runtime::AnyObject) {
-            log::info!("native_popover: status item clicked (popover toggle wires later)");
+        fn handle_click(&self, sender: &objc2_app_kit::NSStatusBarButton) {
+            toggle_popover(sender);
         }
     }
 );
+
+#[cfg(target_os = "macos")]
+fn toggle_popover(sender: &objc2_app_kit::NSStatusBarButton) {
+    use objc2_app_kit::NSView;
+    use objc2_foundation::NSRectEdge;
+
+    let popover = match POPOVER_REF.get().and_then(|m| {
+        m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get()))
+    }) {
+        Some(p) => p,
+        None => {
+            log::warn!("native_popover: toggle_popover but POPOVER_REF unset");
+            return;
+        }
+    };
+
+    if popover.isShown() {
+        popover.close();
+    } else {
+        // NSStatusBarButton inherits from NSView; pass it as the positioning
+        // view so AppKit anchors the popover under the menu-bar icon.
+        let view: &NSView = sender;
+        unsafe {
+            popover.showRelativeToRect_ofView_preferredEdge(
+                view.bounds(),
+                view,
+                NSRectEdge::MinY,
+            );
+        }
+    }
+}
 
 #[cfg(target_os = "macos")]
 fn create_popover(
@@ -137,15 +168,13 @@ fn create_popover(
     // ignores app deactivation and outside clicks. Animations stay off so
     // size changes (Task 10) don't flicker.
     let popover = NSPopover::new(mtm);
-    unsafe {
-        popover.setContentViewController(Some(&vc));
-        popover.setBehavior(NSPopoverBehavior::ApplicationDefined);
-        popover.setAnimates(false);
-        popover.setContentSize(NSSize {
-            width: 360.0,
-            height: 500.0,
-        });
-    }
+    popover.setContentViewController(Some(&vc));
+    popover.setBehavior(NSPopoverBehavior::ApplicationDefined);
+    popover.setAnimates(false);
+    popover.setContentSize(NSSize {
+        width: 360.0,
+        height: 500.0,
+    });
 
     (popover, webview, vc)
 }
