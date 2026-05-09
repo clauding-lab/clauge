@@ -246,6 +246,43 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Re-load the popover WKWebView at the freshly-bound SEA sidecar port.
+/// Called from sidecar.rs and lib.rs immediately after `state.set_port`
+/// succeeds so the popover stops showing "could not load" once the server
+/// is actually ready.
+///
+/// WKWebView is main-thread-only; callers may invoke from any thread, so the
+/// actual reload is hopped to the main thread via `run_on_main_thread`.
+#[cfg(target_os = "macos")]
+pub fn reload_for_port(app: &tauri::AppHandle, port: u16) {
+    let _ = app.run_on_main_thread(move || {
+        use objc2_foundation::{NSString, NSURL, NSURLRequest};
+
+        let webview = match WEBVIEW_REF.get().and_then(|m| {
+            m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get()))
+        }) {
+            Some(w) => w,
+            None => return,
+        };
+
+        let url_str = format!("http://127.0.0.1:{}/popover/index.html", port);
+        let ns_url_str = NSString::from_str(&url_str);
+        if let Some(ns_url) = unsafe { NSURL::URLWithString(&ns_url_str) } {
+            let request = NSURLRequest::requestWithURL(&ns_url);
+            let _ = unsafe { webview.loadRequest(&request) };
+            log::info!("native_popover: WKWebView reloaded at {}", url_str);
+        } else {
+            log::warn!(
+                "native_popover: reload_for_port failed to construct NSURL for {}",
+                url_str
+            );
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn reload_for_port(_app: &tauri::AppHandle, _port: u16) {}
+
 #[cfg(not(target_os = "macos"))]
 pub fn init(_app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())

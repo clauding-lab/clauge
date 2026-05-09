@@ -152,6 +152,11 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                     if let Err(e) = s.set_port(port) {
                         log::error!("Failed to record sidecar port: {}", e);
                     }
+                    // Tell the native popover to (re)load — the WKWebView
+                    // was created with whatever port AppState held at boot,
+                    // which may have been the default-fallback before the
+                    // sidecar actually bound.
+                    crate::native_popover::reload_for_port(&app, port);
                     // Register the child BEFORE entering the supervise loop.
                     // If the user hits Cmd+Q at this exact moment, the
                     // ExitRequested handler will see this PID in

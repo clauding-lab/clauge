@@ -178,6 +178,7 @@ pub fn run() {
                             if let Err(e) = state.set_port(port) {
                                 log::error!("Failed to record external server port: {}", e);
                             }
+                            crate::native_popover::reload_for_port(&app_handle, port);
                         }
                     }
                     port_discovery::DiscoveryResult::SpawnAt(_start) => {
