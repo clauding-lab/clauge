@@ -15,7 +15,7 @@
 </head>
 <body>
 
-<header class="topbar">
+<header class="topbar" data-tauri-drag-region>
   <div class="brand-row">
     <div class="brand-chiclet">
       <img src="/clauge-icon-512.svg" alt="" />
@@ -71,7 +71,7 @@
     </div>
 
     <div class="plan-body" id="plan-body">
-      <!-- five big-rings injected by app.js (Session/Weekly/Sonnet/Opus/Design) -->
+      <!-- four big-rings injected by app.js (Session/Weekly/Sonnet/Design) -->
     </div>
 
     <div class="plan-side">
@@ -199,29 +199,6 @@
     </div>
   </div>
 
-  <!-- Recent sessions teaser -->
-  <div class="glass card" style="margin-top:14px">
-    <div class="card-head">
-      <div class="card-title-row">
-        <h3 class="card-title">Recent sessions</h3>
-        <span class="card-sub">latest 5 · ★ in top-cost</span>
-      </div>
-      <button class="btn-secondary" data-jump="sessions">All sessions →</button>
-    </div>
-    <table>
-      <thead><tr>
-        <th>Started</th>
-        <th>Project</th>
-        <th>Model</th>
-        <th>Task</th>
-        <th class="num">Duration</th>
-        <th class="num">Calls</th>
-        <th class="num">Hit</th>
-        <th class="num">Cost</th>
-      </tr></thead>
-      <tbody id="sess-body"></tbody>
-    </table>
-  </div>
 </section>
 
 <!-- ═══════════════════════════════ SESSIONS ═══════════════════════════════ -->
@@ -447,7 +424,7 @@
         <li><b>Per-session tracking</b><span>Tokens · cost · model · cache · primary task type</span></li>
         <li><b>Per-project rollup</b><span>Cost · sessions · messages · tools · hit %</span></li>
         <li><b>Cache analytics</b><span>Net savings · 5m vs 1h tier separation</span></li>
-        <li><b>Plan tracking</b><span>5h, 7d, Sonnet, Opus, Design rings</span></li>
+        <li><b>Plan tracking</b><span>5h, 7d, Sonnet, Design rings</span></li>
         <li><b>Task classification</b><span>Coding · debug · test · plan · git ops · build</span></li>
         <li><b>API replacement value</b><span>Honest framing · observed token usage</span></li>
       </ul>

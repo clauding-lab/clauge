@@ -16,7 +16,7 @@ const { invoke } = window.__TAURI__.core;
 // Track the popover state so we can repaint on data updates without a
 // re-fetch (e.g. tab switch or warning-state transition).
 let serverPort = 3456;
-let serverVersion = '0.4.3';
+let serverVersion = '0.4.4';
 
 // ─── helpers ──────────────────────────────────────────────
 function escapeHtml(s) {
@@ -159,19 +159,12 @@ function renderHeader({ ingestedAt, healthOk }) {
 // ─── render: rings ────────────────────────────────────────
 function renderRings(usage) {
   const plan = usage?.plan ?? {};
-  // Mapping decision (v0.4.0 fixup): the design mock had four rings
-  // (Session / Weekly / Sonnet / Design). v0.3.x rendered FIVE rings — the
-  // design's set plus Opus. Auto-updating from v0.3.x to v0.4.0 silently
-  // dropped Opus visibility, which is a regression for Opus-heavy users
-  // (Adnan's profile: Opus is the user's primary working model). We
-  // therefore extend the design's 4-ring grid to 5 columns to preserve
-  // capacity parity. CSS handles the tighter 5-column layout via
-  // `.po-rings { grid-template-columns: repeat(5, 1fr); }`.
+  // 4 rings: Session / Weekly / Sonnet / Design. Opus was removed in v0.4.4
+  // because the user has no Opus quota plan, so the ring rendered as `—`.
   const gauges = [
     { label: 'Session', pctFrac: (plan.fiveHour?.pct ?? 0) / 100, reset: fmtRelative(plan.fiveHour?.resetsAt) },
     { label: 'Weekly',  pctFrac: (plan.sevenDay?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDay?.resetsAt) },
     { label: 'Sonnet',  pctFrac: (plan.sevenDaySonnet?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDaySonnet?.resetsAt) },
-    { label: 'Opus',    pctFrac: (plan.sevenDayOpus?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDayOpus?.resetsAt) },
     { label: 'Design',  pctFrac: (plan.sevenDayOmelette?.pct ?? 0) / 100, reset: fmtRelative(plan.sevenDayOmelette?.resetsAt) },
   ];
   const root = document.getElementById('po-rings');

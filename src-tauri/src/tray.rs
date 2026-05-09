@@ -75,10 +75,51 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
 
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            let port = app_handle
+                .try_state::<crate::ipc::AppState>()
+                .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
+            let Some(port) = port else { continue };
+            let url = format!("http://127.0.0.1:{}/api/usage", port);
+            match reqwest::get(&url).await {
+                Ok(resp) => match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        let pct = json
+                            .get("plan")
+                            .and_then(|p| p.get("fiveHour"))
+                            .and_then(|f| f.get("pct"))
+                            .and_then(|p| p.as_f64());
+                        if let Some(pct) = pct {
+                            if let Some(tray) = app_handle.tray_by_id("main") {
+                                let title = format!(" {}%", pct.round() as i64);
+                                if let Err(e) = tray.set_title(Some(&title)) {
+                                    log::debug!("tray.set_title failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => log::debug!("usage json parse failed: {}", e),
+                },
+                Err(e) => log::debug!("usage fetch failed: {}", e),
+            }
+        }
+    });
+
     Ok(())
 }
 
 fn show_dashboard(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+            log::warn!("Failed to set activation policy to Regular: {}", e);
+        }
+    }
     if let Some(w) = app.get_webview_window("main") {
         if let Err(e) = w.show() {
             log::warn!("Failed to show dashboard: {}", e);

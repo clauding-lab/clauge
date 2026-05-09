@@ -1,6 +1,6 @@
 [package]
 name = "clauge"
-version = "0.4.3"
+version = "0.4.4"
 description = "Clauge — Claude Code analytics native shell"
 authors = ["clauding-lab"]
 edition = "2021"
@@ -29,6 +29,12 @@ log = "0.4"
 env_logger = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 window-vibrancy = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSView", "NSPanel"] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
+objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -68,6 +68,13 @@ html, body {
   font-feature-settings: var(--tnum);
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
+  /* Clip the entire webview to the same 14px corner radius used by #root
+   * and the vibrancy material (windows.rs apply_vibrancy). Without this,
+   * any shadow/halo inside body that extends past #root's rounded edge
+   * paints onto the transparent OS window and shows through whatever sits
+   * behind, producing the v0.4.x "ghost outline" artifact. */
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 .mono { font-family: var(--mono); font-feature-settings: var(--tnum); }
@@ -79,13 +86,15 @@ html, body {
   -webkit-backdrop-filter: blur(60px) saturate(180%);
           backdrop-filter: blur(60px) saturate(180%);
   border-radius: 14px;
-  /* Dual rim-light borders + ambient drop-shadow. */
+  /* Dual rim-light borders + a tight ambient drop. The previous
+   * `0 24px 64px -12px` drop extended ~88px past the rounded corners and
+   * got clipped at the transparent OS window edge, painting a visible
+   * rectangular outline ("ghost") on whatever sat behind. Removed in v0.4.4. */
   box-shadow:
     inset 0 1px 0 var(--rim-top),
     inset 0 -1px 0 var(--rim-bottom),
     inset 0 0 0 0.5px rgba(255, 240, 230, 0.06),
-    0 1px 1px rgba(0, 0, 0, 0.3),
-    0 24px 64px -12px rgba(0, 0, 0, 0.7);
+    0 1px 1px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   position: relative;
 }
@@ -204,12 +213,10 @@ html, body {
 .sect-aux.ok { color: var(--ok); }
 
 /* ── Plan capacity rings ──────────────────────────────────── */
-/* v0.4.0 fixup: 5 columns (was 4) — restored Opus ring for v0.3.x parity.
- * The 300px popover now packs 5 rings with 2px gaps; ring diameter shrank
- * to 42px so labels still fit comfortably. */
+/* 4 columns — Opus ring removed in v0.4.4. */
 .po-rings {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 2px;
 }
 .po-ring-card {

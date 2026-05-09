@@ -61,7 +61,7 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
         "popover",
         WebviewUrl::App("index.html".into()),
     )
-    .inner_size(300.0, 440.0)
+    .inner_size(300.0, 420.0)
     .resizable(false)
     .decorations(false)
     .transparent(true)
@@ -69,6 +69,86 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
     .skip_taskbar(true)
     .visible(false)
     .build()?;
+
+    #[cfg(target_os = "macos")]
+    {
+        // (1) setHidesOnDeactivate:NO — popover otherwise dismisses when focus
+        //     moves to another app.
+        // (2) setHasShadow:NO — removes the rectangular NSWindow drop-shadow.
+        // (3) setLevel(NSPopUpMenuWindowLevel = 101) — above NSFloatingWindowLevel
+        //     so the popover stays above other apps' floating panels.
+        // (4) collectionBehavior = CanJoinAllSpaces + Stationary — visible
+        //     across Spaces, doesn't move/hide during Mission Control.
+        // (5) setCanHide:NO — load-bearing. Without this the OS hides the
+        //     window when our app deactivates (user clicks another app),
+        //     even with hidesOnDeactivate:NO and high level. canHide controls
+        //     whether the window participates in app-wide hide, so NO keeps
+        //     it visible across activation boundaries.
+        // (5) contentView.layer.cornerRadius = 14 + masksToBounds — clips the
+        //     OS window's compositor layer to match the vibrancy/CSS 14pt
+        //     rounded corners; without this the rectangular OS window painted
+        //     past the rounded edge as a visible "ghost outline".
+        // Root cause of the v0.4.x popover flicker: Tauri's WebviewWindow::show()
+        // routes through tao's set_visible(true) → makeKeyAndOrderFront, which
+        // makes the popover the *key window* on every show. When the user clicks
+        // outside, AppKit fires windowDidResignKey and invalidates the window's
+        // content area for a redraw. On a borderless+transparent window with
+        // vibrancy + CALayer corner mask, that invalidation desyncs the layers
+        // for one frame — a visible flicker even though the window stays.
+        //
+        // Fix: swap the underlying NSWindow class to NSPanel and add the
+        // NonactivatingPanel style mask. Non-activating panels do not steal key
+        // focus from other apps and are exempt from the resignKey invalidation
+        // cycle. Same trick the `tauri-nspanel` plugin uses; doing it inline
+        // keeps the dep surface small.
+        use objc2::class;
+        use objc2_app_kit::{NSPanel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+        match win.ns_window() {
+            Ok(ptr) if !ptr.is_null() => unsafe {
+                let ns_window: &NSWindow = &*(ptr as *const NSWindow);
+                ns_window.setHidesOnDeactivate(false);
+                ns_window.setHasShadow(false);
+                ns_window.setLevel(101);
+                ns_window.setCollectionBehavior(
+                    NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::Stationary,
+                );
+                ns_window.setCanHide(false);
+                ns_window.setAnimationBehavior(
+                    objc2_app_kit::NSWindowAnimationBehavior::None,
+                );
+
+                // Class swap NSWindow → NSPanel via objc runtime. Then add the
+                // NonactivatingPanel style mask (only valid on NSPanel).
+                let panel_class = class!(NSPanel);
+                let ns_window_obj = ptr as *mut objc2::runtime::AnyObject;
+                objc2::ffi::object_setClass(ns_window_obj, panel_class as *const _ as *mut _);
+
+                let ns_panel: &NSPanel = &*(ptr as *const NSPanel);
+                let mask = ns_window.styleMask() | NSWindowStyleMask::NonactivatingPanel;
+                ns_panel.setStyleMask(mask);
+                // We hide-not-close the popover; keep the panel allocated.
+                ns_panel.setReleasedWhenClosed(false);
+                // Panel becomes key only when it has firstResponder needing
+                // keyboard focus — keeps host-app focus undisturbed on show.
+                ns_panel.setBecomesKeyOnlyIfNeeded(true);
+
+                if let Some(content_view) = ns_window.contentView() {
+                    content_view.setWantsLayer(true);
+                    if let Some(layer) = content_view.layer() {
+                        layer.setCornerRadius(14.0);
+                        layer.setMasksToBounds(true);
+                    } else {
+                        log::warn!("popover contentView.layer is None after setWantsLayer");
+                    }
+                } else {
+                    log::warn!("popover NSWindow has no contentView");
+                }
+            },
+            Ok(_) => log::warn!("popover ns_window() returned null pointer"),
+            Err(e) => log::warn!("Failed to get popover NSWindow handle: {}", e),
+        }
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -91,28 +171,64 @@ pub fn create_popover(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 /// Position the popover centered horizontally under the tray icon, 6pt below
 /// its bottom edge. Falls back to top-right of the active monitor if
-/// `TrayIcon::rect()` returns None (cold start before `tray::init` or a
-/// removed NSStatusItem).
+/// `TrayIcon::rect()` returns None after one 50ms retry.
 ///
-/// Multi-monitor caveat: clamp uses the popover's current monitor, not the
-/// monitor containing the tray icon. On extended displays the popover may
-/// land off-screen if the tray sits on a secondary monitor whose bounds
-/// don't overlap the popover's. Tracked for v0.4.4.
+/// Multi-monitor: clamp bounds come from the monitor whose physical region
+/// contains the tray icon, not `popover.current_monitor()` — otherwise the
+/// popover would land off-screen when the tray sits on a secondary display.
 pub fn position_popover_under_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let popover = app
         .get_webview_window("popover")
         .ok_or(tauri::Error::WebviewNotFound)?;
-    let Some(monitor) = popover.current_monitor()? else {
-        log::debug!("Skipping popover positioning: no current monitor");
+
+    // Tray rect is occasionally None on cold start before NSStatusItem has
+    // committed its frame. One 50ms retry catches that race before falling
+    // back to corner positioning.
+    let tray_rect_opt = app
+        .tray_by_id("main")
+        .and_then(|t| t.rect().ok().flatten())
+        .or_else(|| {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            app.tray_by_id("main").and_then(|t| t.rect().ok().flatten())
+        });
+
+    let target_monitor = match &tray_rect_opt {
+        Some(rect) => app
+            .available_monitors()
+            .ok()
+            .and_then(|monitors| {
+                monitors.into_iter().find(|m| {
+                    let pos = m.position();
+                    let size = m.size();
+                    let (phys_x, phys_y) = match rect.position {
+                        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                        tauri::Position::Logical(p) => {
+                            let s = m.scale_factor();
+                            (p.x * s, p.y * s)
+                        }
+                    };
+                    phys_x >= pos.x as f64
+                        && phys_x < (pos.x as f64 + size.width as f64)
+                        && phys_y >= pos.y as f64
+                        && phys_y < (pos.y as f64 + size.height as f64)
+                })
+            })
+            .or_else(|| popover.current_monitor().ok().flatten()),
+        None => popover.current_monitor().ok().flatten(),
+    };
+
+    let Some(monitor) = target_monitor else {
+        log::debug!("Skipping popover positioning: no monitor available");
         return Ok(());
     };
+
     // Math stays in logical points: tao's set_outer_position halves physical
     // offsets on Retina, so Logical values keep gaps/clamps interpretable.
     let scale = monitor.scale_factor();
     let monitor_logical = monitor.size().to_logical::<f64>(scale);
     let win_logical = popover.outer_size()?.to_logical::<f64>(scale);
 
-    let (x, y) = match app.tray_by_id("main").and_then(|t| t.rect().ok().flatten()) {
+    let (x, y) = match tray_rect_opt {
         Some(rect) => {
             let tray_pos = rect.position.to_logical::<f64>(scale);
             let tray_size = rect.size.to_logical::<f64>(scale);
@@ -126,7 +242,7 @@ pub fn position_popover_under_tray(app: &tauri::AppHandle) -> tauri::Result<()> 
             (clamped_x, raw_y)
         }
         None => {
-            log::warn!("Tray rect unavailable; falling back to corner positioning");
+            log::warn!("Tray rect unavailable after retry; falling back to corner positioning");
             (monitor_logical.width - win_logical.width - 16.0, 32.0)
         }
     };
@@ -188,7 +304,8 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // captured the port here, the dashboard would refuse the redirect to
     // the new port and lock itself out of its own server.
     let app_for_handler = app.clone();
-    let win = WebviewWindowBuilder::new(
+    let app_for_open = app.clone();
+    let mut builder = WebviewWindowBuilder::new(
         app,
         "main",
         WebviewUrl::External(url.parse().unwrap()),
@@ -197,34 +314,73 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     .inner_size(1480.0, 1100.0)
     .min_inner_size(900.0, 600.0)
     .resizable(true)
-    .visible(true)
-    .on_navigation(move |u| {
-        // Allow our own SEA server (host MUST be 127.0.0.1 OR localhost,
-        // port MUST match the bound port AT NAVIGATION TIME — read live
-        // from AppState so crash-respawned sidecars on fallback ports
-        // don't lock the dashboard out).
-        let live_port = app_for_handler
-            .try_state::<crate::ipc::AppState>()
-            .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
-            .unwrap_or(3456);
-        let host_ok = matches!(u.host_str(), Some("127.0.0.1") | Some("localhost"));
-        let port_ok = u.port_or_known_default() == Some(live_port);
-        let scheme_ok = u.scheme() == "http";
-        let allowed = host_ok && port_ok && scheme_ok;
-        if !allowed {
-            log::info!("Blocked dashboard navigation to {}", u);
-        }
-        allowed
-    })
-    .build()?;
+    .visible(true);
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true);
+    }
+
+    let win = builder
+        .on_navigation(move |u| {
+            // Allow our own SEA server (host MUST be 127.0.0.1 OR localhost,
+            // port MUST match the bound port AT NAVIGATION TIME — read live
+            // from AppState so crash-respawned sidecars on fallback ports
+            // don't lock the dashboard out).
+            let live_port = app_for_handler
+                .try_state::<crate::ipc::AppState>()
+                .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
+                .unwrap_or(3456);
+            let host_ok = matches!(u.host_str(), Some("127.0.0.1") | Some("localhost"));
+            let port_ok = u.port_or_known_default() == Some(live_port);
+            let scheme_ok = u.scheme() == "http";
+            let allowed = host_ok && port_ok && scheme_ok;
+            if !allowed {
+                log::info!("Blocked dashboard navigation to {}", u);
+            }
+            allowed
+        })
+        .on_new_window(move |url, _features| {
+            use tauri_plugin_shell::ShellExt;
+            // Defense-in-depth: only http/https/mailto are forwarded to the OS
+            // launcher. Without this, a future XSS in the dashboard could open
+            // file://, javascript:, or custom URL handlers (slack://, zoommtg://)
+            // through shell.open — which delegates straight to macOS open(1)
+            // with no scheme validation.
+            let scheme = url.scheme();
+            if !matches!(scheme, "http" | "https" | "mailto") {
+                log::warn!("Blocked external link with disallowed scheme: {}", url);
+                return tauri::webview::NewWindowResponse::Deny;
+            }
+            let url_str = url.to_string();
+            if let Err(e) = app_for_open.shell().open(url_str.clone(), None) {
+                log::warn!("Failed to open external link {}: {}", url_str, e);
+            }
+            tauri::webview::NewWindowResponse::Deny
+        })
+        .build()?;
 
     // Hide-on-close so reopens are instant (preserves window state + DOM).
     let win_handle = win.clone();
+    let app_handle_for_close = app.clone();
     win.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
             if let Err(e) = win_handle.hide() {
                 log::warn!("Failed to hide dashboard window on close: {}", e);
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(e) = app_handle_for_close
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                {
+                    log::warn!(
+                        "Failed to set activation policy to Accessory on close: {}",
+                        e
+                    );
+                }
             }
         }
     });

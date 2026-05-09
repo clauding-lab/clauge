@@ -34,6 +34,15 @@ pub fn run() {
                     log::warn!("Failed to focus popover on second-launch: {}", e);
                 }
             } else if let Some(main) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                {
+                    if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                        log::warn!(
+                            "Failed to set activation policy to Regular on second-launch: {}",
+                            e
+                        );
+                    }
+                }
                 if let Err(e) = main.show() {
                     log::warn!("Failed to show dashboard on second-launch: {}", e);
                 }
@@ -64,6 +73,13 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ipc::AppState::default())
         .setup(|app| {
+            // Boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The dock
+            // icon flips ON when the dashboard window opens (tray.rs::show_dashboard
+            // and ipc::open_dashboard) and OFF again when the dashboard closes
+            // (windows.rs::create_dashboard window-close handler).
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Build the popover FIRST so tray/menu handlers (and Cmd+,) always
             // have a window to show, even if subsequent setup steps fail.
             // T17 dropped the conf.json windows[] entry, so this is the single
@@ -186,6 +202,13 @@ pub fn run() {
                     }
                 }
             });
+
+            let app_handle_updater = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = crate::ipc::check_for_updates(app_handle_updater).await {
+                    log::warn!("Updater check on launch failed: {}", e);
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -197,9 +220,6 @@ pub fn run() {
             ipc::quit_app,
             ipc::proxy_fetch,
         ])
-        // TODO(spec §6.5): updater check on launch is not wired here. Spec
-        // promises "1×/day AND on app launch"; currently only fires on
-        // user-triggered `check_for_updates` IPC. Tracked as deferred work.
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 

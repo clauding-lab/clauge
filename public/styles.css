@@ -159,7 +159,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 12px 22px;
+  /* top padding clears the macOS traffic lights (lights sit ~12pt from top);
+   * left padding reserves horizontal space for them (lights extend to ~70px). */
+  padding: 18px 22px 12px 90px;
   background: linear-gradient(180deg, rgba(20, 16, 14, 0.7) 0%, rgba(20, 16, 14, 0.3) 100%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
           backdrop-filter: blur(24px) saturate(160%);
@@ -879,11 +881,9 @@ td.ok { color: var(--ok); }
 @keyframes pulse { 50% { opacity: 0.35; } }
 
 .plan-body {
-  /* v0.4.0 fixup: 5 columns (was 4) to fit the restored Opus ring while
-   * preserving v0.3.x parity. Big-ring shrunk slightly so 5 rings + side
-   * cards still fit cleanly within the hero's 1fr column. */
+  /* 4 columns — Opus ring removed in v0.4.4. */
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   position: relative;
 }

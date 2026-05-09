@@ -215,9 +215,8 @@ function renderPlanCapacity() {
     planTag.textContent = '○ Awaiting sync';
     planTag.style.background = 'var(--glass-2)';
     planTag.style.color = 'var(--text-3)';
-    // Render five placeholder rings so the layout doesn't collapse.
-    // (v0.4.0 fixup: Opus ring restored for v0.3.x parity.)
-    body.innerHTML = ['Session', 'Weekly', 'Sonnet', 'Opus', 'Design']
+    // Render four placeholder rings so the layout doesn't collapse.
+    body.innerHTML = ['Session', 'Weekly', 'Sonnet', 'Design']
       .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
       .join('');
     inline.hidden = true;
@@ -225,14 +224,10 @@ function renderPlanCapacity() {
   }
 
   const plan = usage.plan ?? {};
-  // v0.4.0 fixup: Opus ring re-added (the v0.3.x dashboard rendered five
-  // rings; the design mock dropped to four. Restoring Opus preserves
-  // capacity visibility for Opus-heavy users.)
   const gauges = [
     { label: 'Session',    sub: '5h', metric: plan.fiveHour },
     { label: 'Weekly all', sub: '7d', metric: plan.sevenDay },
     { label: 'Sonnet',     sub: '7d', metric: plan.sevenDaySonnet },
-    { label: 'Opus',       sub: '7d', metric: plan.sevenDayOpus },
     { label: 'Design',     sub: '7d', metric: plan.sevenDayOmelette },
   ];
   body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
@@ -264,7 +259,6 @@ function renderPlanCapacity() {
     ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
     ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
     ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
-    ${inlineMiniRingHtml({ pct: plan.sevenDayOpus?.pct, label: 'Opus' })}
     ${inlineMiniRingHtml({ pct: plan.sevenDayOmelette?.pct, label: 'Design' })}
     <span class="sep"></span>
     <span class="num-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
@@ -583,28 +577,6 @@ function renderSessionsTable() {
       <td class="num" style="font-weight:600">${escapeHtml(fmtUSD(s.cost))}</td>
     </tr>`;
   };
-  // Recent (overview) — same shape minus the Tokens column.
-  const recentRow = (s) => {
-    const hot = expensiveIds.has(s.sessionId);
-    const dur = s.durationMs ? `${Math.round(s.durationMs / 60000)}m` : '—';
-    const model = s.byModel?.[0]?.model ?? '—';
-    const cls = modelClass(model);
-    return `<tr>
-      <td class="dim">${hot ? '<span class="hot-mark">★</span>' : ''}<span class="mono" style="font-size:11px">${escapeHtml(fmtTime(s.startedAt))}</span></td>
-      <td class="proj">${escapeHtml(s.project ?? '—')}</td>
-      <td class="proj model-color ${cls}" style="font-size:11px">${escapeHtml(model)}</td>
-      <td><span class="tag">${escapeHtml(s.tasks?.primary ?? '—')}</span></td>
-      <td class="num dim">${escapeHtml(dur)}</td>
-      <td class="num dim">${escapeHtml(fmtInt(s.turnCount))}</td>
-      <td class="num ${s.cacheHitRate > 0.7 ? 'ok' : 'dim'}">${escapeHtml(fmtPct(s.cacheHitRate, 0))}</td>
-      <td class="num" style="font-weight:600">${escapeHtml(fmtUSD(s.cost))}</td>
-    </tr>`;
-  };
-  // Recent: top 5 by recency
-  const recent = sorted.slice(0, 5);
-  document.getElementById('sess-body').innerHTML = recent.length
-    ? recent.map(recentRow).join('')
-    : '<tr><td colspan="8" class="empty">no sessions in this period</td></tr>';
   // Full table: top 80 by recency (matches v0.3.x cap to avoid jank at 5000 rows)
   document.getElementById('sess-full-body').innerHTML = sorted.length
     ? sorted.slice(0, 80).map(rowFor).join('')

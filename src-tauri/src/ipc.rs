@@ -279,6 +279,12 @@ pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 pub async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+            log::warn!("Failed to set activation policy to Regular: {}", e);
+        }
+    }
     if let Some(w) = app.get_webview_window("main") {
         w.show().map_err(|e| e.to_string())?;
         w.set_focus().map_err(|e| e.to_string())?;
