@@ -14,9 +14,27 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/clauge.svg" alt="license" /></a>
 </p>
 
-![Clauge dashboard](docs/dashboard.png)
+![Clauge dashboard](docs/screenshots/v0.5.0/dashboard.png)
 
-> Status: V2. Schema-verified `requestId`-deduplicating parser, two-tier cache pricing, LiteLLM auto-pricing with offline fallback, claude.ai plan-usage gauges, browser extension for auto-sync, honest API-replacement-value framing.
+<p align="center">
+  <img src="docs/screenshots/v0.5.0/popover.png" alt="Clauge menu-bar popover" width="380" />
+</p>
+
+> Status: **V3 — native macOS app** (universal Apple Darwin DMG, signed auto-updater) plus the existing `npx clauge` browser dashboard. v0.5.0 ships a native NSPopover menu-bar surface (persists across app deactivation) and a compact 1100×800 dashboard.
+
+## Install
+
+### Native macOS app (v3, recommended)
+
+Download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag Clauge.app to Applications, and launch. The app sits in the menu bar — left-click for a glanceable popover (Plan Capacity rings + Finance + Today), right-click for Open Dashboard / Preferences / Check for Updates / Quit. Auto-updates from gh-pages on each launch.
+
+### Browser dashboard (v2, still supported)
+
+```bash
+npx clauge
+```
+
+Installs from npm and opens **http://localhost:3456**. Reads from `~/.claude/projects/` by default. Same data model as the native app — pick whichever surface fits your workflow.
 
 ## What it does
 
@@ -40,16 +58,9 @@
 - **Extra-usage card** — your billing cap with progress bar
 - **Auto-refresh every minute** via the [Clauge Sync](#claudeai-auto-sync) browser extension; the dashboard polls the local store and updates the gauges in place
 
-## Quick start
+### From source
 
 ```bash
-npx clauge
-```
-
-That's it — installs from npm and auto-opens **http://localhost:3456**. Reads from `~/.claude/projects/` by default.
-
-```bash
-# Or from source
 git clone https://github.com/clauding-lab/clauge.git
 cd clauge && npm install && cp .env.example .env
 node server.js
@@ -151,9 +162,9 @@ npm start         # plain start
 
 ## What's coming
 
-- **V3 native desktop app** — Mac DMG + Windows MSI from a single Tauri codebase. One-click install, no terminal, embedded claude.ai webview eliminating the extension dependency. Reuses the same backend and UI.
+- **Windows + Linux DMG/MSI builds** — same Tauri codebase, just need cross-compile setup
 - **Intelligence banner** with pace projections (priority rules: extra usage near cap, session reset imminent, weekly-vs-Sonnet routing hints, etc.)
-- **One-shot success rate** per task category (the column CodeBurn shows)
+- **One-shot success rate** per task category
 - **Per-project drill-down view** with sessions, files edited, tools used
 
 ## Why
