@@ -540,7 +540,79 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
     let _ = MENU_TARGET_REF.set(Mutex::new(Some(MainThreadCell(menu_target))));
 
     log::info!("native_popover: NSStatusItem + NSPopover created (port={})", port);
+
+    spawn_tray_title_poller(app.clone());
+
     Ok(())
+}
+
+/// Background poll: every 30s, fetch /api/usage and write the 5-hour pct as
+/// a chiclet on the NSStatusBarButton title (e.g. " 42%"). Migrated from
+/// tray.rs so the new NSStatusItem (not the legacy Tauri tray) gets the
+/// update during the side-by-side rollout.
+#[cfg(target_os = "macos")]
+fn spawn_tray_title_poller(app_handle: tauri::AppHandle) {
+    use tauri::Manager;
+
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            let port = app_handle
+                .try_state::<crate::ipc::AppState>()
+                .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
+            let Some(port) = port else { continue };
+            let url = format!("http://127.0.0.1:{}/api/usage", port);
+            let pct = match reqwest::get(&url).await {
+                Ok(resp) => match resp.json::<serde_json::Value>().await {
+                    Ok(json) => json
+                        .get("plan")
+                        .and_then(|p| p.get("fiveHour"))
+                        .and_then(|f| f.get("pct"))
+                        .and_then(|p| p.as_f64()),
+                    Err(e) => {
+                        log::debug!("usage json parse failed: {}", e);
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::debug!("usage fetch failed: {}", e);
+                    None
+                }
+            };
+            if let Some(pct) = pct {
+                let title = format!(" {}%", pct.round() as i64);
+                update_tray_title(&app_handle, title);
+            }
+        }
+    });
+}
+
+/// Write `title` onto the NSStatusBarButton. setTitle is main-thread-only,
+/// so we hop via `run_on_main_thread` from the Tokio worker (mirrors the
+/// pattern in `reload_for_port`).
+#[cfg(target_os = "macos")]
+fn update_tray_title(app: &tauri::AppHandle, title: String) {
+    let _ = app.run_on_main_thread(move || {
+        use objc2::MainThreadMarker;
+        use objc2_foundation::NSString;
+
+        let mtm = match MainThreadMarker::new() {
+            Some(m) => m,
+            None => return,
+        };
+        let status_item = match STATUS_ITEM_REF
+            .get()
+            .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+        {
+            Some(s) => s,
+            None => return,
+        };
+        let Some(button) = status_item.button(mtm) else { return };
+        let ns_title = NSString::from_str(&title);
+        button.setTitle(&ns_title);
+    });
 }
 
 /// Re-load the popover WKWebView at the freshly-bound SEA sidecar port.

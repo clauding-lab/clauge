@@ -21,7 +21,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     // fires for EVERY menu event regardless of source. Without namespacing,
     // a click on the app menu's "Preferences…" would also fire this tray
     // handler's "preferences" arm (and vice versa), causing dual-dispatch
-    // of the `show-preferences` JS event once T17's popover wires it up.
+    // of the `show-settings` JS event toward the dashboard webview.
     let open_dashboard = MenuItem::with_id(
         app, "tray:open_dashboard", "Open Dashboard", true, None::<&str>,
     )?;
@@ -51,7 +51,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 show_dashboard(app);
             }
             "tray:preferences" => {
-                show_popover_with_preferences(app);
+                show_dashboard_with_settings(app);
             }
             "tray:check_updates" => {
                 let app = app.clone();
@@ -75,45 +75,15 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
 
-    let app_handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            interval.tick().await;
-            let port = app_handle
-                .try_state::<crate::ipc::AppState>()
-                .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
-            let Some(port) = port else { continue };
-            let url = format!("http://127.0.0.1:{}/api/usage", port);
-            match reqwest::get(&url).await {
-                Ok(resp) => match resp.json::<serde_json::Value>().await {
-                    Ok(json) => {
-                        let pct = json
-                            .get("plan")
-                            .and_then(|p| p.get("fiveHour"))
-                            .and_then(|f| f.get("pct"))
-                            .and_then(|p| p.as_f64());
-                        if let Some(pct) = pct {
-                            if let Some(tray) = app_handle.tray_by_id("main") {
-                                let title = format!(" {}%", pct.round() as i64);
-                                if let Err(e) = tray.set_title(Some(&title)) {
-                                    log::debug!("tray.set_title failed: {}", e);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => log::debug!("usage json parse failed: {}", e),
-                },
-                Err(e) => log::debug!("usage fetch failed: {}", e),
-            }
-        }
-    });
+    // Note: the 30s /api/usage poll that writes the % chiclet to the tray
+    // title moved to native_popover.rs::spawn_tray_title_poller in v0.5.0
+    // so it updates the new NSStatusItem.button.title rather than the (about
+    // to be deleted) Tauri tray.
 
     Ok(())
 }
 
-fn show_dashboard(app: &AppHandle) {
+pub fn show_dashboard(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
         if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
@@ -132,16 +102,39 @@ fn show_dashboard(app: &AppHandle) {
     }
 }
 
+/// Open the dashboard and switch it to the Settings tab. Used by every former
+/// "Preferences…" entry point (App menu, tray menu, Cmd+,) — preferences now
+/// live as a sub-section in the dashboard's existing Settings tab. The
+/// `show-settings` CustomEvent is consumed by public/app.js.
+pub fn show_dashboard_with_settings(app: &AppHandle) {
+    show_dashboard(app);
+    if let Some(w) = app.get_webview_window("main") {
+        if let Err(e) = w.eval("window.dispatchEvent(new CustomEvent('show-settings'))") {
+            log::warn!("Failed to dispatch show-settings event: {}", e);
+        }
+    }
+}
+
 fn toggle_popover(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("popover") {
+        let state = app.try_state::<crate::ipc::AppState>();
         match w.is_visible() {
             Ok(true) => {
+                // User-initiated dismiss — clear intent before hide so the
+                // create_popover focus-loss handler doesn't immediately re-show.
+                if let Some(s) = &state {
+                    s.popover_user_visible
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                }
                 if let Err(e) = w.hide() {
                     log::warn!("Failed to hide popover: {}", e);
                 }
             }
             _ => {
-                // Position before showing so the popover appears in the right place.
+                if let Some(s) = &state {
+                    s.popover_user_visible
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                }
                 if let Err(e) = crate::windows::position_popover_under_tray(app) {
                     log::warn!("Failed to position popover: {}", e);
                 }
@@ -152,23 +145,6 @@ fn toggle_popover(app: &AppHandle) {
                     log::warn!("Failed to focus popover: {}", e);
                 }
             }
-        }
-    }
-}
-
-fn show_popover_with_preferences(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("popover") {
-        if let Err(e) = crate::windows::position_popover_under_tray(app) {
-            log::warn!("Failed to position popover: {}", e);
-        }
-        if let Err(e) = w.show() {
-            log::warn!("Failed to show popover: {}", e);
-        }
-        if let Err(e) = w.set_focus() {
-            log::warn!("Failed to focus popover: {}", e);
-        }
-        if let Err(e) = w.eval("window.dispatchEvent(new CustomEvent('show-preferences'))") {
-            log::warn!("Failed to dispatch show-preferences event: {}", e);
         }
     }
 }
