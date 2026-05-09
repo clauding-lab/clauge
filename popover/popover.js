@@ -367,8 +367,12 @@ function resizeToContent() {
   });
 }
 
-async function openDashboard() {
-  await invoke('open_dashboard').catch((err) => console.error('open_dashboard failed:', err));
+function openDashboard() {
+  try {
+    window.webkit.messageHandlers.clauge.postMessage({ cmd: 'open_dashboard' });
+  } catch (err) {
+    console.error('open_dashboard postMessage failed:', err);
+  }
 }
 
 // ─── init ─────────────────────────────────────────────────
