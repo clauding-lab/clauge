@@ -19,40 +19,11 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            // Second-launch attempt (spec §6.7): prefer focusing the popover
-            // (the primary glanceable surface). If popover doesn't exist
-            // (degraded startup — see windows.rs::create_popover), fall back
-            // to the dashboard window. If neither exists, log and bail —
-            // duplicate launches must never spawn a second app instance.
-            if let Some(popover) = app.get_webview_window("popover") {
-                if let Err(e) = crate::windows::position_popover_under_tray(app) {
-                    log::warn!("Failed to position popover on second-launch: {}", e);
-                }
-                if let Err(e) = popover.show() {
-                    log::warn!("Failed to show popover on second-launch: {}", e);
-                }
-                if let Err(e) = popover.set_focus() {
-                    log::warn!("Failed to focus popover on second-launch: {}", e);
-                }
-            } else if let Some(main) = app.get_webview_window("main") {
-                #[cfg(target_os = "macos")]
-                {
-                    if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                        log::warn!(
-                            "Failed to set activation policy to Regular on second-launch: {}",
-                            e
-                        );
-                    }
-                }
-                if let Err(e) = main.show() {
-                    log::warn!("Failed to show dashboard on second-launch: {}", e);
-                }
-                if let Err(e) = main.set_focus() {
-                    log::warn!("Failed to focus dashboard on second-launch: {}", e);
-                }
-            } else {
-                log::warn!("Second-launch attempt found neither popover nor dashboard window");
-            }
+            // Second-launch attempt (spec §6.7): show the dashboard. The
+            // native popover is an NSPopover (not a Tauri WebviewWindow), so
+            // the single-instance plugin can't introspect or focus it from
+            // here — the dashboard is the next-best glanceable surface.
+            crate::tray::show_dashboard(app);
         }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -80,12 +51,6 @@ pub fn run() {
             // (windows.rs::create_dashboard window-close handler).
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
-            // Build the popover FIRST so tray/menu handlers (and Cmd+,) always
-            // have a window to show, even if subsequent setup steps fail.
-            // T17 dropped the conf.json windows[] entry, so this is the single
-            // source of truth for popover creation.
-            crate::windows::create_popover(app.handle())?;
 
             crate::tray::init(app.handle())?;
             crate::native_popover::init(app.handle())?;
