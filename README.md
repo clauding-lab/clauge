@@ -76,16 +76,6 @@ The extension uses your **existing claude.ai browser session** — it never asks
 
 The extension polls `claude.ai/api/organizations/{uuid}/usage` once a minute *while you have an active claude.ai session* and POSTs the snapshot to your local Clauge dashboard. If you sign out of claude.ai, the extension goes quiet until you sign back in.
 
-### Alternative — one-shot bookmarklet (no extension)
-
-Don't want a persistent extension? The dashboard's **Settings → claude.ai sync** panel includes a draggable bookmarklet. Drag it to your bookmarks bar, open claude.ai, click the bookmark — your snapshot syncs once. Click again whenever you want a fresh number.
-
-| | Extension (Step 2) | Bookmarklet |
-|---|---|---|
-| Setup | One-time install | Drag a bookmark |
-| Refresh | Auto-sync every minute | Manual click |
-| Best for | Always-on tracking | Occasional check-ins |
-
 ## How Clauge gets your data
 
 Clauge has **no login screen, no API key field, no Anthropic auth flow**. It is fundamentally different from a SaaS app.
@@ -97,9 +87,9 @@ Think of it less like Notion / Linear / Slack (where you sign in to *their* serv
 | Source | What it covers | Where it comes from | Auth needed |
 |---|---|---|---|
 | Claude Code CLI logs | Per-session token usage, costs, models, tools, projects | `~/.claude/projects/**/*.jsonl` written by Claude Code itself | None — file-system access only |
-| claude.ai plan data | Plan rings (Session/All/Sonnet/Opus), prepaid balance, billing cap | Browser extension (or bookmarklet) running in your claude.ai tab, riding your existing browser cookies | Your normal claude.ai login — Clauge never sees your password |
+| claude.ai plan data | Plan rings (Session/All/Sonnet/Opus), prepaid balance, billing cap | Clauge Sync browser extension running in your claude.ai tab, riding your existing browser cookies | Your normal claude.ai login — Clauge never sees your password |
 
-The extension/bookmarklet hitchhikes on **your** already-authenticated claude.ai session. Anthropic sees a request from your browser (where you're already signed in). Clauge sees an HTTP POST to its own port. **Clauge never holds an Anthropic API key, password, or session token.**
+The extension hitchhikes on **your** already-authenticated claude.ai session. Anthropic sees a request from your browser (where you're already signed in). Clauge sees an HTTP POST to its own port. **Clauge never holds an Anthropic API key, password, or session token.**
 
 This is the architectural elegance: nothing to leak, nothing to rotate, nothing to phish. It also means Clauge is **strictly local** — your usage data never leaves your machine. (Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md).)
 
