@@ -341,26 +341,23 @@ async function refresh() {
   }
 }
 
-// Resize the popover's OS window to match the rendered #root height. This
-// kills the v0.4.x "ghost outline" — without it the OS window stays at a
-// fixed height while the actual content is shorter, so the vibrancy material
-// fills the empty bottom area as a visible rounded rectangle. Width stays
-// 360pt; only height tracks content.
+// Resize the NSPopover's contentSize to match the rendered #root height. The
+// width stays 360pt; only height tracks content so the popover never shows
+// the v0.4.x "ghost outline" of empty vibrancy below the footer. The Rust
+// handler clamps the same MIN/MAX bounds (see native_popover.rs).
 function resizeToContent() {
-  const tauri = window.__TAURI__?.window;
-  if (!tauri) return;
-  requestAnimationFrame(async () => {
+  if (!window.webkit?.messageHandlers?.clauge) return;
+  requestAnimationFrame(() => {
     try {
       const root = document.getElementById('root');
       if (!root) return;
       // CSS `zoom` on <html> visually scales content but offsetHeight returns
       // the UNZOOMED dimension. Multiply by the active zoom factor so the OS
-      // window matches the rendered (post-zoom) content height.
+      // popover matches the rendered (post-zoom) content height.
       const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
       const height = Math.ceil(root.offsetHeight * zoom);
-      // Sanity bounds — never shrink below 200pt or grow past 700pt.
-      if (height < 200 || height > 700) return;
-      await tauri.getCurrentWindow().setSize(new tauri.LogicalSize(360, height));
+      if (height < 200 || height > 800) return;
+      window.webkit.messageHandlers.clauge.postMessage({ cmd: 'resize', height });
     } catch (err) {
       console.warn('[Clauge popover] resizeToContent failed:', err);
     }
