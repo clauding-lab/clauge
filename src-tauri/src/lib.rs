@@ -88,6 +88,7 @@ pub fn run() {
             crate::windows::create_popover(app.handle())?;
 
             crate::tray::init(app.handle())?;
+            crate::native_popover::init(app.handle())?;
 
             // Native macOS app-wide menu (Clauge / Edit / View / Window / Help).
             // Custom ids (`menu:preferences`, `menu:refresh`, `menu:github`)
