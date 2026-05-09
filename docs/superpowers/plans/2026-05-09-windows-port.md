@@ -1,0 +1,1896 @@
+# Windows Port (v0.6.0) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add a Windows x86_64 NSIS installer build to Clauge V3, ship as v0.6.0. Dashboard-only on Windows (no tray, no popover). macOS path unchanged. Auto-updater consumes a unified `latest.json` across both platforms.
+
+**Architecture:** Cfg-gate the macOS-only `native_popover.rs` module so non-macOS builds compile. Cross-platform Node ESM script (`build-sidecar.mjs`) replaces the bash + `lipo` SEA builder. CI matrix (`macos-14` + `windows-2022`) builds both bundles in parallel; a third `mirror-updater` job merges per-platform `latest.json` files into a unified file, uploads to the Release, and mirrors to `gh-pages`.
+
+**Tech Stack:** Tauri 2.x, Rust 1.95, Node 22, esbuild 0.28, postject 1.0-alpha.6, NSIS (via Tauri bundler), GitHub Actions matrix.
+
+**Reference spec:** `docs/superpowers/specs/2026-05-09-windows-port-design.md`
+
+---
+
+## Phase 1: Cross-platform Rust source
+
+Goal: source compiles on Windows (verified by CI later), macOS regression-free locally.
+
+### Task 1: Cfg-gate `native_popover` module + add Windows setup branch
+
+**Files:**
+- Modify: `src-tauri/src/lib.rs:3` (module declaration)
+- Modify: `src-tauri/src/lib.rs:38-152` (setup closure)
+
+- [ ] **Step 1: Cfg-gate the `mod native_popover;` declaration**
+
+In `src-tauri/src/lib.rs`, change line 3 from:
+
+```rust
+mod native_popover;
+```
+
+to:
+
+```rust
+#[cfg(target_os = "macos")]
+mod native_popover;
+```
+
+This stops the file from being compiled on non-macOS targets. The module's
+internals (`objc2-app-kit`, `objc2-web-kit`) are already cfg-gated at the
+dependency level via `[target.'cfg(target_os = "macos")'.dependencies]` in
+`Cargo.toml`, so this change makes the module declaration consistent with that.
+
+- [ ] **Step 2: Cfg-gate the macOS-only setup work and add a Windows branch**
+
+In `src-tauri/src/lib.rs`, replace the lines that currently read (around
+line 43-46, immediately inside the setup closure):
+
+```rust
+            // Boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The dock
+            // icon flips ON when the dashboard window opens (tray.rs::show_dashboard
+            // and ipc::open_dashboard) and OFF again when the dashboard closes
+            // (windows.rs::create_dashboard window-close handler).
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            crate::native_popover::init(app.handle())?;
+```
+
+with:
+
+```rust
+            // macOS: boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The
+            // dock icon flips ON when the dashboard window opens (tray.rs::show_dashboard
+            // and ipc::open_dashboard) and OFF again when the dashboard closes
+            // (windows.rs::create_dashboard window-close handler).
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                crate::native_popover::init(app.handle())?;
+            }
+
+            // Windows (and any non-macOS target): there is no menu-bar surface;
+            // the dashboard window IS the app. Open it on launch. Closing the
+            // window quits the app (see windows.rs cfg-gated close handler).
+            #[cfg(not(target_os = "macos"))]
+            {
+                crate::tray::show_dashboard(app.handle());
+            }
+```
+
+- [ ] **Step 3: Verify macOS build still compiles cleanly**
+
+Run from repo root:
+
+```bash
+cd src-tauri && cargo check
+```
+
+Expected: succeeds with no errors. Existing warnings are fine; no NEW warnings.
+
+- [ ] **Step 4: Verify Rust unit tests still pass on macOS**
+
+Run:
+
+```bash
+cd src-tauri && cargo test --locked
+```
+
+Expected: 24/24 passing (same as v0.5.0). Note: a fresh shell may need `cargo
+build` once first to populate the externalBin stubs — but for `cargo test` we
+typically have them from prior builds. If `cargo test` fails with "resource path
+... doesn't exist," produce stubs:
+
+```bash
+cd src-tauri && mkdir -p binaries && touch binaries/clauge-server-aarch64-apple-darwin binaries/clauge-server-x86_64-apple-darwin && chmod +x binaries/clauge-server-*
+```
+
+then re-run.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/src/lib.rs
+git commit -m "$(cat <<'EOF'
+refactor(v3): cfg-gate native_popover module for non-macOS builds
+
+The macOS-only NSPopover/NSStatusItem code in native_popover.rs depends on
+objc2-app-kit + objc2-web-kit, which are already gated to macOS at the
+Cargo.toml dependency level. Apply the same gate to the module declaration
+itself, and provide a non-macOS setup branch that opens the dashboard
+directly on launch (the spec calls this "Option B" — dashboard-only on
+Windows). macOS path unchanged.
+EOF
+)"
+```
+
+---
+
+### Task 2: Cfg-gate close-behavior in `windows.rs::create_dashboard`
+
+**Files:**
+- Modify: `src-tauri/src/windows.rs:122-143`
+
+The current `on_window_event` handler always calls `prevent_close + hide` and
+flips activation policy back to Accessory. On Windows there's no tray icon to
+relaunch from, so trapping the user with a no-op close button is wrong. Let
+the OS close the window naturally on non-macOS.
+
+- [ ] **Step 1: Replace the handler body with a cfg-gated version**
+
+In `src-tauri/src/windows.rs`, lines 122-143 currently read:
+
+```rust
+    // Hide-on-close so reopens are instant (preserves window state + DOM).
+    let win_handle = win.clone();
+    let app_handle_for_close = app.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Err(e) = win_handle.hide() {
+                log::warn!("Failed to hide dashboard window on close: {}", e);
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(e) = app_handle_for_close
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                {
+                    log::warn!(
+                        "Failed to set activation policy to Accessory on close: {}",
+                        e
+                    );
+                }
+            }
+        }
+    });
+```
+
+Replace with:
+
+```rust
+    // Hide-on-close (macOS) vs let-OS-close (Windows). On macOS the menu-bar
+    // popover keeps the app resident, so we hide instead of close to make
+    // reopens instant (preserves window state + DOM). On Windows there is no
+    // menu-bar surface; closing the window must quit the app (otherwise the
+    // user has no way to relaunch).
+    #[cfg(target_os = "macos")]
+    {
+        let win_handle = win.clone();
+        let app_handle_for_close = app.clone();
+        win.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(e) = win_handle.hide() {
+                    log::warn!("Failed to hide dashboard window on close: {}", e);
+                }
+                if let Err(e) = app_handle_for_close
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                {
+                    log::warn!(
+                        "Failed to set activation policy to Accessory on close: {}",
+                        e
+                    );
+                }
+            }
+        });
+    }
+    // On non-macOS targets we install no close handler — Tauri's default
+    // behavior (let the OS close the window; auto-quit when the last window
+    // closes) is what we want. The existing RunEvent::ExitRequested handler
+    // in lib.rs::run drains the sidecar children on quit.
+```
+
+- [ ] **Step 2: Run cargo check to verify**
+
+```bash
+cd src-tauri && cargo check
+```
+
+Expected: clean. The `win_handle` and `app_handle_for_close` clones are now
+inside the macOS-only block, so no unused-variable warnings on non-macOS
+either (they don't exist there).
+
+- [ ] **Step 3: Run cargo test**
+
+```bash
+cd src-tauri && cargo test --locked
+```
+
+Expected: 24/24 passing.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src-tauri/src/windows.rs
+git commit -m "$(cat <<'EOF'
+refactor(v3): cfg-gate dashboard close handler for Windows
+
+On macOS the menu-bar popover keeps the app resident, so closing the dashboard
+window hides it instead (instant reopen). On Windows there's no menu-bar
+surface — closing the window must quit the app. Gate the prevent-close + hide
++ activation-policy-flip behavior to macOS only; non-macOS uses Tauri's
+default close handling, which auto-quits when the last window closes. The
+existing ExitRequested handler still drains sidecar children on quit.
+EOF
+)"
+```
+
+---
+
+### Task 3: Move `macos-private-api` Tauri feature to per-target block in `Cargo.toml`
+
+**Files:**
+- Modify: `src-tauri/Cargo.toml:17` (base `tauri` features)
+- Modify: `src-tauri/Cargo.toml:33` block (per-target deps)
+
+The `macos-private-api` Tauri feature is a macOS-specific feature flag. Building
+on Windows with that feature can produce warnings or break the build depending
+on Tauri's internal cfg-gating. Move it to the macOS-only target block where
+it belongs.
+
+- [ ] **Step 1: Edit `Cargo.toml` — remove `macos-private-api` from base `tauri` line**
+
+In `src-tauri/Cargo.toml`, find this line (currently line 17):
+
+```toml
+tauri = { version = "2.0", features = ["macos-private-api", "tray-icon", "image-png", "devtools"] }
+```
+
+Replace with:
+
+```toml
+tauri = { version = "2.0", features = ["tray-icon", "image-png", "devtools"] }
+```
+
+- [ ] **Step 2: Add a `tauri` line to the macOS-target block**
+
+In the same file, find the block starting at line 33:
+
+```toml
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [...] }
+```
+
+Add a new first line in that block (before `objc2`):
+
+```toml
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri = { version = "2.0", features = ["macos-private-api"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [...] }
+```
+
+(The `objc2*` lines are unchanged.)
+
+Cargo unifies feature lists across `[dependencies]` and `[target.<cfg>.dependencies]`
+for the same crate, so on macOS `tauri` will compile with all four features
+(`tray-icon`, `image-png`, `devtools`, `macos-private-api`); on non-macOS it
+only has the first three.
+
+- [ ] **Step 3: Verify macOS build still compiles**
+
+```bash
+cd src-tauri && cargo check
+```
+
+Expected: succeeds. If `Cargo.lock` updates, that's fine — commit it.
+
+- [ ] **Step 4: Verify cargo tests still pass**
+
+```bash
+cd src-tauri && cargo test --locked
+```
+
+Expected: 24/24 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/Cargo.toml src-tauri/Cargo.lock
+git commit -m "$(cat <<'EOF'
+refactor(v3): move macos-private-api Tauri feature to per-target block
+
+The macos-private-api feature is macOS-only; declaring it in the base tauri
+deps line means non-macOS builds (Windows) compile Tauri with a feature flag
+that Tauri's own internals only honor on macOS. Move it into the existing
+[target.'cfg(target_os = "macos")'.dependencies] block. Cargo unions feature
+lists across blocks for the same crate name, so the macOS build is unchanged.
+EOF
+)"
+```
+
+---
+
+### Task 4: Local macOS regression check (Phase 1 gate)
+
+**Files:** none modified — verification only.
+
+- [ ] **Step 1: Full unit test sweep**
+
+```bash
+npm test
+```
+
+Expected: 109/109 passing.
+
+```bash
+cd src-tauri && cargo test --locked
+```
+
+Expected: 24/24 passing.
+
+- [ ] **Step 2: Manual macOS dev smoke**
+
+```bash
+cd src-tauri && cargo tauri dev
+```
+
+Wait for build (~30-60s). Verify:
+- Menu-bar Clauge icon appears
+- Click it → NSPopover opens with 3 rings
+- Right-click → menu shows (Show Dashboard, Settings, Quit, etc.)
+- Click "Show Dashboard" → dashboard window opens at 1100×800
+- Close dashboard → window hides, Clauge stays in menu bar
+- Click menu-bar icon again → popover reopens
+
+If anything regresses, revert and investigate. Phase 1 gate is "macOS works exactly as v0.5.0 did."
+
+Stop the dev process with Ctrl-C.
+
+- [ ] **Step 3: No commit needed** — verification step only.
+
+---
+
+## Phase 2: Cross-platform SEA build script
+
+Goal: replace `scripts/build-sidecar.sh` (bash + `lipo`) with `scripts/build-sidecar.mjs`
+(Node ESM), branching on `process.platform`. macOS output is byte-for-functional-equivalent
+to today; Windows output is new.
+
+### Task 5: Write `scripts/build-sidecar.mjs`
+
+**Files:**
+- Create: `scripts/build-sidecar.mjs`
+
+The script needs to do exactly what `build-sidecar.sh` does on macOS, plus a
+Windows branch that produces a single-arch `clauge-server-x86_64-pc-windows-msvc.exe`.
+
+- [ ] **Step 1: Write the file**
+
+Create `scripts/build-sidecar.mjs` with this exact content:
+
+```javascript
+#!/usr/bin/env node
+// Cross-platform SEA builder for clauge-server.
+//
+// macOS: produces three binaries — arm64, x86_64, and a lipo-merged universal —
+//   matching the prior build-sidecar.sh behavior byte-for-functional-equivalent.
+//   Downloads the other-arch Node tarball from nodejs.org with SHA256 verify.
+//
+// Windows: produces one binary — clauge-server-x86_64-pc-windows-msvc.exe —
+//   using the host's local node.exe + postject (no codesign, no lipo).
+//
+// Linux: out of scope — exits with an error.
+
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync, mkdirSync, copyFileSync, copyFileSync as _copy,
+  rmSync, readdirSync, statSync, createReadStream, createWriteStream,
+  readFileSync, writeFileSync, chmodSync,
+} from 'node:fs';
+import { resolve, dirname, join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+
+const __filename = fileURLToPath(import.meta.url);
+const REPO_ROOT = resolve(dirname(__filename), '..');
+const DIST = join(REPO_ROOT, 'dist');
+const BIN_DIR = join(REPO_ROOT, 'src-tauri', 'binaries');
+const SEA_BLOB = join(REPO_ROOT, 'sea-prep.blob');
+const BUNDLE = join(DIST, 'server.bundle.mjs');
+const SENTINEL = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
+
+const startMs = Date.now();
+
+function log(msg) { console.log(`[build-sidecar] ${msg}`); }
+function fatal(msg) { console.error(`[build-sidecar] FATAL: ${msg}`); process.exit(1); }
+
+function run(cmd, args, opts = {}) {
+  const result = spawnSync(cmd, args, { stdio: 'inherit', cwd: REPO_ROOT, ...opts });
+  if (result.status !== 0) {
+    fatal(`${cmd} ${args.join(' ')} exited with status ${result.status}`);
+  }
+  return result;
+}
+
+function runCapture(cmd, args, opts = {}) {
+  const result = spawnSync(cmd, args, { encoding: 'utf8', cwd: REPO_ROOT, ...opts });
+  if (result.status !== 0) {
+    fatal(`${cmd} ${args.join(' ')} failed: ${result.stderr || ''}`);
+  }
+  return result.stdout.trim();
+}
+
+function copyDir(src, dst) {
+  mkdirSync(dst, { recursive: true });
+  for (const entry of readdirSync(src)) {
+    const srcPath = join(src, entry);
+    const dstPath = join(dst, entry);
+    const st = statSync(srcPath);
+    if (st.isDirectory()) {
+      copyDir(srcPath, dstPath);
+    } else {
+      copyFileSync(srcPath, dstPath);
+    }
+  }
+}
+
+// 0. Copy popover/* into public/popover/* so the SEA's wildcard
+//    serveStatic('/*', root: 'public') route can serve the popover content.
+function copyPopoverAssets() {
+  log('Copying popover assets into public/popover/...');
+  const popDst = join(REPO_ROOT, 'public', 'popover');
+  mkdirSync(popDst, { recursive: true });
+  const popSrc = join(REPO_ROOT, 'popover');
+  for (const f of readdirSync(popSrc)) {
+    const src = join(popSrc, f);
+    const dst = join(popDst, f);
+    const st = statSync(src);
+    if (st.isDirectory() && f === 'fonts') {
+      copyDir(src, dst);
+    } else if (st.isFile() && /\.(html|css|js)$/.test(f)) {
+      copyFileSync(src, dst);
+    }
+  }
+}
+
+// 1. Bundle server.js + lib/ into a single ESM file.
+function bundleServer() {
+  log('Bundling server + lib into ESM...');
+  mkdirSync(DIST, { recursive: true });
+  const banner = "import { createRequire as __seaCreateRequire } from 'node:module'; const require = __seaCreateRequire(import.meta.url);";
+  run('npx', [
+    'esbuild', 'server.js',
+    '--bundle',
+    '--platform=node',
+    '--target=node22',
+    '--format=esm',
+    `--banner:js=${banner}`,
+    `--outfile=${BUNDLE}`,
+  ]);
+}
+
+// 2. Build the SEA blob (architecture-independent).
+function generateSeaBlob() {
+  log('Generating SEA blob...');
+  run('node', ['--experimental-sea-config', 'scripts/sea-config.json']);
+}
+
+// 3. Inject SEA blob into a Node binary copy. Per-platform postject args.
+function injectSea({ srcNode, outPath, codesign }) {
+  copyFileSync(srcNode, outPath);
+  if (codesign) {
+    // Strip any existing signature (codesign refuses to re-inject otherwise).
+    spawnSync('codesign', ['--remove-signature', outPath], { stdio: 'inherit' });
+  }
+
+  const postjectArgs = [
+    'postject', outPath, 'NODE_SEA_BLOB', 'sea-prep.blob',
+    '--sentinel-fuse', SENTINEL,
+  ];
+  if (process.platform === 'darwin') {
+    postjectArgs.push('--macho-segment-name', 'NODE_SEA');
+  }
+  run('npx', postjectArgs);
+
+  if (process.platform !== 'win32') {
+    chmodSync(outPath, 0o755);
+  }
+
+  if (codesign) {
+    // Re-sign ad-hoc so macOS allows execution.
+    run('codesign', [
+      '--sign', '-',
+      '--force',
+      '--preserve-metadata=entitlements,requirements,flags,runtime',
+      outPath,
+    ]);
+  }
+  log(`Built ${outPath}`);
+}
+
+// 4a. macOS branch: arm64 + x86_64 + lipo-merge into universal.
+async function buildMacOSUniversal() {
+  const currentArch = runCapture('node', ['-e', 'console.log(process.arch)']); // 'arm64' | 'x64'
+  const currentNode = runCapture(process.platform === 'win32' ? 'where' : 'which', ['node']).split('\n')[0];
+
+  // Map current arch → target triple.
+  const currentMap = {
+    arm64: 'aarch64-apple-darwin',
+    x64: 'x86_64-apple-darwin',
+  };
+  if (!(currentArch in currentMap)) fatal(`Unsupported macOS arch: ${currentArch}`);
+
+  // Inject for the current arch using the local Node binary.
+  injectSea({
+    srcNode: currentNode,
+    outPath: join(BIN_DIR, `clauge-server-${currentMap[currentArch]}`),
+    codesign: true,
+  });
+
+  // Other arch: download from nodejs.org with SHA256 verify, then inject.
+  const otherArchTarball = currentArch === 'arm64' ? 'x64' : 'arm64';
+  const otherTriple = currentArch === 'arm64'
+    ? 'x86_64-apple-darwin'
+    : 'aarch64-apple-darwin';
+
+  const nodeVersion = runCapture('node', ['--version']).replace(/^v/, '');
+  const tarballName = `node-v${nodeVersion}-darwin-${otherArchTarball}.tar.gz`;
+  const tarballUrl = `https://nodejs.org/dist/v${nodeVersion}/${tarballName}`;
+  const shasumsUrl = `https://nodejs.org/dist/v${nodeVersion}/SHASUMS256.txt`;
+
+  const tmpDir = join(tmpdir(), `clauge-build-${Date.now()}`);
+  mkdirSync(tmpDir, { recursive: true });
+
+  log(`Downloading node v${nodeVersion} for ${otherArchTarball}...`);
+  await downloadFile(tarballUrl, join(tmpDir, tarballName));
+
+  log(`Verifying SHA256 against ${shasumsUrl}...`);
+  await downloadFile(shasumsUrl, join(tmpDir, 'SHASUMS256.txt'));
+  verifySha256(join(tmpDir, tarballName), join(tmpDir, 'SHASUMS256.txt'), tarballName);
+  log('SHA256 verified.');
+
+  run('tar', ['-xzf', join(tmpDir, tarballName), '-C', tmpDir]);
+  const otherNodePath = join(tmpDir, `node-v${nodeVersion}-darwin-${otherArchTarball}`, 'bin', 'node');
+
+  injectSea({
+    srcNode: otherNodePath,
+    outPath: join(BIN_DIR, `clauge-server-${otherTriple}`),
+    codesign: true,
+  });
+
+  // Cleanup tmp tarball dir.
+  rmSync(tmpDir, { recursive: true, force: true });
+
+  // lipo-merge the two per-arch binaries.
+  log('lipo-merging arm64 + x86_64 into universal binary...');
+  const universalOut = join(BIN_DIR, 'clauge-server-universal-apple-darwin');
+  run('lipo', [
+    '-create',
+    join(BIN_DIR, 'clauge-server-aarch64-apple-darwin'),
+    join(BIN_DIR, 'clauge-server-x86_64-apple-darwin'),
+    '-output', universalOut,
+  ]);
+  chmodSync(universalOut, 0o755);
+  spawnSync('codesign', ['--remove-signature', universalOut], { stdio: 'inherit' });
+  run('codesign', [
+    '--sign', '-',
+    '--force',
+    '--preserve-metadata=entitlements,requirements,flags,runtime',
+    universalOut,
+  ]);
+  log(`Built ${universalOut}`);
+}
+
+// 4b. Windows branch: single x64 binary.
+function buildWindowsX64() {
+  const currentNode = runCapture('where', ['node']).split('\n')[0]
+    .replace(/\r$/, '');
+
+  injectSea({
+    srcNode: currentNode,
+    outPath: join(BIN_DIR, 'clauge-server-x86_64-pc-windows-msvc.exe'),
+    codesign: false,
+  });
+}
+
+// Helpers: HTTP fetch (no curl on Windows by default) + SHA256 verify.
+async function downloadFile(url, outPath) {
+  const res = await fetch(url);
+  if (!res.ok) fatal(`download ${url} -> ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  writeFileSync(outPath, buf);
+}
+
+function verifySha256(filePath, shasumsPath, filename) {
+  const shasums = readFileSync(shasumsPath, 'utf8');
+  const line = shasums.split('\n').find(l => l.endsWith(`  ${filename}`));
+  if (!line) fatal(`no SHASUMS entry for ${filename}`);
+  const expected = line.split(/\s+/)[0];
+  const actual = createHash('sha256').update(readFileSync(filePath)).digest('hex');
+  if (expected !== actual) {
+    fatal(`SHA256 mismatch for ${filename}: expected ${expected}, got ${actual}`);
+  }
+}
+
+// Main.
+async function main() {
+  mkdirSync(DIST, { recursive: true });
+  mkdirSync(BIN_DIR, { recursive: true });
+
+  copyPopoverAssets();
+  bundleServer();
+  generateSeaBlob();
+
+  if (process.platform === 'darwin') {
+    await buildMacOSUniversal();
+  } else if (process.platform === 'win32') {
+    buildWindowsX64();
+  } else {
+    fatal(`Unsupported platform: ${process.platform}. Supported: darwin, win32.`);
+  }
+
+  // Cleanup intermediate artifacts.
+  if (existsSync(SEA_BLOB)) rmSync(SEA_BLOB);
+  if (existsSync(BUNDLE)) rmSync(BUNDLE);
+
+  const elapsed = Math.round((Date.now() - startMs) / 1000);
+  log(`Done in ${elapsed}s. Sidecar binaries in ${BIN_DIR}`);
+  for (const f of readdirSync(BIN_DIR)) {
+    const sz = statSync(join(BIN_DIR, f)).size;
+    log(`  ${f}  (${(sz / 1024 / 1024).toFixed(1)} MB)`);
+  }
+}
+
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+- [ ] **Step 2: Make the script executable (macOS shebang convention)**
+
+```bash
+chmod +x scripts/build-sidecar.mjs
+```
+
+- [ ] **Step 3: Run the script on macOS to verify it produces the same outputs as the bash script did**
+
+First, snapshot the existing universal binary's size + sha256 for comparison:
+
+```bash
+shasum -a 256 src-tauri/binaries/clauge-server-universal-apple-darwin
+ls -lh src-tauri/binaries/
+```
+
+Note the values. Then re-run via the new script:
+
+```bash
+node scripts/build-sidecar.mjs
+```
+
+Expected: completes in ~30s on cold cache. Output: 3 binaries in
+`src-tauri/binaries/` (`-aarch64-apple-darwin`, `-x86_64-apple-darwin`,
+`-universal-apple-darwin`). Each binary is a couple hundred MB.
+
+Re-check sha256s — they will likely DIFFER from the snapshot (timestamps in
+the SEA blob, codesign re-sign timestamps), but the universal binary should be
+within a few KB of the previous size. **The functional test in Step 4 is what
+matters.**
+
+- [ ] **Step 4: Confirm the new binaries actually run**
+
+```bash
+src-tauri/binaries/clauge-server-universal-apple-darwin --version
+```
+
+Expected: prints `0.5.0` (or whatever the current package.json version is).
+
+```bash
+PORT=3556 src-tauri/binaries/clauge-server-universal-apple-darwin &
+sleep 2
+curl -s http://127.0.0.1:3556/api/health | head -c 200
+echo
+kill %1 2>/dev/null || true
+```
+
+Expected: JSON response with `"ok":true` and version field.
+
+- [ ] **Step 5: Commit the new script**
+
+```bash
+git add scripts/build-sidecar.mjs
+git commit -m "$(cat <<'EOF'
+build(v3): cross-platform Node ESM SEA builder
+
+Replaces scripts/build-sidecar.sh (bash + lipo + codesign) with a Node ESM
+script that runs identically on macOS and Windows GHA runners. macOS branch
+reproduces the existing arm64 + x86_64 + universal lipo-merge flow byte-for-
+functional-equivalent (re-signed; binary contents differ only in timestamps
+and signatures). Windows branch produces a single x86_64-pc-windows-msvc.exe
+sidecar — no codesign step (Authenticode is deferred per spec). Replaces the
+script wholesale; the old .sh is removed in a follow-up commit so this commit
+stays bisectable on macOS.
+EOF
+)"
+```
+
+(Note: the .sh is still around at this point. We'll remove it in Task 7 once
+the `beforeBuildCommand` switch lands, so the build never accidentally runs
+both.)
+
+---
+
+### Task 6: Switch `tauri.conf.json` `beforeBuildCommand` + add `package.json` script
+
+**Files:**
+- Modify: `src-tauri/tauri.conf.json:7`
+- Modify: `package.json:22`
+
+- [ ] **Step 1: Update `src-tauri/tauri.conf.json`**
+
+Find line 7:
+
+```json
+"beforeBuildCommand": "bash -c 'cd \"$(git rev-parse --show-toplevel)\" && bash scripts/build-sidecar.sh'",
+```
+
+Replace with:
+
+```json
+"beforeBuildCommand": "node scripts/build-sidecar.mjs",
+```
+
+Tauri runs `beforeBuildCommand` from `src-tauri/`. Node resolves the relative
+path correctly from there (`scripts/build-sidecar.mjs` → `../scripts/build-sidecar.mjs`
+relative to cwd). Tauri 2.x docs confirm this is run from the same dir as
+`tauri.conf.json`.
+
+Wait — actually, Tauri runs `beforeBuildCommand` from the **frontend project
+root** (the directory containing the `package.json`), per the Tauri 2.x docs.
+Verify by checking Tauri's documentation or running a test build. If the
+script can't find `scripts/build-sidecar.mjs`, change the value to
+`"node ../scripts/build-sidecar.mjs"` instead.
+
+For our project, `package.json` is at the repo root, so `node scripts/build-sidecar.mjs`
+should work. The previous bash version used `git rev-parse --show-toplevel`
+defensively to resolve repo root regardless of cwd; the .mjs script handles
+that internally via `import.meta.url` so the cwd doesn't matter.
+
+- [ ] **Step 2: Update `package.json`**
+
+Find line 22:
+
+```json
+"build:sidecar": "bash scripts/build-sidecar.sh",
+```
+
+Replace with:
+
+```json
+"build:sidecar": "node scripts/build-sidecar.mjs",
+```
+
+- [ ] **Step 3: Verify the build still works end-to-end on macOS**
+
+```bash
+npm run build:sidecar
+```
+
+Expected: same output as direct `node scripts/build-sidecar.mjs` invocation.
+
+- [ ] **Step 4: Run a full Tauri build to verify `beforeBuildCommand` plumbing**
+
+```bash
+cd src-tauri && cargo tauri build --target universal-apple-darwin --no-bundle
+```
+
+(Use `--no-bundle` to skip DMG creation — we just want to verify the sidecar
+build runs.)
+
+Expected: succeeds. Watch for the `[build-sidecar]` log lines from the .mjs
+script in the output.
+
+If `beforeBuildCommand` fails because Tauri runs it from `src-tauri/` instead
+of repo root, edit `tauri.conf.json:7` to:
+
+```json
+"beforeBuildCommand": "node ../scripts/build-sidecar.mjs",
+```
+
+And re-test.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src-tauri/tauri.conf.json package.json
+git commit -m "$(cat <<'EOF'
+build(v3): switch beforeBuildCommand and npm script to .mjs SEA builder
+
+tauri.conf.json's beforeBuildCommand and package.json's build:sidecar both
+now invoke the cross-platform Node ESM script. The bash wrapper's git-rev-parse
+trick is no longer needed — the .mjs resolves the repo root via import.meta.url
+internally. Phase 2 of the Windows port; the .sh file itself is removed in
+the next commit.
+EOF
+)"
+```
+
+---
+
+### Task 7: Delete `scripts/build-sidecar.sh`
+
+**Files:**
+- Remove: `scripts/build-sidecar.sh`
+
+- [ ] **Step 1: Remove the file**
+
+```bash
+git rm scripts/build-sidecar.sh
+```
+
+- [ ] **Step 2: Confirm no other references in the repo**
+
+```bash
+grep -rn 'build-sidecar.sh' --include='*.md' --include='*.json' --include='*.yml' --include='*.yaml' --include='*.sh' --include='*.mjs' --include='*.js' --include='*.toml' --include='*.rs' .
+```
+
+Expected: zero hits. (The .mjs replacement, the docs, and the workflow yaml
+should all be updated by now or in upcoming tasks. If any hits surface — e.g.,
+in a README — update them in the same commit.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git commit -m "$(cat <<'EOF'
+build(v3): remove scripts/build-sidecar.sh (replaced by .mjs)
+
+Deletion follows the .mjs landing in the previous two commits. The bash
+script was bash + lipo + codesign — all macOS-only. The .mjs reproduces the
+macOS flow and adds a Windows branch.
+EOF
+)"
+```
+
+---
+
+### Task 8: Phase 2 macOS regression check
+
+**Files:** none modified — verification only.
+
+- [ ] **Step 1: Full clean build to ensure the new SEA flow produces a working .app**
+
+```bash
+rm -rf src-tauri/target/universal-apple-darwin
+cd src-tauri && cargo tauri build --target universal-apple-darwin
+```
+
+Expected: completes in ~5-15 min depending on cache state. Final output: a
+DMG and a .app bundle in `src-tauri/target/universal-apple-darwin/release/bundle/`.
+
+- [ ] **Step 2: Manual smoke of the produced .app**
+
+```bash
+open src-tauri/target/universal-apple-darwin/release/bundle/macos/Clauge.app
+```
+
+Verify the same checklist as Task 4's manual smoke (menu-bar icon, popover
+opens, dashboard opens at 1100×800, etc.).
+
+- [ ] **Step 3: Phase 2 gate — no commit needed**
+
+If anything regresses, halt the plan and investigate. The .mjs SEA builder
+must produce a binary functionally identical to the bash version.
+
+---
+
+## Phase 3: Windows bundle config
+
+Goal: configure Tauri to produce an NSIS installer on Windows. Adds the Windows
+icon asset.
+
+### Task 9: Generate `src-tauri/icons/icon.ico`
+
+**Files:**
+- Create: `src-tauri/icons/icon.ico`
+
+The Windows ICO format is a multi-resolution image container. Tauri's NSIS
+bundler reads `bundle.icon[]` and uses the first `.ico` it finds for the
+installer + executable icon.
+
+- [ ] **Step 1: Check whether ImageMagick is installed**
+
+```bash
+which magick || which convert
+```
+
+If neither is found, install via Homebrew:
+
+```bash
+brew install imagemagick
+```
+
+- [ ] **Step 2: Generate icon.ico from the existing 1024px PNG**
+
+```bash
+magick src-tauri/icons/icon.png -define icon:auto-resize=256,128,96,64,48,32,16 src-tauri/icons/icon.ico
+```
+
+If you have the older `convert` binary instead of `magick`:
+
+```bash
+convert src-tauri/icons/icon.png -define icon:auto-resize=256,128,96,64,48,32,16 src-tauri/icons/icon.ico
+```
+
+If `src-tauri/icons/icon.png` doesn't exist, list the icons dir and pick the
+largest available:
+
+```bash
+ls -la src-tauri/icons/
+```
+
+Use the largest PNG (likely `128x128@2x.png` = 256px). The resulting .ico will
+have lower max resolution; that's acceptable for v0.6.0. Document this gap in
+RELEASE_CHECKLIST as a future polish.
+
+- [ ] **Step 3: Verify the .ico file is valid**
+
+```bash
+file src-tauri/icons/icon.ico
+```
+
+Expected: `MS Windows icon resource - N icons, ...` (where N matches the
+number of resolutions you specified).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src-tauri/icons/icon.ico
+git commit -m "$(cat <<'EOF'
+build(v3): add Windows multi-resolution icon (icon.ico)
+
+Generated from src-tauri/icons/icon.png (1024px) via ImageMagick auto-resize
+to 256/128/96/64/48/32/16. Required for the NSIS installer and Windows
+executable shell icon. Tauri's bundler picks the first .ico in bundle.icon[]
+during a Windows build.
+EOF
+)"
+```
+
+---
+
+### Task 10: Update `tauri.conf.json` bundle config for Windows
+
+**Files:**
+- Modify: `src-tauri/tauri.conf.json:18-32` (bundle block)
+
+- [ ] **Step 1: Update the `bundle` block**
+
+In `src-tauri/tauri.conf.json`, the current `bundle` block (lines 18-32) reads:
+
+```json
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["app", "dmg"],
+    "externalBin": ["binaries/clauge-server"],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ]
+  },
+```
+
+Replace with:
+
+```json
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["app", "dmg", "nsis"],
+    "externalBin": ["binaries/clauge-server"],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "perUser",
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": false,
+        "languages": ["English"]
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+```
+
+Key changes:
+- `targets`: added `"nsis"` (NSIS installer for Windows).
+- `windows`: new block with WebView2 download bootstrapper + NSIS perUser config.
+- `icon`: appended `"icons/icon.ico"` so Windows builds find it.
+
+The macOS target list (`"app", "dmg"`) is unchanged. On macOS runners, Tauri
+ignores the `nsis` target (NSIS is Windows-only); on Windows runners it
+ignores `app` and `dmg`. The bundles array is the union; each runner picks
+the relevant subset.
+
+- [ ] **Step 2: Verify macOS build still produces app+dmg correctly**
+
+```bash
+cd src-tauri && cargo tauri build --target universal-apple-darwin --bundles app,dmg --no-bundle
+```
+
+Wait — `--no-bundle` and `--bundles` together is contradictory. Drop `--no-bundle`:
+
+```bash
+cd src-tauri && cargo tauri build --target universal-apple-darwin --bundles app,dmg
+```
+
+Expected: builds both `app` and `dmg` targets cleanly. (We're explicitly
+selecting the macOS subset; the `nsis` target won't be attempted on macOS.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src-tauri/tauri.conf.json
+git commit -m "$(cat <<'EOF'
+build(v3): add Windows bundle config (NSIS perUser + WebView2 bootstrapper)
+
+bundle.targets gains "nsis" alongside the existing "app","dmg". A new
+bundle.windows block configures the NSIS installer for per-user install
+(no UAC), English-only, with the Windows multi-resolution icon. WebView2
+runtime download is hooked into the bootstrapper so users on the rare
+Windows 10 machine without WebView2 get it auto-installed at first launch.
+icon[] gains the .ico path. macOS bundle output unchanged.
+EOF
+)"
+```
+
+---
+
+## Phase 4: CI matrix + updater merge job
+
+Goal: GitHub Actions release.yml builds both platforms in parallel and merges
+their per-platform `latest.json` files into a unified file mirrored to gh-pages.
+
+This phase is the highest-risk in the plan because we cannot test it locally —
+each push to a tag triggers real CI billing and may fail in unexpected ways.
+Mitigation: develop against a feature branch + a v0.6.0-rc1 prerelease tag.
+
+### Task 11: Refactor `release.yml` to a build matrix (macOS-only initially)
+
+**Files:**
+- Modify: `.github/workflows/release.yml`
+
+We'll first refactor the workflow to a matrix structure, with only the macOS
+entry, and verify that this still produces a working macOS release. Then add
+Windows in Task 12.
+
+- [ ] **Step 1: Replace the `jobs:` block**
+
+In `.github/workflows/release.yml`, the current `jobs:` block (line 55 onward)
+defines a single job `build` with steps. Replace the `build:` job definition
+with this matrix version (everything from `build:` to the end of that job's
+final step — but BEFORE the existing "Mirror latest.json to gh-pages" step,
+which we'll move into a separate job in Task 13):
+
+```yaml
+jobs:
+  build:
+    name: Build ${{ matrix.platform-name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform-name: macOS universal
+            runner: macos-14
+            target: universal-apple-darwin
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            bundles: 'app,dmg'
+            artifact-name: latest-macos.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-05-08
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run JS unit tests
+        env:
+          SKIP_SEA_SMOKE: '1'
+        run: npm test
+
+      - name: Stub external binaries for cargo test (macOS)
+        if: runner.os == 'macOS'
+        working-directory: src-tauri
+        run: |
+          mkdir -p binaries
+          touch binaries/clauge-server-aarch64-apple-darwin
+          touch binaries/clauge-server-x86_64-apple-darwin
+          chmod +x binaries/clauge-server-aarch64-apple-darwin binaries/clauge-server-x86_64-apple-darwin
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Verify signing secrets are present
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is empty or unset." >&2
+            exit 1
+          fi
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret is empty or unset." >&2
+            exit 1
+          fi
+          echo "Signing secrets present."
+
+      - name: Build, sign, and publish artifacts
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: 'true'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Clauge ${{ github.ref_name }}'
+          releaseDraft: false
+          prerelease: false
+          args: '--target ${{ matrix.target }} --bundles ${{ matrix.bundles }}'
+          # Don't auto-upload latest.json — the merge job handles that.
+          includeUpdaterJson: false
+
+      - name: Find and upload latest.json as artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          # tauri-action puts the JSON next to the bundles. Find it under
+          # src-tauri/target/<triple>/release/bundle/.../latest.json
+          LATEST_JSON=$(find src-tauri/target -name 'latest.json' -type f | head -n 1)
+          if [ -z "$LATEST_JSON" ]; then
+            echo "::error::latest.json not found after build" >&2
+            exit 1
+          fi
+          echo "Found latest.json: $LATEST_JSON"
+          cp "$LATEST_JSON" "${{ matrix.artifact-name }}"
+
+      - name: Upload latest.json as workflow artifact
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-name }}
+          retention-days: 7
+```
+
+Key changes from the prior single-job version:
+- `runs-on` is now matrix-driven (single entry for now: `macos-14`)
+- Stub external binaries step is gated `if: runner.os == 'macOS'`
+- `tauri-action` invocation no longer hardcodes `--target universal-apple-darwin`
+- `includeUpdaterJson: false` — we collect the JSON ourselves
+- Two new steps: find `latest.json` from build output + upload as workflow artifact
+
+The "Mirror latest.json to gh-pages" step (at the bottom of the old workflow)
+is removed from this job. We add a dedicated `mirror-updater` job in Task 13.
+
+- [ ] **Step 2: Push to a feature branch + trial-tag**
+
+```bash
+git checkout -b windows-port
+git push -u origin windows-port
+```
+
+Then create a release-candidate tag:
+
+```bash
+git tag v0.6.0-rc1
+git push origin v0.6.0-rc1
+```
+
+This triggers the workflow on the rc tag (the trigger pattern matches
+`v[0-9]+.[0-9]+.[0-9]+-*`).
+
+- [ ] **Step 3: Watch the workflow**
+
+```bash
+gh run watch
+```
+
+Or list and tail:
+
+```bash
+gh run list --workflow Release --limit 5
+gh run view <run-id> --log
+```
+
+Expected:
+- macOS matrix entry succeeds in ~12-15 min
+- Release `v0.6.0-rc1` exists with DMG + .app.tar.gz + .sig
+- Workflow artifact `latest-macos.json` exists (download to inspect)
+
+If it fails, fix the workflow file, force-push to the same branch, delete the
+rc tag (`git push origin :refs/tags/v0.6.0-rc1` then re-tag).
+
+⚠ **Per the user's `feedback_pr_merge_authorization.md`**: tag pushes are
+shared-state writes. The user explicitly approved the v0.6.0 ship cycle when
+greenlighting this plan. Confirm with the user before each rc-tag retry if
+multiple iterations are needed.
+
+- [ ] **Step 4: Once green, delete the rc tag and the rc Release**
+
+```bash
+gh release delete v0.6.0-rc1 --yes --cleanup-tag
+```
+
+(`--cleanup-tag` removes the tag from the remote too.)
+
+- [ ] **Step 5: Commit the workflow changes**
+
+```bash
+git add .github/workflows/release.yml
+git commit -m "$(cat <<'EOF'
+ci(v3): refactor release.yml to build matrix (macOS-only initially)
+
+Move the single build job into a matrix structure with one entry (macOS
+universal), so the Windows entry can be added next without restructuring
+the whole job. Stop tauri-action from auto-uploading latest.json — instead
+we save it as a workflow artifact, which a follow-up mirror-updater job
+will collect from each matrix entry and merge into a unified Release asset.
+The "Mirror latest.json to gh-pages" step is moved into the new job.
+EOF
+)"
+git push
+```
+
+---
+
+### Task 12: Add Windows entry to the build matrix
+
+**Files:**
+- Modify: `.github/workflows/release.yml` (matrix block)
+
+- [ ] **Step 1: Add the Windows row to the matrix `include:` list**
+
+In `.github/workflows/release.yml`, find the `matrix.include:` block (added
+in Task 11) and replace it with:
+
+```yaml
+        include:
+          - platform-name: macOS universal
+            runner: macos-14
+            target: universal-apple-darwin
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            bundles: 'app,dmg'
+            artifact-name: latest-macos.json
+          - platform-name: Windows x64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            rust-targets: 'x86_64-pc-windows-msvc'
+            bundles: 'nsis'
+            artifact-name: latest-windows.json
+```
+
+- [ ] **Step 2: Add Windows-specific Stub binaries step**
+
+The macOS Stub step (added in Task 11) is gated to `runner.os == 'macOS'`. Add
+the Windows equivalent immediately after the macOS Stub step:
+
+```yaml
+      - name: Stub external binaries for cargo test (Windows)
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path binaries | Out-Null
+          New-Item -ItemType File -Force -Path binaries\clauge-server-x86_64-pc-windows-msvc.exe | Out-Null
+```
+
+(No chmod equivalent needed — Windows doesn't use the executable bit for
+spawn permission.)
+
+- [ ] **Step 3: Re-tag rc1 to trigger both matrix jobs**
+
+(Make sure the rc1 tag was deleted in Task 11 Step 4 before retagging.)
+
+```bash
+git add .github/workflows/release.yml
+git commit -m "ci(v3): add Windows x86_64 entry to release build matrix"
+git push
+git tag v0.6.0-rc1
+git push origin v0.6.0-rc1
+```
+
+- [ ] **Step 4: Watch both jobs**
+
+```bash
+gh run watch
+```
+
+Expected outcomes:
+- **macOS job**: succeeds (same as Task 11 trial).
+- **Windows job**: this is the first time it's run. Likely failure modes to
+  fix iteratively:
+  - **`build-sidecar.mjs` Windows branch crashes** — fix the script (might
+    need a `where node` vs `which node` adjustment, or path-separator issue).
+  - **NSIS bundler missing dependencies** — Tauri 2.x bundles its own NSIS
+    plugins; if it complains about missing tools, set the action's `tauriScript`
+    or check the action version.
+  - **WebView2 SDK headers missing** — Tauri's wry crate may need the WebView2
+    SDK; the `windows-2022` runner has it pre-installed.
+  - **`Verify signing secrets` step uses bash on Windows** — already addressed
+    in Task 11 by adding `shell: bash`. Verify Git Bash is on Windows runner
+    PATH (it is, by default).
+
+For each failure:
+1. Identify the error from `gh run view <id> --log`.
+2. Fix the issue locally (most likely in `build-sidecar.mjs` or `release.yml`).
+3. Commit + push.
+4. Delete + retag rc1.
+5. Watch again.
+
+This iterative loop may run 3-10 times. Each iteration uses ~15-25 min of CI
+time on Windows. Budget accordingly.
+
+- [ ] **Step 5: Once both jobs green, delete the rc1 tag/release**
+
+```bash
+gh release delete v0.6.0-rc1 --yes --cleanup-tag
+```
+
+- [ ] **Step 6: Commit any iterative fixes that landed during Step 4**
+
+If you committed multiple iteration fixes in Step 4, the matrix-row commit
+above (Step 3) is the canonical "add Windows" commit. Other fixes would be
+labelled e.g. `fix(ci): build-sidecar.mjs Windows path resolution`.
+
+---
+
+### Task 13: Add `mirror-updater` job that merges per-platform JSONs
+
+**Files:**
+- Modify: `.github/workflows/release.yml` (add new job at end)
+
+- [ ] **Step 1: Append the new job after the `build` job**
+
+At the end of `.github/workflows/release.yml` (after the `build` job's
+final step), add:
+
+```yaml
+  mirror-updater:
+    name: Merge latest.json and mirror to gh-pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download latest-macos.json
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: latest-macos.json
+          path: ./macos
+      - name: Download latest-windows.json
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: latest-windows.json
+          path: ./windows
+
+      - name: Merge per-platform JSONs into latest.json
+        run: |
+          set -euo pipefail
+          # Each per-platform file has the shape:
+          # { "version": "...", "notes": "...", "pub_date": "...",
+          #   "platforms": { "<key>": { "url": "...", "signature": "..." } } }
+          # Merge: union the platforms keys, take version/notes/pub_date from
+          # macOS (both runs produce identical values for tagged builds).
+          jq -s '
+            .[0] as $base |
+            {
+              version: $base.version,
+              notes: $base.notes,
+              pub_date: $base.pub_date,
+              platforms: ((.[0].platforms // {}) + (.[1].platforms // {}))
+            }
+          ' macos/latest-macos.json windows/latest-windows.json > latest.json
+          echo "Merged latest.json:"
+          cat latest.json
+
+      - name: Upload merged latest.json to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber
+
+      - name: Mirror latest.json to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
+
+          # Guard: does gh-pages exist on remote?
+          if ! git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" gh-pages | grep -q 'refs/heads/gh-pages'; then
+            echo "::warning::gh-pages branch does not exist — skipping latest.json mirror."
+            exit 0
+          fi
+
+          GH_PAGES_DIR=$(mktemp -d)
+          git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$GH_PAGES_DIR"
+          cp latest.json "$GH_PAGES_DIR/latest.json"
+
+          cd "$GH_PAGES_DIR"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json
+          if git diff --cached --quiet -- latest.json; then
+            echo 'latest.json unchanged — nothing to push.'
+            exit 0
+          fi
+          git commit -m "release: ${TAG} latest.json mirror"
+          git push origin gh-pages
+```
+
+- [ ] **Step 2: Commit + push + retag**
+
+```bash
+git add .github/workflows/release.yml
+git commit -m "$(cat <<'EOF'
+ci(v3): add mirror-updater job that merges per-platform latest.json files
+
+Both build matrix jobs upload latest.json as workflow artifacts. The new
+mirror-updater job (depends on build) downloads both, jq-merges the
+"platforms" keys into a single object, uploads the merged latest.json to the
+just-published GitHub Release (with --clobber), and mirrors it to the
+gh-pages branch where the auto-updater endpoint serves it. Replaces the
+prior single-platform "Mirror latest.json to gh-pages" step that was inlined
+in the build job.
+EOF
+)"
+git push
+git tag v0.6.0-rc1
+git push origin v0.6.0-rc1
+```
+
+- [ ] **Step 3: Watch all three jobs**
+
+```bash
+gh run watch
+```
+
+Expected: build (macOS) and build (Windows) run in parallel; mirror-updater
+runs after both. Final state: green across the board.
+
+If mirror-updater fails:
+- jq merge syntax issue → fix and re-iterate.
+- Upload to Release fails because tag was deleted between attempts → retag.
+- gh-pages clone fails → check the gh-pages branch exists.
+
+- [ ] **Step 4: Inspect the gh-pages `latest.json`**
+
+```bash
+git fetch origin gh-pages
+git show origin/gh-pages:latest.json | jq .
+```
+
+Expected output:
+
+```json
+{
+  "version": "0.6.0-rc1",
+  "notes": "...",
+  "pub_date": "2026-...",
+  "platforms": {
+    "darwin-aarch64":   { "url": "...dmg",            "signature": "..." },
+    "darwin-x86_64":    { "url": "...dmg",            "signature": "..." },
+    "windows-x86_64":   { "url": "...nsis-zip-or-exe","signature": "..." }
+  }
+}
+```
+
+If `windows-x86_64` is missing, the merge or the Windows job's `latest.json`
+production didn't work — investigate.
+
+- [ ] **Step 5: Delete the rc1 tag/release**
+
+```bash
+gh release delete v0.6.0-rc1 --yes --cleanup-tag
+```
+
+The gh-pages commit will remain (mirror commit history is preserved). That's
+fine — when v0.6.0 ships for real, the mirror commit will overwrite `latest.json`.
+
+---
+
+## Phase 5: Version bump + docs
+
+### Task 14: Bump version 0.5.0 → 0.6.0 across all files
+
+**Files:**
+- Modify: `package.json:3` — `"version": "0.5.0"` → `"0.6.0"`
+- Modify: `src-tauri/Cargo.toml:3` — `version = "0.5.0"` → `"0.6.0"`
+- Modify: `src-tauri/tauri.conf.json:3` — `"version": "0.5.0"` → `"0.6.0"`
+- Modify: `popover/index.html` — `po-meta` and `about-version` strings
+- Modify: `popover/popover.js` — `serverVersion = '0.5.0'` → `'0.6.0'`
+- Modify: `public/index.html` — any embedded version strings
+
+- [ ] **Step 1: Run a search for `0.5.0` references**
+
+```bash
+grep -rn '0\.5\.0' --include='*.json' --include='*.toml' --include='*.html' --include='*.js' --include='*.rs' --include='*.md' . | grep -v node_modules | grep -v target | grep -v dist
+```
+
+Expected: lists all current 0.5.0 references. Tag history references
+(in `docs/superpowers/`, README) and changelog entries should stay; only
+LIVE version strings get bumped.
+
+- [ ] **Step 2: Bump each live version**
+
+Edit `package.json:3`:
+
+```json
+  "version": "0.6.0",
+```
+
+Edit `src-tauri/Cargo.toml:3`:
+
+```toml
+version = "0.6.0"
+```
+
+Edit `src-tauri/tauri.conf.json:3`:
+
+```json
+  "version": "0.6.0",
+```
+
+Edit `popover/index.html` — locate the version meta tag (e.g.
+`<meta name="po-meta" content="v0.5.0" />`) and `about-version` element:
+update both to `0.6.0`.
+
+Edit `popover/popover.js` — locate `const serverVersion = '0.5.0'` (or similar):
+
+```js
+const serverVersion = '0.6.0';
+```
+
+Edit `public/index.html` if it has any 0.5.0 reference (the about-version field
+is set dynamically from `health.version`, but check for any hardcoded fallback).
+
+- [ ] **Step 3: Run the test suites**
+
+```bash
+npm test && cd src-tauri && cargo test --locked
+```
+
+Expected: all green. (Some tests may assert on version strings — they should
+be reading from `package.json`, but verify no hardcoded check fails.)
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json popover/index.html popover/popover.js public/index.html
+git commit -m "chore(v3): bump version 0.5.0 -> 0.6.0"
+```
+
+---
+
+### Task 15: README — Windows install section
+
+**Files:**
+- Modify: `README.md`
+
+- [ ] **Step 1: Read the current README to locate the install section**
+
+```bash
+grep -n '## ' README.md
+```
+
+Locate the install / "Get started" / "macOS app" section. We add a Windows
+sibling section immediately after.
+
+- [ ] **Step 2: Insert a Windows install section**
+
+Add (or insert at the matching place in your README's structure) a section
+roughly like:
+
+```markdown
+### Install on Windows (v0.6.0+)
+
+Clauge ships an unsigned NSIS installer for Windows x64. Download
+`Clauge_<version>_x64-setup.exe` from the latest
+[Release](https://github.com/clauding-lab/clauge/releases) and run it.
+
+(The Release also includes a `_x64-setup.nsis.zip` and a `.sig` file —
+those are the auto-updater payload + signature, not what you want for a
+manual install. Grab the plain `.exe`.)
+
+**Two SmartScreen warnings to expect** (because we don't yet have an
+Authenticode certificate — that's deferred until download volume justifies
+the cost):
+
+1. **On download** (Edge/Chrome): "this file was blocked because it could
+   harm your device." Click "Keep" or "More info → Keep."
+2. **On launch**: "Windows protected your PC. Microsoft Defender SmartScreen
+   prevented an unrecognized app from starting." Click "More info" →
+   "Run anyway."
+
+Both warnings fade as the binary accumulates download reputation. If you
+want to verify the installer hasn't been tampered with before running, the
+SHA-256 hash is published alongside each Release on GitHub.
+
+After install, Clauge appears in your Start Menu. Click it to open the
+dashboard. Closing the dashboard quits the app — to keep usage tracking
+running in the background, leave the window open. (Native menu-bar / tray
+% display is a macOS-only feature for now.)
+
+#### What's NOT in v0.6.0 on Windows
+
+- No system-tray icon (no glanceable % chiclet)
+- No popover surface — just the dashboard window
+- No code signing (SmartScreen warnings — see above)
+- No ARM Windows build (`aarch64-pc-windows-msvc`) — file an issue if you need it
+```
+
+(Adjust to match your README's actual heading style and section ordering.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add README.md
+git commit -m "docs(v3): README — Windows install section + SmartScreen path"
+```
+
+---
+
+### Task 16: RELEASE_CHECKLIST — Windows manual smoke
+
+**Files:**
+- Modify: `docs/RELEASE_CHECKLIST.md` (or wherever your manual smoke lives)
+
+- [ ] **Step 1: Locate the checklist**
+
+```bash
+ls docs/RELEASE_CHECKLIST.md docs/release_checklist.md docs/Release-Checklist.md 2>/dev/null
+```
+
+If it doesn't exist (the spec mentioned it but earlier session may have used
+a different name), check:
+
+```bash
+grep -rn 'manual smoke\|RELEASE_CHECKLIST' docs/
+```
+
+If still absent, create a new file.
+
+- [ ] **Step 2: Add the Windows section**
+
+Append to `docs/RELEASE_CHECKLIST.md` (or wherever):
+
+```markdown
+## Windows manual smoke (v0.6.0+)
+
+Run this on a Windows 10 or Windows 11 x64 machine after the v0.6.0+ Release
+publishes. Skip if no Windows machine is available — the macOS smoke is
+load-bearing; Windows is best-effort until we have CI-side smoke (deferred).
+
+- [ ] Download `Clauge_<version>_x64-setup.exe` from the GitHub Release
+- [ ] Run the .exe — expect SmartScreen "unrecognized publisher" warning;
+      click "More info" → "Run anyway"
+- [ ] NSIS installer runs → confirms install location is `%APPDATA%\Local\Programs\Clauge`
+- [ ] Install completes WITHOUT a UAC admin prompt (perUser mode)
+- [ ] Start Menu has a Clauge entry; pin to taskbar
+- [ ] Click → dashboard window opens at 1100×800 (or smaller on small screens)
+- [ ] Rings render (give the sidecar 2-3 seconds to bind to a port and respond)
+- [ ] Settings → General → Launch at login toggle persists across reboot
+- [ ] Settings → General → Check for Updates returns "up to date" or shows
+      a known-newer test build
+- [ ] Close the dashboard window → app quits cleanly (Task Manager shows no
+      lingering `clauge*.exe` or `Clauge.exe` processes)
+- [ ] Re-launch from Start Menu → dashboard reopens; sidecar respawns
+
+If a v0.6.0 → v0.6.1 update flow is being verified end-to-end:
+- [ ] Install v0.6.0
+- [ ] Tag v0.6.1 with a one-line change
+- [ ] Wait for CI to publish; confirm `latest.json` on gh-pages has both
+      darwin-* and windows-x86_64 entries with v0.6.1
+- [ ] Open the v0.6.0 install → trigger Settings → Check for Updates
+- [ ] Update downloads + restart → confirm v0.6.1 about-version
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/RELEASE_CHECKLIST.md
+git commit -m "docs(v3): RELEASE_CHECKLIST — Windows manual smoke for v0.6.0"
+```
+
+---
+
+## Phase 6: Ship v0.6.0
+
+### Task 17: macOS local smoke pre-tag
+
+**Files:** none modified.
+
+- [ ] **Step 1: Run all unit tests**
+
+```bash
+npm test && cd src-tauri && cargo test --locked
+```
+
+Expected: 109 + 24 all green.
+
+- [ ] **Step 2: Local Tauri dev smoke**
+
+```bash
+cd src-tauri && cargo tauri dev
+```
+
+Verify the v0.5.0-equivalent macOS UX: menu-bar icon, popover persistence,
+dashboard, settings, autostart toggle.
+
+- [ ] **Step 3: Local Tauri release-build smoke**
+
+```bash
+cd src-tauri && cargo tauri build --target universal-apple-darwin
+```
+
+Verify the .app launches and behaves correctly:
+
+```bash
+open src-tauri/target/universal-apple-darwin/release/bundle/macos/Clauge.app
+```
+
+- [ ] **Step 4: Verify the about-version reads "0.6.0"**
+
+In the running app: Settings → General → About → version line should read
+`0.6.0`.
+
+- [ ] **Step 5: No commit needed** — verification gate.
+
+---
+
+### Task 18: Tag v0.6.0 + verify Release artifacts on both platforms
+
+⚠ **EXPLICIT USER APPROVAL GATE** — per `feedback_pr_merge_authorization.md`,
+tag pushes are shared-state writes. Before pushing, confirm with the user:
+
+> "Ready to ship v0.6.0. Push the tag?"
+
+- [ ] **Step 1: Confirm with user, then create + push the tag**
+
+```bash
+git tag v0.6.0
+git push origin v0.6.0
+```
+
+This triggers the release workflow on both matrix entries.
+
+- [ ] **Step 2: Watch CI**
+
+```bash
+gh run watch
+```
+
+Expected: ~15-20 min total. Both matrix jobs green; mirror-updater green.
+
+- [ ] **Step 3: Verify GitHub Release artifacts**
+
+```bash
+gh release view v0.6.0
+```
+
+Expected assets:
+- `Clauge_0.6.0_aarch64.dmg`
+- `Clauge_0.6.0_x86_64.dmg` (or universal)
+- `Clauge.app.tar.gz` + `.sig`
+- `Clauge_0.6.0_x64-setup.nsis.zip` (Windows NSIS installer; see Tauri docs
+  for exact filename — can also be `.exe.sig`)
+- `latest.json` (merged across platforms)
+
+- [ ] **Step 4: Verify gh-pages `latest.json`**
+
+```bash
+curl -s https://clauding-lab.github.io/clauge/latest.json | jq .
+```
+
+Expected: contains `darwin-aarch64`, `darwin-x86_64`, and `windows-x86_64`
+entries; version is `0.6.0`.
+
+- [ ] **Step 5: Verify the auto-update path (macOS)**
+
+If you have a v0.5.0 install at `/Applications/Clauge.app`:
+
+1. Right-click menu-bar icon → Check for Updates
+2. Confirm it offers v0.6.0
+3. Apply → restart → confirm new version in About panel
+
+- [ ] **Step 6: Verify Windows install (if Windows machine available)**
+
+Walk through the RELEASE_CHECKLIST Windows smoke section. Even if no Windows
+machine is available, proceed — Windows artifact existence is verified in
+Step 3.
+
+- [ ] **Step 7: No commit** — release shipped.
+
+---
+
+## Self-Review
+
+I checked the plan against the spec. Spec coverage:
+
+- ✅ Section "Adds": NSIS installer (Task 10), WebView2 (Task 10), icon.ico (Task 9), build-sidecar.mjs (Task 5), Windows CI job (Task 12), mirror-updater (Task 13), README (Task 15)
+- ✅ Section "Modifies": Cargo.toml (Task 3), lib.rs (Task 1), windows.rs (Task 2), tauri.conf.json (Tasks 6 + 10), bundle.icon (Task 10)
+- ✅ Section "Removes": build-sidecar.sh (Task 7)
+- ✅ Section "Decisions": all 9 decisions are reflected in the plan (no Windows tray, no Authenticode, NSIS not MSI, x86_64 only, perUser, etc.)
+- ✅ Section "Definition of done": each checkbox is verifiable by Tasks 17-18
+
+Placeholder scan: no "TBD," "TODO," "implement later," or vague "add error handling"
+content. Code blocks are concrete; commands are exact.
+
+Type/identifier consistency: function names match (`show_dashboard`,
+`native_popover::init`, `crate::tray::show_dashboard`); file paths consistent
+across tasks; matrix `artifact-name` value (`latest-macos.json` /
+`latest-windows.json`) is the exact name used in the mirror-updater download
+steps. ✅
+
+Task ordering: each phase produces a working state. Phase 1 leaves macOS
+green and Windows compilable. Phase 2 produces working SEA binaries on both
+platforms. Phase 3 adds Windows bundle config. Phase 4 takes us through
+iterative CI debugging via rc-tag. Phase 5 bumps version + docs. Phase 6 ships.
+
+One known weakness: **Phase 4 has uncertain task count** — the Windows CI
+debugging loop in Task 12 Step 4 may run 3-10 iterations. Each iteration is
+~15-25 min of CI billing. Plan accordingly when scheduling.
