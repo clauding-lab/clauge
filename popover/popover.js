@@ -374,13 +374,12 @@ function openDashboard() {
 
 // ─── init ─────────────────────────────────────────────────
 async function init() {
-  try {
-    serverPort = await invoke('get_server_port');
-  } catch (err) {
-    // Sidecar not yet bound — refresh's /api/health will set healthOk=false
-    // and we'll keep retrying on the 10s interval.
-    console.warn('[Clauge popover] get_server_port failed; using fallback:', err);
-  }
+  // Popover loads same-origin from the SEA sidecar
+  // (http://127.0.0.1:{port}/popover/index.html), so the live port is
+  // already in window.location.
+  const locPort = parseInt(window.location.port, 10);
+  if (Number.isFinite(locPort) && locPort > 0) serverPort = locPort;
+
 
   // Wire footer dashboard link.
   document.getElementById('footer-dashboard').addEventListener('click', (e) => {
