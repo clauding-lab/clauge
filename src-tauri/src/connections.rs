@@ -47,12 +47,20 @@ impl ConnectionStatus {
 
 /// Pure state-machine compositor. Inputs are detection signals; output is
 /// the snapshot the dashboard consumes.
+///
+/// `claude_code_version` sentinels:
+/// - `Some("authenticated")` → ConnectionState::Authenticated (token valid)
+/// - `Some("expired")`       → ConnectionState::Expired (token past expires_at)
+/// - `Some(other)`           → ConnectionState::Authenticated (forward-compat
+///                              for future version-aware UI)
+/// - `None`                  → ConnectionState::NotInstalled
 pub fn compose_status(
     claude_code_version: Option<&str>,
     claude_ai_signed_in: bool,
     extension_last_seen: Option<String>,
 ) -> ConnectionStatus {
     let claude_code = match claude_code_version {
+        Some("expired") => ConnectionState::Expired,
         Some(_) => ConnectionState::Authenticated,
         None => ConnectionState::NotInstalled,
     };
@@ -98,7 +106,7 @@ pub fn detect(cache: &crate::keychain_cache::KeychainCache) -> ConnectionStatus 
     let cc_version = match cache.get_or_load() {
         Ok(creds) => {
             if crate::keychain::is_expired(&creds) {
-                None // collapsed to NotInstalled here; Expired surfacing comes in Task 7
+                Some("expired") // → compositor returns ConnectionState::Expired
             } else {
                 // Version isn't in the credential blob; we surface a placeholder string.
                 Some("authenticated")
@@ -116,4 +124,20 @@ pub fn detect(cache: &crate::keychain_cache::KeychainCache) -> ConnectionStatus 
 pub fn detect() -> ConnectionStatus {
     let claude_ai = crate::claude_ai_session::read_stored_cookie().is_ok();
     compose_status(None, claude_ai, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compose_status_with_expired_marker_yields_expired_state() {
+        // Caller signals "credentials exist but expired" by passing
+        // a sentinel string. The pure compositor recognizes it and
+        // emits ConnectionState::Expired (not Authenticated, not NotInstalled).
+        let s = compose_status(Some("expired"), false, None);
+        assert_eq!(s.claude_code, ConnectionState::Expired);
+        // claude_code_version field still echoes the sentinel for now (logging).
+        assert_eq!(s.claude_code_version.as_deref(), Some("expired"));
+    }
 }
