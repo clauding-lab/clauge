@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.1 (2026-05-14) — UI polish + updater detection fix
+
+**Two small follow-ups from the v0.7.0 release smoke. No new features;
+both fixes ride a regular auto-updater push.**
+
+### Fixed
+- **Settings → General "Check for Updates" now correctly detects available
+  releases.** The v0.7.0 ship had a JS-side bug where `update.available`
+  was read from the `plugin:updater|check` response, but tauri-plugin-
+  updater 2.10 returns the `Update` object directly (or `null`) with no
+  `available` field. The dashboard reported "Up to date" even when a
+  newer release was published. v0.7.1 switches to a truthy-on-Update
+  check that matches the plugin's actual response shape.
+
+### Changed
+- **Removed the session + project count badges from the main tab strip.**
+  The "Sessions 1024" / "Projects 8" pill badges added visual noise
+  without new information — both panels display their own totals
+  prominently. The badge spans + their JS writers are gone; the
+  `sessions-count` / `projects-count` elements inside the panels are
+  unaffected.
+
+### Note on release numbering
+- The v0.7.1 slot was previously reserved for the Mac App Store
+  (MAS-flavor) side workstream per the 2026-05-11 release-sequencing
+  decision. That workstream renumbers to v0.7.2; its plan document
+  (`docs/superpowers/plans/2026-05-11-v0.7.1-mas-plan.md`) and the
+  project memory note will be updated as a follow-up commit.
+
 ## 0.7.0 (2026-05-14) — Hybrid macOS auth (DMG)
 
 **Adds two new authentication paths in addition to the browser extension —
