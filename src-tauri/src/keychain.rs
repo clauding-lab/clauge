@@ -53,28 +53,52 @@ pub enum KeychainError {
 
 #[cfg(target_os = "macos")]
 pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
-    use security_framework::passwords::get_generic_password;
+    use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
 
-    // service = "Claude Code-credentials". Account is empty/wildcard — Claude
-    // Code CLI uses one entry per user; we read the first match.
-    match get_generic_password("Claude Code-credentials", "") {
-        Ok(blob) => {
-            let creds: ClaudeCodeCreds = serde_json::from_slice(&blob)?;
-            Ok(creds)
-        }
+    // Claude Code CLI writes its OAuth entry with account = <macOS short username>
+    // (e.g. "adnanrashid"). We don't want to hardcode the account, so we search by
+    // service only and take the first match. This mirrors the behavior of:
+    //   security find-generic-password -s "Claude Code-credentials" -w
+    let search = ItemSearchOptions::new()
+        .class(ItemClass::generic_password())
+        .service("Claude Code-credentials")
+        .load_data(true)
+        .limit(Limit::Max(1))
+        .search();
+
+    let results = match search {
+        Ok(r) => r,
         Err(e) => {
-            // security-framework's error type doesn't have a clean kind enum;
-            // we map by the underlying OSStatus code if accessible.
+            // Map underlying OSStatus codes to our error variants. Same string-
+            // matching pattern as before — security-framework 2.x doesn't expose
+            // a clean kind enum. Code() check is a future refactor (TODO v0.7.1).
             let msg = e.to_string();
             if msg.contains("errSecItemNotFound") || msg.contains("-25300") {
-                Err(KeychainError::NotFound)
+                return Err(KeychainError::NotFound);
             } else if msg.contains("errSecAuthFailed") || msg.contains("errSecUserDenied") {
-                Err(KeychainError::AccessDenied)
+                return Err(KeychainError::AccessDenied);
             } else {
-                Err(KeychainError::Framework(msg))
+                return Err(KeychainError::Framework(msg));
             }
         }
-    }
+    };
+
+    // No matches → NotFound (search returned empty Ok).
+    let first = results.into_iter().next().ok_or(KeychainError::NotFound)?;
+
+    // Extract the password bytes. With load_data(true), expect SearchResult::Data.
+    let blob: Vec<u8> = match first {
+        SearchResult::Data(bytes) => bytes,
+        other => {
+            return Err(KeychainError::Framework(format!(
+                "unexpected SearchResult variant (expected Data): {:?}",
+                other
+            )));
+        }
+    };
+
+    let creds: ClaudeCodeCreds = serde_json::from_slice(&blob)?;
+    Ok(creds)
 }
 
 #[cfg(not(target_os = "macos"))]
