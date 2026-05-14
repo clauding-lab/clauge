@@ -185,7 +185,20 @@ mod tests {
 
     #[test]
     fn errno_unknown_maps_to_framework() {
-        let err = map_osstatus_to_error(-99999, "test");
-        assert!(matches!(err, KeychainError::Framework { code: -99999, .. }), "got {:?}", err);
+        let err = map_osstatus_to_error(-99999, "boom");
+        match err {
+            KeychainError::Framework { code, message } => {
+                assert_eq!(code, -99999);
+                assert_eq!(message, "boom");
+            }
+            other => panic!("expected Framework variant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn errno_minus_25293_maps_to_access_denied() {
+        // errSecAuthFailed = -25293
+        let err = map_osstatus_to_error(-25293, "test");
+        assert!(matches!(err, KeychainError::AccessDenied), "got {:?}", err);
     }
 }
