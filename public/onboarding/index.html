@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Welcome to Clauge</title>
+  <link rel="icon" type="image/svg+xml" href="/clauge-icon-512.svg" />
+  <link rel="stylesheet" href="/onboarding/onboarding.css" />
+</head>
+<body>
+  <header class="wizard-header">
+    <img src="/clauge-icon-512.svg" alt="" class="wizard-icon" />
+    <progress max="4" value="1" id="wizard-progress" aria-label="Setup progress"></progress>
+  </header>
+
+  <main class="wizard-main">
+
+    <!-- Step 1: Welcome -->
+    <section class="wizard-step active" data-step="1">
+      <h1>Welcome to Clauge</h1>
+      <p>Clauge tracks your Claude Code and claude.ai usage from the menu bar.</p>
+      <p>Let's set up access in a few quick steps.</p>
+      <footer class="wizard-nav">
+        <span></span>
+        <button class="wizard-btn primary" data-next>Next →</button>
+      </footer>
+    </section>
+
+    <!-- Step 2: Keychain expectation-setting -->
+    <section class="wizard-step" data-step="2">
+      <h1>macOS Keychain Access</h1>
+      <p>Next, macOS will ask permission to read your Claude Code credentials. When you see this dialog:</p>
+
+      <div class="dialog-mock" role="img" aria-label="Mockup of the macOS Keychain prompt with Always Allow highlighted">
+        <p class="dialog-title">Clauge wants to use your confidential information stored in "Claude Code-credentials" in your keychain.</p>
+        <div class="dialog-buttons">
+          <button class="mock-btn" disabled>Deny</button>
+          <button class="mock-btn" disabled>Allow</button>
+          <button class="mock-btn highlighted" disabled>Always Allow</button>
+        </div>
+        <p class="dialog-arrow">↑ click this one</p>
+      </div>
+
+      <p class="note">
+        <strong>Heads up:</strong> until Clauge ships with Apple Developer signing (planned for v0.8.0), this prompt may reappear on each launch. Always click <strong>"Always Allow"</strong> when you see it.
+      </p>
+
+      <footer class="wizard-nav">
+        <button class="wizard-btn" data-back>← Back</button>
+        <button class="wizard-btn primary" data-next>Next →</button>
+      </footer>
+    </section>
+
+    <!-- Step 3: Other permissions -->
+    <section class="wizard-step" data-step="3">
+      <h1>Other Permissions</h1>
+      <ul class="permission-list">
+        <li>
+          <strong>Notifications</strong>
+          <p>Clauge will notify you when updates are available. Click "Allow" when macOS asks.</p>
+        </li>
+        <li>
+          <strong>Launch at Login</strong>
+          <p>Clauge has been added to your login items so it starts when you log in to your Mac. Toggle off in System Settings → General → Login Items if you'd prefer manual launches.</p>
+        </li>
+        <li>
+          <strong>claude.ai sign-in</strong>
+          <p>Optional. Connect from Settings → Connections if you have a claude.ai account (separate from Claude Code).</p>
+        </li>
+      </ul>
+      <footer class="wizard-nav">
+        <button class="wizard-btn" data-back>← Back</button>
+        <button class="wizard-btn primary" data-next>Next →</button>
+      </footer>
+    </section>
+
+    <!-- Step 4: Ready to connect -->
+    <section class="wizard-step" data-step="4">
+      <h1>Ready to Connect</h1>
+      <p>Clicking <strong>Connect</strong> will trigger the macOS Keychain prompt.</p>
+      <p>Remember: click <strong>"Always Allow"</strong> when you see it.</p>
+      <footer class="wizard-nav">
+        <button class="wizard-btn" data-skip>Skip for now</button>
+        <button class="wizard-btn primary" data-connect>Connect ✓</button>
+      </footer>
+    </section>
+
+  </main>
+
+  <script src="/onboarding/onboarding.js" defer></script>
+</body>
+</html>

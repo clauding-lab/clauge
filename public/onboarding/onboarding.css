@@ -1,0 +1,223 @@
+/* Clauge first-launch wizard styles (v0.7.2).
+ * Scoped: this file is loaded ONLY by /onboarding/index.html.
+ * Does not import the dashboard's styles.css to avoid font/spacing bleed.
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin: 0;
+  background: #fafafa;
+  color: #1a1a1a;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.wizard-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 32px 0;
+}
+
+.wizard-icon {
+  width: 40px;
+  height: 40px;
+}
+
+#wizard-progress {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  border-radius: 2px;
+  background: #e5e5e5;
+}
+
+#wizard-progress::-webkit-progress-bar {
+  background: #e5e5e5;
+  border-radius: 2px;
+}
+
+#wizard-progress::-webkit-progress-value {
+  background: #0070f3;
+  border-radius: 2px;
+  transition: width 200ms ease;
+}
+
+.wizard-main {
+  flex: 1;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.wizard-step {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+}
+
+.wizard-step.active {
+  display: flex;
+}
+
+.wizard-step h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  color: #111;
+}
+
+.wizard-step p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #444;
+  margin: 0 0 12px;
+}
+
+.note {
+  background: #fff8e1;
+  border: 1px solid #ffd54f;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px !important;
+  color: #5a3e00 !important;
+  margin-top: 20px !important;
+}
+
+.dialog-mock {
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.dialog-title {
+  font-size: 13px !important;
+  color: #1a1a1a !important;
+  margin: 0 0 16px !important;
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.mock-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid #c0c0c0;
+  background: #fff;
+  font-size: 13px;
+  cursor: default;
+  color: #1a1a1a;
+}
+
+.mock-btn.highlighted {
+  background: #0070f3;
+  color: #fff;
+  border-color: #0070f3;
+  font-weight: 500;
+  position: relative;
+}
+
+.dialog-arrow {
+  text-align: right;
+  font-size: 12px !important;
+  color: #0070f3 !important;
+  font-weight: 600;
+  margin-top: 4px !important;
+  padding-right: 18px;
+}
+
+.permission-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+
+.permission-list li {
+  padding: 14px 0;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.permission-list li:last-child {
+  border-bottom: none;
+}
+
+.permission-list strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #111;
+}
+
+.permission-list p {
+  margin: 0 !important;
+  font-size: 13px !important;
+  color: #555 !important;
+}
+
+.wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 24px;
+  margin-top: auto;
+  border-top: 1px solid #eaeaea;
+}
+
+.wizard-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid #d0d0d0;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #333;
+  transition: background 120ms ease;
+}
+
+.wizard-btn:hover {
+  background: #f5f5f5;
+}
+
+.wizard-btn.primary {
+  background: #0070f3;
+  color: #fff;
+  border-color: #0070f3;
+}
+
+.wizard-btn.primary:hover {
+  background: #0061d5;
+}
+
+/* Dark mode (System default if macOS is dark). */
+@media (prefers-color-scheme: dark) {
+  body { background: #1a1a1a; color: #f0f0f0; }
+  .wizard-step h1 { color: #fff; }
+  .wizard-step p { color: #ccc; }
+  .dialog-mock { background: #2a2a2a; border-color: #444; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+  .dialog-title { color: #f0f0f0 !important; }
+  .mock-btn { background: #3a3a3a; color: #f0f0f0; border-color: #555; }
+  .note { background: #3a2e00; border-color: #8a6800; color: #ffd54f !important; }
+  .wizard-btn { background: #2a2a2a; color: #f0f0f0; border-color: #555; }
+  .wizard-btn:hover { background: #3a3a3a; }
+  .permission-list li { border-bottom-color: #2e2e2e; }
+  .permission-list strong { color: #fff; }
+  .permission-list p { color: #bbb !important; }
+  .wizard-nav { border-top-color: #2e2e2e; }
+  #wizard-progress::-webkit-progress-bar { background: #2e2e2e; }
+}
