@@ -38,7 +38,7 @@ async fn test_fetch_oauth_usage_returns_parsed_response() {
 #[serial]
 async fn test_fetch_oauth_usage_returns_token_expired_on_401() {
     let mut server = mockito::Server::new_async().await;
-    server.mock("GET", "/api/oauth/usage")
+    let mock = server.mock("GET", "/api/oauth/usage")
         .with_status(401)
         .with_body(r#"{"error":"invalid_token"}"#)
         .create_async().await;
@@ -48,5 +48,6 @@ async fn test_fetch_oauth_usage_returns_token_expired_on_401() {
     let result = fetch_oauth_usage("expired-token").await;
     assert!(matches!(result, Err(clauge_lib::anthropic_oauth::OAuthError::TokenExpired)));
 
+    mock.assert_async().await;
     std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
 }

@@ -79,8 +79,17 @@ pub async fn fetch_oauth_usage(access_token: &str) -> Result<PlanUsage, OAuthErr
 }
 
 /// Fetch the prepaid balance, if Anthropic exposes such an endpoint via OAuth.
+///
 /// The exact path is unverified; see Phase 2 Task 6 for empirical confirmation.
-pub async fn fetch_prepaid_balance(access_token: &str) -> Result<serde_json::Value, OAuthError> {
+///
+/// Returns:
+/// - `Ok(None)` when the endpoint responds 404 (not exposed for this account/tier).
+/// - `Ok(Some(value))` on 200 with the parsed JSON body (which itself may be `Value::Null`).
+/// - `Err(OAuthError::TokenExpired)` on 401.
+/// - `Err(OAuthError::UnexpectedStatus(_, _))` for any other non-success status.
+pub async fn fetch_prepaid_balance(
+    access_token: &str,
+) -> Result<Option<serde_json::Value>, OAuthError> {
     let url = format!("{}/api/oauth/balance", base_url());
     let client = reqwest::Client::new();
     let res = client
@@ -93,8 +102,8 @@ pub async fn fetch_prepaid_balance(access_token: &str) -> Result<serde_json::Val
         return Err(OAuthError::TokenExpired);
     }
     if res.status().as_u16() == 404 {
-        // Endpoint may not exist; surface as Default value rather than error.
-        return Ok(serde_json::Value::Null);
+        // Endpoint may not be exposed for this account/tier; distinguish from a literal null body.
+        return Ok(None);
     }
     if !res.status().is_success() {
         return Err(OAuthError::UnexpectedStatus(
@@ -102,5 +111,5 @@ pub async fn fetch_prepaid_balance(access_token: &str) -> Result<serde_json::Val
             res.text().await.unwrap_or_default(),
         ));
     }
-    Ok(res.json().await?)
+    Ok(Some(res.json().await?))
 }
