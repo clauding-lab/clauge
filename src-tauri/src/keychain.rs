@@ -79,10 +79,28 @@ pub enum KeychainError {
     AccessDenied,
     #[error("failed to parse keychain blob as JSON: {0}")]
     Parse(#[from] serde_json::Error),
-    #[error("security-framework error: {0}")]
-    Framework(String),
+    #[error("security-framework error (OSStatus {code}): {message}")]
+    Framework { code: i32, message: String },
     #[error("not supported on this platform")]
     UnsupportedPlatform,
+}
+
+/// Map a raw macOS Security framework OSStatus to a structured KeychainError.
+/// Known codes:
+/// - errSecItemNotFound (-25300) → NotFound
+/// - errSecUserCanceled (-128)   → AccessDenied
+/// - errSecAuthFailed (-25293)   → AccessDenied (user denied or auth flow failed)
+/// Anything else falls through to Framework { code, message }.
+#[cfg(target_os = "macos")]
+fn map_osstatus_to_error(code: i32, msg: &str) -> KeychainError {
+    match code {
+        -25300 => KeychainError::NotFound,
+        -128 | -25293 => KeychainError::AccessDenied,
+        _ => KeychainError::Framework {
+            code,
+            message: msg.to_string(),
+        },
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -103,17 +121,10 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
     let results = match search {
         Ok(r) => r,
         Err(e) => {
-            // Map underlying OSStatus codes to our error variants. Same string-
-            // matching pattern as before — security-framework 2.x doesn't expose
-            // a clean kind enum. Code() check is a future refactor (TODO v0.8.0).
-            let msg = e.to_string();
-            if msg.contains("errSecItemNotFound") || msg.contains("-25300") {
-                return Err(KeychainError::NotFound);
-            } else if msg.contains("errSecAuthFailed") || msg.contains("errSecUserDenied") {
-                return Err(KeychainError::AccessDenied);
-            } else {
-                return Err(KeychainError::Framework(msg));
-            }
+            // security-framework 2.x exposes the raw OSStatus via Error::code().
+            // Use that instead of fragile substring matching on the formatted message.
+            let code = e.code();
+            return Err(map_osstatus_to_error(code, &e.to_string()));
         }
     };
 
@@ -124,10 +135,13 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
     let blob: Vec<u8> = match first {
         SearchResult::Data(bytes) => bytes,
         other => {
-            return Err(KeychainError::Framework(format!(
-                "unexpected SearchResult variant (expected Data): {:?}",
-                other
-            )));
+            // Not an OSStatus error — this is an internal invariant violation
+            // (we asked for Data via load_data(true) but got something else).
+            // Use code=0 (errSecSuccess) as a sentinel since there's no real status.
+            return Err(KeychainError::Framework {
+                code: 0,
+                message: format!("unexpected SearchResult variant (expected Data): {:?}", other),
+            });
         }
     };
 
@@ -148,4 +162,30 @@ pub fn is_expired(creds: &ClaudeCodeCreds) -> bool {
     };
     let now_ms = chrono::Utc::now().timestamp_millis();
     expires_at_ms < now_ms
+}
+
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn errno_minus_25300_maps_to_not_found() {
+        // errSecItemNotFound = -25300
+        let err = map_osstatus_to_error(-25300, "test");
+        assert!(matches!(err, KeychainError::NotFound), "got {:?}", err);
+    }
+
+    #[test]
+    fn errno_minus_128_maps_to_access_denied() {
+        // errSecUserCanceled = -128
+        let err = map_osstatus_to_error(-128, "test");
+        assert!(matches!(err, KeychainError::AccessDenied), "got {:?}", err);
+    }
+
+    #[test]
+    fn errno_unknown_maps_to_framework() {
+        let err = map_osstatus_to_error(-99999, "test");
+        assert!(matches!(err, KeychainError::Framework { code: -99999, .. }), "got {:?}", err);
+    }
 }
