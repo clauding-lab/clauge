@@ -93,6 +93,30 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshConnections();
     });
   }
+  // v0.7.2: manual refresh button on the Claude Code row.
+  // Lets the user re-trigger the keychain read after `claude /login`
+  // rotates the token, or after dismissing the macOS prompt by mistake.
+  const refreshBtn = document.getElementById('refresh-claude-code');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      if (!window.__TAURI__?.core?.invoke) return;
+      refreshBtn.disabled = true;
+      refreshBtn.classList.add('spinning');
+      try {
+        await window.__TAURI__.core.invoke('refresh_credentials');
+        // The Rust handler emits `connections-updated` on success; the existing
+        // event listener (around line 100) will re-fetch and re-render.
+      } catch (err) {
+        console.warn('[connections] refresh_credentials failed', err);
+        if (typeof window.showToast === 'function') {
+          window.showToast('Refresh failed: ' + err, 'error');
+        }
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('spinning');
+      }
+    });
+  }
   refreshConnections();
 });
 

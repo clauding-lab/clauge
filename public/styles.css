@@ -1194,3 +1194,29 @@ body.loading { cursor: progress; }
 .conn-cta:hover { filter: brightness(1.1); }
 .conn-cta:focus-visible { outline: 2px solid var(--brand-2, #4a9eff); outline-offset: 2px; }
 .conn-cta[hidden] { display: none; }
+
+/* v0.7.2: Refresh button on Claude Code connection row.
+   Manually re-triggers the keychain read after `claude /login`. */
+.conn-refresh {
+  background: transparent;
+  border: 1px solid var(--rim-side, rgba(255, 240, 230, 0.04));
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  color: var(--text-2, rgba(255, 255, 255, 0.7));
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease;
+}
+.conn-refresh:hover { background: var(--glass-2, rgba(255, 255, 255, 0.06)); }
+.conn-refresh:focus-visible { outline: 2px solid var(--brand-2, #4a9eff); outline-offset: 2px; }
+.conn-refresh:disabled { cursor: wait; opacity: 0.6; }
+.conn-refresh.spinning { animation: conn-spin 1s linear infinite; }
+
+@keyframes conn-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
