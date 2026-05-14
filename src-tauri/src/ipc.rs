@@ -415,21 +415,45 @@ pub async fn get_connection_status(
     let mut status = crate::connections::detect();
 
     // Fetch /api/health from the local server for the extension heartbeat.
+    // 2-second timeout: this is a 127.0.0.1 call and the dashboard polls this
+    // IPC regularly — a hung Hono response must not block refreshes.
     let port = app
         .try_state::<AppState>()
         .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
         .unwrap_or(3456);
     let url = format!("http://127.0.0.1:{}/api/health", port);
-    if let Ok(res) = reqwest::Client::new().get(&url).send().await {
-        if let Ok(json) = res.json::<serde_json::Value>().await {
-            if let Some(ts) = json.get("extensionLastSeenAt").and_then(|v| v.as_str()) {
-                // Re-compose with the heartbeat; preserves other fields.
-                status = crate::connections::compose_status(
-                    status.claude_code_version.as_deref(),
-                    matches!(status.claude_ai, crate::connections::ConnectionState::SignedIn),
-                    Some(ts.to_string()),
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    match client.get(&url).send().await {
+        Ok(res) => match res.json::<serde_json::Value>().await {
+            Ok(json) => {
+                if let Some(ts) = json.get("extensionLastSeenAt").and_then(|v| v.as_str()) {
+                    // Re-compose with the heartbeat; preserves other fields.
+                    status = crate::connections::compose_status(
+                        status.claude_code_version.as_deref(),
+                        matches!(status.claude_ai, crate::connections::ConnectionState::SignedIn),
+                        Some(ts.to_string()),
+                    );
+                } else {
+                    log::debug!(
+                        "get_connection_status: /api/health response missing extensionLastSeenAt key"
+                    );
+                }
+            }
+            Err(err) => {
+                log::debug!(
+                    "get_connection_status: /api/health body did not parse as JSON: {:?}",
+                    err
                 );
             }
+        },
+        Err(err) => {
+            log::warn!(
+                "get_connection_status: /api/health request failed: {:?}",
+                err
+            );
         }
     }
 
