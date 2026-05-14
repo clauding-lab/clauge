@@ -695,9 +695,15 @@ async function initSettingsGeneralControls() {
     updatesBtn.disabled = true;
     if (updatesStatus) updatesStatus.textContent = 'Checking…';
     try {
+      // tauri-plugin-updater 2.10 returns the Update object directly when an
+      // update exists (or null when up-to-date). It does NOT expose an
+      // `.available` boolean — truthy-check on the Update itself is the
+      // right shape. The buggy `update.available` check shipped in v0.7.0
+      // made the dashboard report "Up to date" even when 0.5.0 → 0.7.0 was
+      // detected; this lands in the next release.
       const update = await invoke('plugin:updater|check');
       if (updatesStatus) {
-        updatesStatus.textContent = update && update.available
+        updatesStatus.textContent = update
           ? `v${update.version} available — restart app to apply`
           : 'Up to date';
       }
