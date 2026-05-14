@@ -1145,3 +1145,52 @@ body.loading { cursor: progress; }
   .row-2 { grid-template-columns: 1fr; }
   .row-3 { grid-template-columns: 1fr 1fr; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   v0.7.0: Connections panel rows.
+   The Settings → Connections panel composes Claude Code CLI,
+   claude.ai web, and the browser extension into three rows.
+   data-state on each .connection-row drives the dot color via
+   attribute selectors below. CTA visibility is JS-controlled
+   (public/connections.js) — the [hidden] selector takes care
+   of styling. :focus-visible keeps keyboard focus discoverable.
+   ═══════════════════════════════════════════════════════════ */
+.connection-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin: 8px 0;
+  border-radius: 8px;
+  background: var(--bg-subtle, rgba(255,255,255,0.03));
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+}
+.connection-row .conn-dot { font-size: 16px; line-height: 1; }
+.connection-row[data-state="authenticated"] .conn-dot,
+.connection-row[data-state="signed_in"] .conn-dot,
+.connection-row[data-state="active"] .conn-dot,
+.connection-row[data-state="granted"] .conn-dot { color: #22c55e; }
+.connection-row[data-state="expired"] .conn-dot { color: #f59e0b; }
+.connection-row[data-state="not_installed"] .conn-dot,
+.connection-row[data-state="not_connected"] .conn-dot,
+.connection-row[data-state="not_detected"] .conn-dot,
+.connection-row[data-state="not_granted"] .conn-dot { color: #ef4444; }
+
+.conn-body { flex: 1 1 auto; }
+.conn-title { font-weight: 500; font-size: 13px; }
+.conn-status { color: var(--fg-secondary, rgba(255,255,255,0.6)); font-size: 12px; margin-top: 2px; }
+
+.conn-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+.conn-cta {
+  background: var(--brand-2, #4a9eff);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.conn-cta:hover { filter: brightness(1.1); }
+.conn-cta:focus-visible { outline: 2px solid var(--brand-2, #4a9eff); outline-offset: 2px; }
+.conn-cta[hidden] { display: none; }

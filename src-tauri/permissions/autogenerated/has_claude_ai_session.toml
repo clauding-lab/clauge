@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-has-claude-ai-session"
+description = "Enables the has_claude_ai_session command without any pre-configured scope."
+commands.allow = ["has_claude_ai_session"]
+
+[[permission]]
+identifier = "deny-has-claude-ai-session"
+description = "Denies the has_claude_ai_session command without any pre-configured scope."
+commands.deny = ["has_claude_ai_session"]

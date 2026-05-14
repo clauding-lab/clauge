@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-signout-claude-ai"
+description = "Enables the signout_claude_ai command without any pre-configured scope."
+commands.allow = ["signout_claude_ai"]
+
+[[permission]]
+identifier = "deny-signout-claude-ai"
+description = "Denies the signout_claude_ai command without any pre-configured scope."
+commands.deny = ["signout_claude_ai"]

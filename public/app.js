@@ -633,31 +633,22 @@ function renderSettings() {
       tag.style.color = 'var(--ok)';
     }
   }
-  const syncTag = document.getElementById('set-sync-status');
-  const lastSync = document.getElementById('set-last-sync');
-  if (usage?.ingested) {
-    const stale = Date.now() - Date.parse(usage.ingestedAt) > 10 * 60_000;
-    syncTag.textContent = stale ? '● Stale' : '● Active';
-    syncTag.style.background = stale ? 'var(--warn-tint)' : 'var(--ok-tint)';
-    syncTag.style.color = stale ? 'var(--warn)' : 'var(--ok)';
-    lastSync.textContent = new Date(usage.ingestedAt).toLocaleString();
-  } else {
-    syncTag.textContent = '○ Not connected';
-    syncTag.style.background = 'var(--glass-2)';
-    syncTag.style.color = 'var(--text-3)';
-    lastSync.textContent = 'never';
-  }
+  // v0.7.0: claude.ai sync card removed; Connections panel (connections.js)
+  // owns the sync/extension/keychain state. Old set-sync-* IDs are gone.
   // About version line — populate from /api/health.
   const aboutVersion = document.getElementById('set-about-version');
   if (aboutVersion && health?.version) aboutVersion.textContent = `v${health.version}`;
   initSettingsGeneralControls();
 }
 
-// Tauri 2 ACL: dashboard is loaded via WebviewUrl::External (HTTP), so
-// custom invoke commands defined in src/ipc.rs are blocked with "Plugin not
-// found". We call the underlying tauri-plugin-autostart and tauri-plugin-updater
-// commands directly instead — those plugin permissions ARE listed in
-// capabilities/main.json (autostart:allow-* and updater:default).
+// Tauri 2 ACL: dashboard is loaded via WebviewUrl::External (HTTP). Plugin
+// commands (e.g. tauri-plugin-autostart, tauri-plugin-updater) flow through
+// their plugin permissions (autostart:allow-*, updater:default). Custom
+// `#[tauri::command]` functions are blocked from a non-local origin unless
+// the app declares an AppManifest — v0.7.0 wires this up in build.rs
+// (APP_COMMANDS) and capabilities/main.json (allow-<cmd-kebab>), so
+// connections.js can invoke get_connection_status, open_claude_ai_login,
+// signout_claude_ai, and has_claude_ai_session directly.
 function getTauriInvoke() {
   return globalThis.__TAURI__?.core?.invoke ?? null;
 }
@@ -918,11 +909,8 @@ function bindControls() {
   document.getElementById('btn-refresh').addEventListener('click', () => {
     refreshAll();
   });
-  // Reuse the sync settings button as a manual-refresh shortcut.
-  const syncRefresh = document.getElementById('set-sync-refresh');
-  if (syncRefresh) {
-    syncRefresh.addEventListener('click', () => refreshAll());
-  }
+  // v0.7.0: claude.ai sync card removed; Connections panel (connections.js)
+  // owns the sync/extension/keychain state. Old set-sync-* IDs are gone.
 }
 
 bindSegments();
