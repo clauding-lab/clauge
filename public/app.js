@@ -474,7 +474,6 @@ function renderPeakHours() {
 // ═══════════════════════════════════════════════════════════
 function renderProjectsTable() {
   const list = state.data.projects?.projects ?? [];
-  document.getElementById('tab-badge-projects').textContent = String(list.length);
   const tb = document.getElementById('proj-body');
   const fullTb = document.getElementById('proj-full-body');
   document.getElementById('projects-count').textContent = `${list.length} project${list.length === 1 ? '' : 's'}`;
@@ -562,7 +561,6 @@ function renderSessionsTable() {
   if (!sessions) return;
   const all = sessions.sessions ?? [];
   const expensiveIds = new Set((expensive?.top ?? []).map((t) => t.sessionId));
-  document.getElementById('tab-badge-sessions').textContent = String(all.length);
   document.getElementById('sessions-count').textContent =
     `${all.length} session${all.length === 1 ? '' : 's'}`;
 
