@@ -406,6 +406,36 @@ pub fn has_claude_ai_session() -> bool {
     crate::claude_ai_session::read_stored_cookie().is_ok()
 }
 
+#[tauri::command]
+pub async fn get_connection_status(
+    app: tauri::AppHandle,
+) -> Result<crate::connections::ConnectionStatus, String> {
+    use tauri::Manager;
+
+    let mut status = crate::connections::detect();
+
+    // Fetch /api/health from the local server for the extension heartbeat.
+    let port = app
+        .try_state::<AppState>()
+        .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
+        .unwrap_or(3456);
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    if let Ok(res) = reqwest::Client::new().get(&url).send().await {
+        if let Ok(json) = res.json::<serde_json::Value>().await {
+            if let Some(ts) = json.get("extensionLastSeenAt").and_then(|v| v.as_str()) {
+                // Re-compose with the heartbeat; preserves other fields.
+                status = crate::connections::compose_status(
+                    status.claude_code_version.as_deref(),
+                    matches!(status.claude_ai, crate::connections::ConnectionState::SignedIn),
+                    Some(ts.to_string()),
+                );
+            }
+        }
+    }
+
+    Ok(status)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
