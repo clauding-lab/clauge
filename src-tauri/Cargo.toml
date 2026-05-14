@@ -29,6 +29,8 @@ log = "0.4"
 env_logger = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 window-vibrancy = "0.6"
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+thiserror = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

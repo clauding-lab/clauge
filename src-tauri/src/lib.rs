@@ -5,6 +5,8 @@ mod port_discovery;
 mod sidecar;
 mod tray;
 mod windows;
+#[cfg(target_os = "macos")]
+mod keychain;
 
 use tauri::Manager;
 
