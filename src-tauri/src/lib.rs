@@ -8,6 +8,7 @@ mod windows;
 #[cfg(target_os = "macos")]
 mod keychain;
 pub mod anthropic_oauth;
+mod claude_ai_session;
 
 use tauri::Manager;
 
@@ -161,6 +162,9 @@ pub fn run() {
             ipc::open_dashboard,
             ipc::quit_app,
             ipc::proxy_fetch,
+            ipc::open_claude_ai_login,
+            ipc::signout_claude_ai,
+            ipc::has_claude_ai_session,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

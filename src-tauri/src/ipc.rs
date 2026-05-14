@@ -389,6 +389,23 @@ fn check_body_cap(bytes: &[u8]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(bytes).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn open_claude_ai_login(app: tauri::AppHandle) -> Result<(), String> {
+    crate::claude_ai_session::open_login_modal(&app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn signout_claude_ai() -> Result<(), String> {
+    crate::claude_ai_session::clear_stored_cookie().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn has_claude_ai_session() -> bool {
+    crate::claude_ai_session::read_stored_cookie().is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
