@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- DMG flavor: non-sandboxed; full filesystem access for ~/.claude/projects/. -->
+    <!-- Hardened runtime is on (Tauri sets it); JIT entitlement required for V8 in the
+         SEA sidecar. Network client is implicit on macOS for non-sandboxed apps but
+         we list it for symmetry with the MAS plist (v0.7.1). -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
