@@ -151,19 +151,12 @@ pub fn clear_stored_cookie() -> Result<(), ClaudeAiError> {
 pub async fn fetch_claude_ai_usage(org_uuid: &str) -> Result<serde_json::Value, ClaudeAiError> {
     let cookie = read_stored_cookie()?;
     let url = format!("https://claude.ai/api/organizations/{}/usage", org_uuid);
-    // TODO(v0.8.0): replace with shared timeout-configured client.
-    // reqwest::Client::new() has no default timeout — a slow claude.ai
-    // response would hang the connections refresh.
-    let client = reqwest::Client::new();
-    let res = client
+    // Use the shared client from anthropic_oauth (same 10s timeout, same UA).
+    let res = crate::anthropic_oauth::OAUTH_CLIENT
         .get(&url)
         .header("Cookie", format!("sessionKey={}", cookie))
         .header("Origin", "https://claude.ai")
         .header("Referer", "https://claude.ai/")
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15",
-        )
         .send()
         .await?;
     let status = res.status();

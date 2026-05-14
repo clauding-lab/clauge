@@ -2,7 +2,21 @@
 //!
 //! Primary call: GET /api/oauth/usage  → returns the user's plan-ring data.
 
+use once_cell::sync::Lazy;
 use serde::Deserialize;
+use std::time::Duration;
+
+/// Shared timeout-configured reqwest client used by all api.anthropic.com
+/// OAuth calls. 10s timeout balances "slow but legitimate" responses against
+/// the dashboard's 30s connection-status poll interval. baked-in user-agent
+/// makes server-side request attribution easier.
+pub(crate) static OAUTH_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent(concat!("Clauge/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("reqwest::Client::build is infallible without a custom config")
+});
 
 /// Empirically verified against api.anthropic.com/api/oauth/usage on 2026-05-14.
 /// Percentages are 0..100 (NOT 0..1). Resets_at is ISO 8601 with timezone offset,
@@ -86,15 +100,10 @@ fn base_url() -> String {
 
 pub async fn fetch_oauth_usage(access_token: &str) -> Result<PlanUsage, OAuthError> {
     let url = format!("{}/api/oauth/usage", base_url());
-    // TODO(v0.8.0): replace with shared timeout-configured client.
-    // reqwest::Client::new() has no default timeout — a slow claude.ai
-    // response would hang the connections refresh.
-    let client = reqwest::Client::new();
-    let res = client
+    let res = OAUTH_CLIENT
         .get(&url)
         .bearer_auth(access_token)
         .header("anthropic-version", "2023-06-01")
-        .header("user-agent", concat!("Clauge/", env!("CARGO_PKG_VERSION")))
         .send()
         .await?;
 
@@ -125,11 +134,7 @@ pub async fn fetch_prepaid_balance(
     access_token: &str,
 ) -> Result<Option<serde_json::Value>, OAuthError> {
     let url = format!("{}/api/oauth/balance", base_url());
-    // TODO(v0.8.0): replace with shared timeout-configured client.
-    // reqwest::Client::new() has no default timeout — a slow claude.ai
-    // response would hang the connections refresh.
-    let client = reqwest::Client::new();
-    let res = client
+    let res = OAUTH_CLIENT
         .get(&url)
         .bearer_auth(access_token)
         .header("anthropic-version", "2023-06-01")
