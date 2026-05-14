@@ -7,6 +7,7 @@ mod tray;
 mod windows;
 #[cfg(target_os = "macos")]
 mod keychain;
+pub mod anthropic_oauth;
 
 use tauri::Manager;
 

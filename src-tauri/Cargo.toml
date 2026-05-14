@@ -43,6 +43,7 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfigurat
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.5"
+serial_test = "3"
 
 [profile.release]
 panic = "abort"
