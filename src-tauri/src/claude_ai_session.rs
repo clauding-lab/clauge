@@ -49,8 +49,11 @@ pub async fn open_login_modal(app: &AppHandle) -> Result<(), ClaudeAiError> {
     .skip_taskbar(true)
     .build()?;
 
-    // Poll for navigation completion every 1.5s while the window is open;
-    // capture cookie on every successful navigation to claude.ai's homepage.
+    // Poll for navigation completion every 1.5s while the window is open.
+    // Capture cookie on any claude.ai navigation that ISN'T a login surface
+    // (/login, /oauth/*, /auth/*). The post-login URL varies (/, /new,
+    // /chats, /chat/<id>, /projects, /settings, ...) — listing them
+    // positively misses cases; "any non-login claude.ai page" is robust.
     let win_for_poll = win.clone();
     let app_for_poll = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -60,15 +63,33 @@ pub async fn open_login_modal(app: &AppHandle) -> Result<(), ClaudeAiError> {
                 break;
             }
             if let Ok(url) = win_for_poll.url() {
-                if url.host_str() == Some("claude.ai")
-                    && (url.path() == "/"
-                        || url.path() == "/chats"
-                        || url.path().starts_with("/chat/"))
-                {
-                    if capture_session_cookie(&win_for_poll).is_ok() {
-                        let _ = app_for_poll.emit("connections-updated", ());
-                        let _ = win_for_poll.close();
-                        break;
+                let host = url.host_str();
+                let path = url.path();
+                let is_claude_ai = host == Some("claude.ai");
+                let is_login_surface = path == "/login"
+                    || path.starts_with("/login/")
+                    || path.starts_with("/oauth/")
+                    || path.starts_with("/auth/");
+                if is_claude_ai && !is_login_surface {
+                    match capture_session_cookie(&win_for_poll) {
+                        Ok(_) => {
+                            log::info!(
+                                "claude_ai_session: captured sessionKey on {}{}",
+                                host.unwrap_or("?"),
+                                path
+                            );
+                            let _ = app_for_poll.emit("connections-updated", ());
+                            let _ = win_for_poll.close();
+                            break;
+                        }
+                        Err(e) => {
+                            log::debug!(
+                                "claude_ai_session: post-login on {}{} but cookie capture failed: {:?}",
+                                host.unwrap_or("?"),
+                                path,
+                                e
+                            );
+                        }
                     }
                 }
             }
