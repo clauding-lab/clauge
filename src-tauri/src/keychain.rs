@@ -16,23 +16,57 @@
 
 use serde::Deserialize;
 
+/// Wrapper for the actual Claude Code keychain blob. The blob has a
+/// `claudeAiOauth` top-level key (camelCase) plus an unrelated `mcpOAuth`
+/// section we ignore. Empirically verified 2026-05-14 against a live
+/// `Claude Code-credentials` entry.
 #[derive(Deserialize, Clone)]
 pub struct ClaudeCodeCreds {
+    #[serde(rename = "claudeAiOauth")]
+    pub claude_ai_oauth: ClaudeAiOauth,
+}
+
+/// The actual OAuth credentials Anthropic's CLI persists.
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeAiOauth {
+    /// Bearer token for api.anthropic.com OAuth endpoints. Long-lived but
+    /// not infinite; check `expires_at` against now() to gauge freshness.
     pub access_token: String,
+    /// Used to refresh `access_token` when it expires. May be absent for
+    /// session-only auths.
     pub refresh_token: Option<String>,
-    /// ISO 8601 datetime; absence means "always assume valid until 401".
-    pub expires_at: Option<String>,
+    /// Unix epoch in MILLISECONDS when `access_token` becomes invalid.
+    /// (NOT seconds, NOT ISO 8601 — confirmed empirically.)
+    pub expires_at: Option<i64>,
+    /// OAuth scopes granted to Claude Code; informational.
+    pub scopes: Option<Vec<String>>,
+    /// Anthropic subscription tier — e.g. "max", "pro", "free".
+    pub subscription_type: Option<String>,
+    /// Rate-limit bucket Anthropic assigns — e.g. "default_claude_max_20x".
+    pub rate_limit_tier: Option<String>,
 }
 
 impl std::fmt::Debug for ClaudeCodeCreds {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClaudeCodeCreds")
+            .field("claude_ai_oauth", &self.claude_ai_oauth)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for ClaudeAiOauth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClaudeAiOauth")
             .field("access_token", &"<redacted>")
             .field(
                 "refresh_token",
                 &self.refresh_token.as_ref().map(|_| "<redacted>"),
             )
             .field("expires_at", &self.expires_at)
+            .field("scopes", &self.scopes)
+            .field("subscription_type", &self.subscription_type)
+            .field("rate_limit_tier", &self.rate_limit_tier)
             .finish()
     }
 }
@@ -109,11 +143,9 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
 /// Returns true if `expires_at` is in the past. Absent expiry returns false
 /// (assume valid until a 401 disproves us).
 pub fn is_expired(creds: &ClaudeCodeCreds) -> bool {
-    let Some(expires_at) = &creds.expires_at else {
+    let Some(expires_at_ms) = creds.claude_ai_oauth.expires_at else {
         return false;
     };
-    let Ok(t) = chrono::DateTime::parse_from_rfc3339(expires_at) else {
-        return false;
-    };
-    t.with_timezone(&chrono::Utc) < chrono::Utc::now()
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    expires_at_ms < now_ms
 }
