@@ -170,6 +170,8 @@ pub fn run() {
             ipc::has_claude_ai_session,
             ipc::get_connection_status,
             ipc::refresh_credentials,
+            ipc::wizard_complete,
+            ipc::wizard_skip,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

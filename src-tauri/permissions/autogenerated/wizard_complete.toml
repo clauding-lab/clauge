@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-wizard-complete"
+description = "Enables the wizard_complete command without any pre-configured scope."
+commands.allow = ["wizard_complete"]
+
+[[permission]]
+identifier = "deny-wizard-complete"
+description = "Denies the wizard_complete command without any pre-configured scope."
+commands.deny = ["wizard_complete"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-wizard-skip"
+description = "Enables the wizard_skip command without any pre-configured scope."
+commands.allow = ["wizard_skip"]
+
+[[permission]]
+identifier = "deny-wizard-skip"
+description = "Denies the wizard_skip command without any pre-configured scope."
+commands.deny = ["wizard_skip"]

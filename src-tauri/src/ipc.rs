@@ -507,6 +507,83 @@ pub async fn refresh_credentials(
     }
 }
 
+/// Wizard "Connect" — mark onboarding complete, force a keychain read
+/// (triggers macOS prompt), close wizard window, and surface the dashboard.
+#[tauri::command]
+pub async fn wizard_complete(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    // Mark the onboarding flag so we don't re-show on next launch.
+    if let Err(e) = mark_onboarding_completed(&app) {
+        log::warn!("wizard_complete: failed to persist onboarding flag: {}", e);
+        // Continue anyway — failing here would leave the user stuck in the wizard.
+    }
+
+    // Trigger keychain read (this is where the macOS prompt fires).
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Emitter;
+        match state.keychain_cache.refresh() {
+            Ok(_) => {
+                let _ = app.emit("connections-updated", ());
+            }
+            Err(e) => {
+                // User may have clicked Deny on the macOS prompt. Log + continue.
+                // The dashboard will show Claude Code as NotInstalled until they click ↻.
+                log::warn!("wizard_complete: keychain refresh failed: {}", e);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
+    }
+
+    // Close the wizard window.
+    if let Some(w) = app.get_webview_window("onboarding") {
+        let _ = w.close();
+    }
+
+    // Surface the dashboard so the user has somewhere to land.
+    crate::tray::show_dashboard(&app);
+
+    Ok(())
+}
+
+/// Wizard "Skip for now" — mark onboarding complete, close wizard window,
+/// DO NOT trigger keychain read. User can click ↻ later from the Connections panel.
+#[tauri::command]
+pub async fn wizard_skip(
+    _state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::Manager;
+
+    if let Err(e) = mark_onboarding_completed(&app) {
+        log::warn!("wizard_skip: failed to persist onboarding flag: {}", e);
+    }
+
+    if let Some(w) = app.get_webview_window("onboarding") {
+        let _ = w.close();
+    }
+
+    crate::tray::show_dashboard(&app);
+    Ok(())
+}
+
+/// Persist the `onboarding_completed = true` flag in the tauri-plugin-store
+/// settings.json. Shared by both wizard_complete and wizard_skip.
+fn mark_onboarding_completed(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store("settings.json")?;
+    store.set("onboarding_completed", serde_json::Value::Bool(true));
+    store.save()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

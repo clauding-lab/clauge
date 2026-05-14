@@ -15,6 +15,8 @@ const APP_COMMANDS: &[&str] = &[
     "signout_claude_ai",
     "has_claude_ai_session",
     "refresh_credentials",
+    "wizard_complete",
+    "wizard_skip",
 ];
 
 fn main() {
