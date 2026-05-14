@@ -10,7 +10,7 @@
 //! entitlement needed is com.apple.security.network.client (already in
 //! entitlements.mas.plist).
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const AUTH_WINDOW_LABEL: &str = "auth-claude-ai";
 const SESSION_KEYCHAIN_SERVICE: &str = "com.clauding.clauge.claude-ai-session";
@@ -49,24 +49,7 @@ pub async fn open_login_modal(app: &AppHandle) -> Result<(), ClaudeAiError> {
     .skip_taskbar(true)
     .build()?;
 
-    let app_for_capture = app.clone();
-    let win_for_capture = win.clone();
-
-    win.on_window_event(move |event| {
-        if let WindowEvent::Destroyed = event {
-            // User closed the window — attempt cookie capture even on close.
-            let app_handle = app_for_capture.clone();
-            let win_handle = win_for_capture.clone();
-            tauri::async_runtime::spawn(async move {
-                if capture_session_cookie(&win_handle).is_ok() {
-                    // Notify dashboard to refresh connection status.
-                    let _ = app_handle.emit("connections-updated", ());
-                }
-            });
-        }
-    });
-
-    // Also poll for navigation completion every 1.5s while the window is open;
+    // Poll for navigation completion every 1.5s while the window is open;
     // capture cookie on every successful navigation to claude.ai's homepage.
     let win_for_poll = win.clone();
     let app_for_poll = app.clone();
@@ -147,6 +130,9 @@ pub fn clear_stored_cookie() -> Result<(), ClaudeAiError> {
 pub async fn fetch_claude_ai_usage(org_uuid: &str) -> Result<serde_json::Value, ClaudeAiError> {
     let cookie = read_stored_cookie()?;
     let url = format!("https://claude.ai/api/organizations/{}/usage", org_uuid);
+    // TODO(v0.7.0 Task 9): replace with shared timeout-configured client.
+    // reqwest::Client::new() has no default timeout — a slow claude.ai
+    // response would hang the connections refresh.
     let client = reqwest::Client::new();
     let res = client
         .get(&url)
