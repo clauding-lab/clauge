@@ -75,7 +75,7 @@ pub async fn open_login_modal(app: &AppHandle) -> Result<(), ClaudeAiError> {
                 // User closed the auth window manually — exit cleanly.
                 break;
             }
-            if attempts > MAX_COOKIE_CAPTURE_ATTEMPTS {
+            if attempts >= MAX_COOKIE_CAPTURE_ATTEMPTS {
                 log::warn!(
                     "claude_ai_session: cookie capture timed out after {} attempts ({}s)",
                     MAX_COOKIE_CAPTURE_ATTEMPTS,
