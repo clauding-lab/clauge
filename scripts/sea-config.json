@@ -20,6 +20,9 @@
     "public/popover/popover.js": "public/popover/popover.js",
     "public/popover/popover.css": "public/popover/popover.css",
     "public/popover/fonts/inter-latin-variable.woff2": "public/popover/fonts/inter-latin-variable.woff2",
-    "public/popover/fonts/jetbrains-mono-latin-variable.woff2": "public/popover/fonts/jetbrains-mono-latin-variable.woff2"
+    "public/popover/fonts/jetbrains-mono-latin-variable.woff2": "public/popover/fonts/jetbrains-mono-latin-variable.woff2",
+    "public/onboarding/index.html": "public/onboarding/index.html",
+    "public/onboarding/onboarding.js": "public/onboarding/onboarding.js",
+    "public/onboarding/onboarding.css": "public/onboarding/onboarding.css"
   }
 }

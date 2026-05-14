@@ -50,6 +50,9 @@ const ASSETS = [
   'public/popover/popover.css',
   'public/popover/fonts/inter-latin-variable.woff2',
   'public/popover/fonts/jetbrains-mono-latin-variable.woff2',
+  'public/onboarding/index.html',
+  'public/onboarding/onboarding.js',
+  'public/onboarding/onboarding.css',
 ];
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clauge-sea-'));
