@@ -1,39 +1,70 @@
 //! Bearer-token-authenticated HTTP client for api.anthropic.com OAuth endpoints.
 //!
 //! Primary call: GET /api/oauth/usage  → returns the user's plan-ring data.
-//!
-//! ⚠ Response shape is OSS-community-documented; PlanUsage is permissive
-//! (Option<f64> for each field) so unknown/missing keys don't break parsing.
-//! Phase 2 Task 6 inspects the live response and pins exact fields.
 
 use serde::Deserialize;
 
+/// Empirically verified against api.anthropic.com/api/oauth/usage on 2026-05-14.
+/// Percentages are 0..100 (NOT 0..1). Resets_at is ISO 8601 with timezone offset,
+/// can be null (e.g. for fields without a fixed reset cadence). Unknown fields
+/// land in `extra` via serde-flatten so future API additions don't break parsing.
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct PlanUsage {
-    /// 5-hour session window utilization, 0.0..1.0.
-    pub five_hour_limit_pct: Option<f64>,
-    /// 7-day rolling utilization, 0.0..1.0.
-    pub weekly_limit_pct: Option<f64>,
-    /// Per-model breakdown if present in response.
-    pub models: Option<ModelBreakdown>,
-    /// Catch-all for unknown fields (preserved for future spec adjustments).
+    /// 5-hour session window utilization.
+    pub five_hour: Option<UtilizationWindow>,
+    /// 7-day rolling overall utilization.
+    pub seven_day: Option<UtilizationWindow>,
+    /// 7-day rolling utilization for OAuth API apps (separate from Claude Code direct usage).
+    pub seven_day_oauth_apps: Option<UtilizationWindow>,
+    /// 7-day rolling Opus-model utilization.
+    pub seven_day_opus: Option<UtilizationWindow>,
+    /// 7-day rolling Sonnet-model utilization.
+    pub seven_day_sonnet: Option<UtilizationWindow>,
+    /// 7-day rolling cowork (Claude internal experimental) utilization.
+    pub seven_day_cowork: Option<UtilizationWindow>,
+    /// 7-day rolling omelette (Claude internal experimental) utilization.
+    pub seven_day_omelette: Option<UtilizationWindow>,
+    /// Tangelo (internal Anthropic codename) utilization, when applicable.
+    pub tangelo: Option<UtilizationWindow>,
+    /// Iguana-necktie (internal Anthropic codename) utilization, when applicable.
+    pub iguana_necktie: Option<UtilizationWindow>,
+    /// Omelette promotional (internal Anthropic codename) utilization.
+    pub omelette_promotional: Option<UtilizationWindow>,
+    /// Prepaid extra-usage credit balance + cap.
+    pub extra_usage: Option<ExtraUsage>,
+    /// Catch-all for unknown fields — preserves forward compatibility as the
+    /// Anthropic OAuth response shape evolves.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default)]
-pub struct ModelBreakdown {
-    pub sonnet: Option<ModelEntry>,
-    pub opus: Option<ModelEntry>,
-    pub haiku: Option<ModelEntry>,
+pub struct UtilizationWindow {
+    /// Percentage of the window consumed, 0..100.
+    pub utilization: f64,
+    /// ISO 8601 datetime when this window resets. May be null for windows
+    /// without a fixed cadence (e.g. promotional or experimental fields).
+    pub resets_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default)]
-pub struct ModelEntry {
-    pub weekly_pct: Option<f64>,
+pub struct ExtraUsage {
+    /// Whether the user has opted in to API-extra-usage credit purchases.
+    pub is_enabled: bool,
+    /// Monthly cap in `currency` units (e.g. 1000 USD).
+    pub monthly_limit: u32,
+    /// Credits drawn against the cap so far this month.
+    pub used_credits: f64,
+    /// Percentage of monthly_limit consumed, 0..100. Null when the cap is
+    /// configured but no usage has been recorded yet.
+    pub utilization: Option<f64>,
+    /// ISO 4217 currency code (typically "USD").
+    pub currency: String,
+    /// If the user disabled extra-usage purchases, the human-readable reason.
+    pub disabled_reason: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
