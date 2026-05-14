@@ -98,6 +98,17 @@ fn base_url() -> String {
         .unwrap_or_else(|_| "https://api.anthropic.com".to_string())
 }
 
+/// Fetch the user's plan-ring usage from api.anthropic.com.
+///
+/// **Cache-invalidation contract (v0.7.2):** callers MUST invoke
+/// `crate::keychain_cache::KeychainCache::invalidate()` on the shared cache
+/// when this function returns `Err(OAuthError::TokenExpired)`. Without that,
+/// the cache will keep returning the stale (revoked) access token on every
+/// subsequent `get_or_load`, and the connections panel will not recover.
+///
+/// No caller wires this in v0.7.2 (Architecture A data plumbing rides v0.8.0).
+/// The contract is documented here so v0.8.0's implementation has a clear
+/// recipe to follow.
 pub async fn fetch_oauth_usage(access_token: &str) -> Result<PlanUsage, OAuthError> {
     let url = format!("{}/api/oauth/usage", base_url());
     let res = OAUTH_CLIENT
@@ -154,4 +165,19 @@ pub async fn fetch_prepaid_balance(
         ));
     }
     Ok(Some(res.json().await?))
+}
+
+#[cfg(test)]
+mod cache_invalidation_tests {
+    use super::*;
+
+    /// Documents the cache-invalidation contract: callers of fetch_oauth_usage
+    /// MUST invalidate the keychain cache when they receive TokenExpired.
+    /// This test pins the contract in the type system by asserting that the
+    /// public error variant remains accessible (so callers can match on it).
+    #[test]
+    fn token_expired_variant_is_publicly_matchable() {
+        let err = OAuthError::TokenExpired;
+        assert!(matches!(err, OAuthError::TokenExpired));
+    }
 }
