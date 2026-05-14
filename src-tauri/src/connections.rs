@@ -86,12 +86,19 @@ pub fn compose_status(
 }
 
 /// Live detection — runs all three probes and composes the result.
-pub fn detect() -> ConnectionStatus {
-    #[cfg(target_os = "macos")]
-    let cc_version = match crate::keychain::read_claude_code_credentials() {
+///
+/// Takes a reference to the keychain cache so concurrent IPC calls share
+/// a single cached `ClaudeCodeCreds` and don't each re-prompt the user.
+/// Extension heartbeat is exposed by the existing /api/health endpoint,
+/// which the Hono server populates. We pass through whatever the JSON
+/// response contains; for this synchronous detect() call we pass None —
+/// the IPC handler composes with the heartbeat at the call site.
+#[cfg(target_os = "macos")]
+pub fn detect(cache: &crate::keychain_cache::KeychainCache) -> ConnectionStatus {
+    let cc_version = match cache.get_or_load() {
         Ok(creds) => {
             if crate::keychain::is_expired(&creds) {
-                None // treat expired as not installed for now; refresh-token flow is future work.
+                None // collapsed to NotInstalled here; Expired surfacing comes in Task 7
             } else {
                 // Version isn't in the credential blob; we surface a placeholder string.
                 Some("authenticated")
@@ -99,15 +106,14 @@ pub fn detect() -> ConnectionStatus {
         }
         Err(_) => None,
     };
-    #[cfg(not(target_os = "macos"))]
-    let cc_version: Option<&str> = None;
 
     let claude_ai = crate::claude_ai_session::read_stored_cookie().is_ok();
 
-    // Extension heartbeat is exposed by the existing /api/health endpoint,
-    // which the Hono server populates. We pass through whatever the JSON
-    // response contains; live detection-via-IPC is wired in Task 10.
-    // For this synchronous detect() call we read None — the IPC handler
-    // composes with the heartbeat at the call site.
     compose_status(cc_version, claude_ai, None)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn detect() -> ConnectionStatus {
+    let claude_ai = crate::claude_ai_session::read_stored_cookie().is_ok();
+    compose_status(None, claude_ai, None)
 }

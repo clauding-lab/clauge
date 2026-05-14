@@ -36,6 +36,13 @@ pub struct AppState {
     pub shutdown: Arc<Notify>,
     pub shutting_down: Arc<AtomicBool>,
     pub children: Arc<Mutex<Vec<CommandChild>>>,
+    /// Shared, mutex-serialized in-memory cache for the Claude Code OAuth
+    /// credentials. Lives in `AppState` so concurrent dashboard polls share
+    /// a single cached `ClaudeCodeCreds` and don't each re-prompt the user
+    /// against an ad-hoc-signed build's Keychain ACL. macOS-only because
+    /// the underlying `keychain` module only exists on macOS.
+    #[cfg(target_os = "macos")]
+    pub keychain_cache: Arc<crate::keychain_cache::KeychainCache>,
 }
 
 impl Default for AppState {
@@ -45,6 +52,8 @@ impl Default for AppState {
             shutdown: Arc::new(Notify::new()),
             shutting_down: Arc::new(AtomicBool::new(false)),
             children: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(target_os = "macos")]
+            keychain_cache: Arc::new(crate::keychain_cache::KeychainCache::new()),
         }
     }
 }
@@ -413,18 +422,22 @@ pub fn has_claude_ai_session() -> bool {
 
 #[tauri::command]
 pub async fn get_connection_status(
-    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    _app: tauri::AppHandle,
 ) -> Result<crate::connections::ConnectionStatus, String> {
-    use tauri::Manager;
-
+    #[cfg(target_os = "macos")]
+    let mut status = crate::connections::detect(&state.keychain_cache);
+    #[cfg(not(target_os = "macos"))]
     let mut status = crate::connections::detect();
 
     // Fetch /api/health from the local server for the extension heartbeat.
     // 2-second timeout: this is a 127.0.0.1 call and the dashboard polls this
     // IPC regularly — a hung Hono response must not block refreshes.
-    let port = app
-        .try_state::<AppState>()
-        .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
+    let port = state
+        .server_port
+        .lock()
+        .ok()
+        .and_then(|g| *g)
         .unwrap_or(3456);
     let url = format!("http://127.0.0.1:{}/api/health", port);
     let client = reqwest::Client::builder()
