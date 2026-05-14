@@ -16,12 +16,25 @@
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct ClaudeCodeCreds {
     pub access_token: String,
     pub refresh_token: Option<String>,
     /// ISO 8601 datetime; absence means "always assume valid until 401".
     pub expires_at: Option<String>,
+}
+
+impl std::fmt::Debug for ClaudeCodeCreds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClaudeCodeCreds")
+            .field("access_token", &"<redacted>")
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
