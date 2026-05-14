@@ -444,6 +444,15 @@ fn create_popover(
         WKWebView::initWithFrame_configuration(mtm.alloc::<WKWebView>(), frame, &config)
     };
 
+    // Enable WebInspector for the popover (macOS 13.3+). Defaults to false on
+    // newer macOS — without this, right-click → Inspect Element is unavailable
+    // and JS load errors are completely silent. Enabling it adds no overhead
+    // and is the only practical way to diagnose popover JS failures in the
+    // field. Tauri 2 enables this automatically for its own WebviewWindows
+    // via the `devtools` feature, but our native NSPopover WKWebView is
+    // constructed directly and needs the explicit setter.
+    unsafe { webview.setInspectable(true) };
+
     // Load popover content from the SEA sidecar (same-origin to /api). At
     // boot time the sidecar may not yet be bound; reload_for_port re-loads
     // once sidecar.rs reports its real port.

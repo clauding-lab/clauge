@@ -608,3 +608,40 @@ html, body {
     0 2px 8px -1px rgba(217, 119, 87, 0.4);
 }
 .toggle input:checked + .toggle-slider::before { left: 18px; }
+
+/* v0.7.2: Loading overlay shown while popover.js's refresh() hydrates.
+ * Sits above the static skeleton so the user never sees the bare
+ * dash placeholders. JS removes [hidden] on showLoading() and adds
+ * .fading + hides after the fade transition completes (220ms). */
+.po-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: linear-gradient(180deg, #2a1812, #0d0805);
+  z-index: 20;
+  transition: opacity 220ms ease;
+  opacity: 1;
+}
+.po-loading-overlay.fading { opacity: 0; pointer-events: none; }
+.po-loading-overlay[hidden] { display: none; }
+.po-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(217, 119, 87, 0.18);
+  border-top-color: #d97757;
+  animation: po-loading-spin 0.9s linear infinite;
+}
+.po-loading-text {
+  font-size: 11px;
+  color: rgba(255, 240, 230, 0.65);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+@keyframes po-loading-spin {
+  to { transform: rotate(360deg); }
+}

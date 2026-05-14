@@ -18,6 +18,15 @@
        the CSS hides the irrelevant sections. -->
   <div id="root" data-state="default">
 
+    <!-- Loading overlay shown until popover.js's refresh() completes. The
+         JS toggles `hidden` via showLoading() / hideLoading(); the overlay
+         is visible at first paint so the user never sees the static dash
+         placeholders below it. -->
+    <div id="po-loading" class="po-loading-overlay">
+      <div class="po-loading-spinner" aria-hidden="true"></div>
+      <div class="po-loading-text mono">Loading…</div>
+    </div>
+
     <!-- ── Header ────────────────────────────────────────────── -->
     <header class="po-head">
       <div class="po-head-left">
@@ -157,6 +166,6 @@
     </ul>
   </div>
 
-  <script type="module" src="popover.js"></script>
+  <script src="popover.js" defer></script>
 </body>
 </html>
