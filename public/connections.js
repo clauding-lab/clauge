@@ -101,6 +101,18 @@ if (window.__TAURI__?.event?.listen) {
   window.__TAURI__.event.listen('connections-updated', () => refreshConnections());
 }
 
+// v0.7.2: surface Architecture A login timeouts so the user knows the
+// flow failed instead of just seeing the window close silently.
+if (window.__TAURI__?.event?.listen) {
+  window.__TAURI__.event.listen('cookie-capture-timeout', () => {
+    console.warn('[connections] claude.ai login timed out (60s without cookie capture)');
+    // Show a non-blocking toast if the helper exists; otherwise log only.
+    if (typeof window.showToast === 'function') {
+      window.showToast('Sign-in didn\'t complete. Please try again.', 'error');
+    }
+  });
+}
+
 // Periodic poll.
 setInterval(refreshConnections, 30000);
 

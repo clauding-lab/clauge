@@ -15,6 +15,16 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 const AUTH_WINDOW_LABEL: &str = "auth-claude-ai";
 const SESSION_KEYCHAIN_SERVICE: &str = "com.clauding.clauge.claude-ai-session";
 
+/// Polling interval for cookie capture after the user reaches a post-login
+/// claude.ai page. 1.5s is conservative — captures within the first
+/// JS-frame after navigation in most cases.
+const COOKIE_CAPTURE_POLL_MS: u64 = 1500;
+
+/// Maximum number of polls before giving up. 40 × 1.5s = 60s total wall clock.
+/// Past this, the auth window is closed and a `cookie-capture-timeout` event
+/// is emitted so the frontend can show "Sign-in didn't complete — please try again."
+const MAX_COOKIE_CAPTURE_ATTEMPTS: usize = 40;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClaudeAiError {
     #[error("tauri webview error: {0}")]
@@ -57,9 +67,24 @@ pub async fn open_login_modal(app: &AppHandle) -> Result<(), ClaudeAiError> {
     let win_for_poll = win.clone();
     let app_for_poll = app.clone();
     tauri::async_runtime::spawn(async move {
+        let mut attempts: usize = 0;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(COOKIE_CAPTURE_POLL_MS)).await;
+            attempts += 1;
             if app_for_poll.get_webview_window(AUTH_WINDOW_LABEL).is_none() {
+                // User closed the auth window manually — exit cleanly.
+                break;
+            }
+            if attempts > MAX_COOKIE_CAPTURE_ATTEMPTS {
+                log::warn!(
+                    "claude_ai_session: cookie capture timed out after {} attempts ({}s)",
+                    MAX_COOKIE_CAPTURE_ATTEMPTS,
+                    MAX_COOKIE_CAPTURE_ATTEMPTS as u64 * COOKIE_CAPTURE_POLL_MS / 1000
+                );
+                let _ = app_for_poll.emit("cookie-capture-timeout", ());
+                if let Some(w) = app_for_poll.get_webview_window(AUTH_WINDOW_LABEL) {
+                    let _ = w.close();
+                }
                 break;
             }
             if let Ok(url) = win_for_poll.url() {
@@ -169,4 +194,28 @@ pub async fn fetch_claude_ai_usage(org_uuid: &str) -> Result<serde_json::Value, 
         return Err(ClaudeAiError::Http(res.error_for_status().unwrap_err()));
     }
     Ok(res.json().await?)
+}
+
+#[cfg(test)]
+mod retry_ceiling_tests {
+    /// Pin the retry ceiling constant. If this changes, the manual smoke
+    /// expectations (60s wall-clock before timeout event) need updating too.
+    #[test]
+    fn max_attempts_is_40() {
+        assert_eq!(super::MAX_COOKIE_CAPTURE_ATTEMPTS, 40);
+    }
+
+    #[test]
+    fn poll_interval_is_1500_ms() {
+        assert_eq!(super::COOKIE_CAPTURE_POLL_MS, 1500);
+    }
+
+    /// 40 × 1.5s = 60s total before timeout.
+    #[test]
+    fn total_timeout_is_60s() {
+        assert_eq!(
+            super::MAX_COOKIE_CAPTURE_ATTEMPTS as u64 * super::COOKIE_CAPTURE_POLL_MS / 1000,
+            60
+        );
+    }
 }
