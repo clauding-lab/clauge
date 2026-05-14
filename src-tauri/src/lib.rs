@@ -92,6 +92,67 @@ pub fn run() {
                 }
             }
 
+            // v0.7.2: first-launch onboarding wizard. Gated by a SEPARATE flag
+            // (`onboarding_completed`) so a future "Re-run setup" feature can
+            // reset it without flipping the autostart flag.
+            // The wizard window is spawned even before sidecar port discovery
+            // completes — the URL it loads uses port 3456 (the default sidecar
+            // bind) which the port_discovery::SpawnAt branch reserves. If the
+            // user has an external clauge-server on a non-default port, the
+            // wizard's URL would fall through to a 404; for v0.7.2 we accept
+            // this edge case since external-clauge-server users are typically
+            // power users who've already onboarded.
+            {
+                use tauri_plugin_store::StoreExt;
+                let store = app.store("settings.json").map_err(|e| {
+                    log::error!("Failed to open settings store: {}", e);
+                    e
+                })?;
+                if store.get("onboarding_completed").is_none() {
+                    log::info!("First-launch wizard not yet completed; spawning onboarding window");
+                    let app_handle = app.handle().clone();
+                    // Spawn into the async runtime so we don't block setup.
+                    // The wizard window uses URL http://127.0.0.1:3456/onboarding/index.html
+                    // which will be available once the sidecar starts (the spawn
+                    // below races with port_discovery, but Tauri's WebviewWindow
+                    // handles a temporarily-404 load gracefully by retrying when
+                    // the user clicks).
+                    tauri::async_runtime::spawn(async move {
+                        // Brief delay so port_discovery has a chance to bind.
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        let url = tauri::WebviewUrl::External(
+                            "http://127.0.0.1:3456/onboarding/index.html"
+                                .parse()
+                                .unwrap(),
+                        );
+                        let result = tauri::WebviewWindowBuilder::new(
+                            &app_handle,
+                            "onboarding",
+                            url,
+                        )
+                        .title("Welcome to Clauge")
+                        .inner_size(560.0, 640.0)
+                        .resizable(false)
+                        .center()
+                        .visible(true)
+                        .build();
+                        if let Err(e) = result {
+                            log::error!("Failed to spawn onboarding wizard window: {}", e);
+                            // Mark the flag so we don't loop on a broken wizard.
+                            if let Ok(store) = app_handle.store("settings.json") {
+                                store.set(
+                                    "onboarding_completed",
+                                    serde_json::Value::Bool(true),
+                                );
+                                let _ = store.save();
+                            }
+                        }
+                    });
+                } else {
+                    log::debug!("Onboarding wizard already completed; skipping");
+                }
+            }
+
             app.on_menu_event(|app, event| match event.id().0.as_str() {
                 "menu:preferences" => {
                     crate::tray::show_dashboard_with_settings(app);
