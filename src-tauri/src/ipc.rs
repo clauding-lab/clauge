@@ -478,6 +478,35 @@ pub async fn get_connection_status(
     Ok(status)
 }
 
+/// Force a fresh keychain read, replacing the cached creds. Used by the
+/// Refresh button in Connections panel.
+///
+/// On macOS, triggers a Keychain prompt (or, if the app is unsigned/ad-hoc,
+/// the user sees the dialog again). Cache is updated on success.
+/// Emits `connections-updated` so dashboard listeners re-render.
+#[tauri::command]
+pub async fn refresh_credentials(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Emitter;
+        match state.keychain_cache.refresh() {
+            Ok(_) => {
+                let _ = app.emit("connections-updated", ());
+                Ok(())
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (state, app);
+        Err("refresh_credentials is only supported on macOS".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

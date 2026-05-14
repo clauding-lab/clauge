@@ -20,6 +20,7 @@
     "allow-get-connection-status",
     "allow-open-claude-ai-login",
     "allow-signout-claude-ai",
-    "allow-has-claude-ai-session"
+    "allow-has-claude-ai-session",
+    "allow-refresh-credentials"
   ]
 }
