@@ -1,6 +1,6 @@
 [package]
 name = "clauge"
-version = "0.5.0"
+version = "0.7.0"
 description = "Clauge — Claude Code analytics native shell"
 authors = ["clauding-lab"]
 edition = "2021"
