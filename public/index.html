@@ -315,7 +315,7 @@
       <aside class="set-side glass-pill" style="border-radius:14px;margin:14px 0 14px 14px;align-self:start">
         <button class="active" data-set="general">General</button>
         <button data-set="pricing">Pricing & ROI</button>
-        <button data-set="sync">claude.ai sync</button>
+        <button data-set="sync">Connections</button>
       </aside>
       <div style="padding:24px 24px 24px 0">
 
@@ -403,22 +403,50 @@
         </div>
 
         <div class="set-section" data-set-panel="sync" hidden style="margin-top:24px">
-          <h2 style="font-size:14px">claude.ai sync</h2>
-          <p class="set-desc">Browser extension polls every minute and POSTs to localhost.</p>
-          <div class="set-row">
-            <div>
-              <div class="set-label">Sync method</div>
-              <div class="set-help">Browser extension or one-shot bookmarklet.</div>
+          <section class="settings-card" id="settings-connections">
+            <h2 style="font-size:14px">Connections</h2>
+            <p class="set-desc">Each connection is independent. The dashboard composes data from whichever sources are active.</p>
+
+            <!-- Row 1: Claude Code CLI (Architecture B) -->
+            <div class="connection-row" id="conn-claude-code" data-state="not_installed">
+              <span class="conn-dot" aria-hidden="true">●</span>
+              <div class="conn-body">
+                <div class="conn-title">Claude Code CLI</div>
+                <div class="conn-status">Detecting…</div>
+              </div>
+              <div class="conn-actions">
+                <button type="button" class="conn-cta" hidden>Reconnect</button>
+              </div>
             </div>
-            <span class="tag" id="set-sync-status">checking…</span>
-          </div>
-          <div class="set-row">
-            <div>
-              <div class="set-label">Last sync</div>
-              <div class="set-help mono" id="set-last-sync">—</div>
+
+            <!-- Row 2: claude.ai web (Architecture A) -->
+            <div class="connection-row" id="conn-claude-ai" data-state="not_connected">
+              <span class="conn-dot" aria-hidden="true">●</span>
+              <div class="conn-body">
+                <div class="conn-title">claude.ai web</div>
+                <div class="conn-status">Sign in to see plan-ring data even without Claude Code.</div>
+              </div>
+              <div class="conn-actions">
+                <button type="button" class="conn-cta" id="signin-claude-ai">Sign in to claude.ai</button>
+                <button type="button" class="conn-cta" id="signout-claude-ai" hidden>Sign out</button>
+              </div>
             </div>
-            <button class="btn-secondary" id="set-sync-refresh">Refresh</button>
-          </div>
+
+            <!-- Row 3: Browser extension -->
+            <div class="connection-row" id="conn-extension" data-state="not_detected">
+              <span class="conn-dot" aria-hidden="true">●</span>
+              <div class="conn-body">
+                <div class="conn-title">Browser extension</div>
+                <div class="conn-status">Optional. Useful for browser-only setups.</div>
+              </div>
+              <div class="conn-actions">
+                <a class="conn-cta" href="https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga"
+                   target="_blank" rel="noopener noreferrer">Install Clauge Sync</a>
+              </div>
+            </div>
+
+            <!-- Row 4 (Claude Code logs bookmark) is added in v0.7.1 (MAS flavor only). -->
+          </section>
         </div>
 
       </div>
