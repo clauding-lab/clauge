@@ -86,7 +86,7 @@ fn base_url() -> String {
 
 pub async fn fetch_oauth_usage(access_token: &str) -> Result<PlanUsage, OAuthError> {
     let url = format!("{}/api/oauth/usage", base_url());
-    // TODO(v0.7.1): replace with shared timeout-configured client.
+    // TODO(v0.7.2): replace with shared timeout-configured client.
     // reqwest::Client::new() has no default timeout — a slow claude.ai
     // response would hang the connections refresh.
     let client = reqwest::Client::new();
@@ -125,7 +125,7 @@ pub async fn fetch_prepaid_balance(
     access_token: &str,
 ) -> Result<Option<serde_json::Value>, OAuthError> {
     let url = format!("{}/api/oauth/balance", base_url());
-    // TODO(v0.7.1): replace with shared timeout-configured client.
+    // TODO(v0.7.2): replace with shared timeout-configured client.
     // reqwest::Client::new() has no default timeout — a slow claude.ai
     // response would hang the connections refresh.
     let client = reqwest::Client::new();

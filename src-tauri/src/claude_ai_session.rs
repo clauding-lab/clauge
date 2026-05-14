@@ -151,7 +151,7 @@ pub fn clear_stored_cookie() -> Result<(), ClaudeAiError> {
 pub async fn fetch_claude_ai_usage(org_uuid: &str) -> Result<serde_json::Value, ClaudeAiError> {
     let cookie = read_stored_cookie()?;
     let url = format!("https://claude.ai/api/organizations/{}/usage", org_uuid);
-    // TODO(v0.7.1): replace with shared timeout-configured client.
+    // TODO(v0.7.2): replace with shared timeout-configured client.
     // reqwest::Client::new() has no default timeout — a slow claude.ai
     // response would hang the connections refresh.
     let client = reqwest::Client::new();
