@@ -334,6 +334,11 @@ pub fn quit_app(app: tauri::AppHandle) {
 /// frontend from being tricked into fetching arbitrary URLs. The sidecar's
 /// SSRF surface is already minimal (it only reads local files), but defense
 /// in depth is cheap here.
+
+/// Local /api/health probe timeout. The dashboard polls get_connection_status
+/// every 30s, so a hung Hono response must not block the refresh.
+const LOCAL_HEALTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Maximum response body that `proxy_fetch` will buffer into memory.
 ///
 /// 10 MiB ceiling = defense in depth. The sidecar is local and trusted,
@@ -423,7 +428,7 @@ pub async fn get_connection_status(
         .unwrap_or(3456);
     let url = format!("http://127.0.0.1:{}/api/health", port);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
+        .timeout(LOCAL_HEALTH_TIMEOUT)
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
     match client.get(&url).send().await {

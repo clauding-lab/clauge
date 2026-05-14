@@ -4,6 +4,10 @@
 
 use serde::Serialize;
 
+/// How long ago the extension's last sync can have been for the connection
+/// to count as "Active". Past this, the extension shows "Not Detected".
+const EXTENSION_FRESHNESS_MINUTES: i64 = 10;
+
 #[derive(Debug, Serialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionState {
@@ -61,7 +65,7 @@ pub fn compose_status(
         Some(ts) => {
             if let Ok(t) = chrono::DateTime::parse_from_rfc3339(ts) {
                 let age = chrono::Utc::now().signed_duration_since(t.with_timezone(&chrono::Utc));
-                if age.num_minutes() < 10 {
+                if age.num_minutes() < EXTENSION_FRESHNESS_MINUTES {
                     ConnectionState::Active
                 } else {
                     ConnectionState::NotDetected

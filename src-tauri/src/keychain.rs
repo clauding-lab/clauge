@@ -16,6 +16,10 @@
 
 use serde::Deserialize;
 
+/// The Keychain Services service name Claude Code CLI writes its OAuth blob to.
+/// Stable across Claude Code versions (verified 2026-05-14).
+pub const KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+
 /// Wrapper for the actual Claude Code keychain blob. The blob has a
 /// `claudeAiOauth` top-level key (camelCase) plus an unrelated `mcpOAuth`
 /// section we ignore. Empirically verified 2026-05-14 against a live
@@ -113,7 +117,7 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
     //   security find-generic-password -s "Claude Code-credentials" -w
     let search = ItemSearchOptions::new()
         .class(ItemClass::generic_password())
-        .service("Claude Code-credentials")
+        .service(KEYCHAIN_SERVICE)
         .load_data(true)
         .limit(Limit::Max(1))
         .search();
