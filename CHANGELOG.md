@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.7.0 (2026-05-14) — Hybrid macOS auth (DMG)
+
+**Adds two new authentication paths in addition to the browser extension —
+the Settings → Connections panel composes them into a single live status
+snapshot. macOS DMG flavor only; Mac App Store flavor (sandbox + security-
+scoped bookmark) is the parallel v0.7.1 side workstream.**
+
+### Architecture B — Claude Code keychain piggyback (NEW)
+- Reads the OAuth credentials Claude Code CLI writes to macOS Keychain
+  under service name `Claude Code-credentials`.
+- First read triggers the standard macOS "always allow" prompt.
+- Calls `api.anthropic.com/api/oauth/usage` with the bearer token for plan-
+  ring data. PlanUsage parser is permissive (Option<f64> + serde-flatten
+  catch-all) so unknown response keys won't break parsing.
+- Token leak guard: `Debug` impl on the credentials struct redacts both
+  access and refresh tokens.
+
+### Architecture A — claude.ai webview login (auth surface only)
+- Opens an in-app WKWebView modal at `https://claude.ai/login`. User signs
+  in normally (Google / email / passkey). The `sessionKey` cookie is
+  captured via Tauri 2's `WebviewWindow::cookies_for_url` and persisted
+  to macOS Keychain under our own service name
+  `com.clauding.clauge.claude-ai-session`.
+- **Scope note:** v0.7.0 ships the auth surface only. The cookie persists,
+  the Connections panel green-dots "Signed in to claude.ai", but no
+  dashboard plan-ring data is pulled via this path yet (`fetch_claude_ai_
+  usage` is a stub for v0.7.1). Users who rely solely on claude.ai (no
+  Claude Code CLI installed) will still see empty plan rings in v0.7.0 —
+  the browser extension remains the data path for that cohort.
+
+### Connections panel (NEW)
+- Settings → Connections (renamed from "claude.ai sync"). Three independent
+  rows: Claude Code CLI · claude.ai web · Browser extension.
+- Each row has its own state dot (green / amber / red), live-updating via
+  a 30-second IPC poll + `connections-updated` Tauri events + window-focus
+  refresh.
+- Tauri 2 ACL: 4 new app-level permissions (`allow-get-connection-status`,
+  `allow-open-claude-ai-login`, `allow-signout-claude-ai`,
+  `allow-has-claude-ai-session`) registered via `tauri_build::AppManifest`.
+- `/api/health` now emits `extensionLastSeenAt` so the extension row
+  reflects actual sync state instead of always showing "Not detected".
+
+### Connection-related debt deferred to v0.7.1
+- Shared timeout-configured `reqwest::Client` across `anthropic_oauth` and
+  `claude_ai_session` (TODO markers in place).
+- `Expired` state for Claude Code OAuth tokens — currently expired tokens
+  collapse to "Not installed" (red dot). Expired state variant + label
+  copy already exist; only the compositor needs updating.
+- Silent retry loop in Architecture A if `cookies_for_url` returns no
+  `sessionKey` — needs a `max_attempts` ceiling + user-visible failure.
+- Wiring `fetch_claude_ai_usage` into the dashboard data ingest path so
+  Architecture A actually serves plan-ring data.
+- Empirical pinning of the `api.anthropic.com/api/oauth/usage` response
+  shape (currently parsed permissively; manual smoke verifies).
+
+### Other
+- New Cargo deps: `security-framework`, `chrono` (with `serde`+`clock`
+  features), `thiserror`, `serial_test` (dev).
+- New entitlements file `entitlements.dmg.plist` is now explicitly
+  referenced from `tauri.conf.json`. Posture matches Tauri's previously-
+  implicit DMG defaults; behavior unchanged.
+- `app.js` dropped the v0.4.x `set-sync-status` / `set-last-sync` /
+  `set-sync-refresh` references — Connections panel owns that state now.
+
 ## 0.4.0 (2026-05-08) — V3: Liquid Glass redesign + popover bug fix
 
 **Major redesign: new popover, full dashboard overhaul, canonical tray

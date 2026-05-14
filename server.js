@@ -197,8 +197,9 @@ app.use('/api/usage/ingest', async (c, next) => {
   }
 });
 
-app.get('/api/health', (c) =>
-  c.json({
+app.get('/api/health', async (c) => {
+  const record = await usageStore.load();
+  return c.json({
     service: 'clauge',
     status: 'ok',
     version: APP_VERSION,
@@ -206,8 +207,9 @@ app.get('/api/health', (c) =>
     claudeDir: CLAUDE_DIR,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     subscriptionCost: SUBSCRIPTION_COST,
-  })
-);
+    extensionLastSeenAt: record?.ingestedAt ?? null,
+  });
+});
 
 app.get('/api/summary', async (c) => {
   const filtered = await loadFiltered(c);
