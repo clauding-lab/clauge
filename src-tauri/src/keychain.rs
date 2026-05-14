@@ -105,7 +105,7 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
         Err(e) => {
             // Map underlying OSStatus codes to our error variants. Same string-
             // matching pattern as before — security-framework 2.x doesn't expose
-            // a clean kind enum. Code() check is a future refactor (TODO v0.7.2).
+            // a clean kind enum. Code() check is a future refactor (TODO v0.8.0).
             let msg = e.to_string();
             if msg.contains("errSecItemNotFound") || msg.contains("-25300") {
                 return Err(KeychainError::NotFound);

@@ -25,8 +25,8 @@ both fixes ride a regular auto-updater push.**
 ### Note on release numbering
 - The v0.7.1 slot was previously reserved for the Mac App Store
   (MAS-flavor) side workstream per the 2026-05-11 release-sequencing
-  decision. That workstream renumbers to v0.7.2; its plan document
-  (`docs/superpowers/plans/2026-05-11-v0.7.1-mas-plan.md`) and the
+  decision. That workstream renumbers to v0.8.0; its plan document
+  (`docs/superpowers/plans/2026-05-11-v0.8.0-mas-plan.md`) and the
   project memory note will be updated as a follow-up commit.
 
 ## 0.7.0 (2026-05-14) — Hybrid macOS auth (DMG)
@@ -34,7 +34,7 @@ both fixes ride a regular auto-updater push.**
 **Adds two new authentication paths in addition to the browser extension —
 the Settings → Connections panel composes them into a single live status
 snapshot. macOS DMG flavor only; Mac App Store flavor (sandbox + security-
-scoped bookmark) is the parallel v0.7.1 side workstream.**
+scoped bookmark) is the parallel v0.8.0 side workstream.**
 
 ### Architecture B — Claude Code keychain piggyback (NEW)
 - Reads the OAuth credentials Claude Code CLI writes to macOS Keychain
@@ -55,7 +55,7 @@ scoped bookmark) is the parallel v0.7.1 side workstream.**
 - **Scope note:** v0.7.0 ships the auth surface only. The cookie persists,
   the Connections panel green-dots "Signed in to claude.ai", but no
   dashboard plan-ring data is pulled via this path yet (`fetch_claude_ai_
-  usage` is a stub for v0.7.1). Users who rely solely on claude.ai (no
+  usage` is a stub for v0.8.0). Users who rely solely on claude.ai (no
   Claude Code CLI installed) will still see empty plan rings in v0.7.0 —
   the browser extension remains the data path for that cohort.
 
@@ -71,7 +71,7 @@ scoped bookmark) is the parallel v0.7.1 side workstream.**
 - `/api/health` now emits `extensionLastSeenAt` so the extension row
   reflects actual sync state instead of always showing "Not detected".
 
-### Connection-related debt deferred to v0.7.1
+### Connection-related debt deferred to v0.8.0
 - Shared timeout-configured `reqwest::Client` across `anthropic_oauth` and
   `claude_ai_session` (TODO markers in place).
 - `Expired` state for Claude Code OAuth tokens — currently expired tokens
