@@ -10,6 +10,7 @@
     "package.json": "package.json",
     "public/index.html": "public/index.html",
     "public/app.js": "public/app.js",
+    "public/connections.js": "public/connections.js",
     "public/styles.css": "public/styles.css",
     "public/clauge-icon-1024.svg": "public/clauge-icon-1024.svg",
     "public/clauge-icon-512.svg": "public/clauge-icon-512.svg",
