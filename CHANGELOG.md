@@ -24,6 +24,7 @@
 ### Known limitations
 
 - Keychain prompt still fires once per app launch. This is the ad-hoc-signing reality — without an Apple Developer ID signature, macOS Keychain can't durably bind the "Always Allow" ACL. Persistent fix lands in v0.8.0 alongside the Mac App Store flavor (Apple Developer enrollment is on the v0.8.0 plan as Task 12).
+- The cache only covers Claude Code credentials. The separate claude.ai sessionKey (used by Architecture A) is still re-read on each connections poll — users with a stored claude.ai cookie will see additional Keychain prompts beyond the once-per-launch Claude Code one. Wrapping the claude.ai cookie in a similar cache rides v0.8.0 alongside the Architecture A data plumbing.
 
 ## 0.7.1 (2026-05-14) — UI polish + updater detection fix
 
