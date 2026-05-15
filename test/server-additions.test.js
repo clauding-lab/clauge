@@ -115,7 +115,18 @@ describe('port fallback', () => {
   });
 });
 
-describe('SIGTERM graceful shutdown', () => {
+// Windows note: Node's child.kill('SIGTERM') is emulated as a hard kill on
+// Windows (no POSIX signals; signal arg is ignored per Node docs), so the
+// server's SIGTERM handler never runs and the exit-code assertion fails.
+// Additionally, os.homedir() uses USERPROFILE (not HOME) on Windows, so the
+// test's `env: { HOME: claudeDir }` redirect is silently ignored. The Tauri
+// shell on Windows handles sidecar lifecycle via its own process-kill path
+// (lib.rs::RunEvent::ExitRequested → CommandChild::kill), not SIGTERM.
+describe('SIGTERM graceful shutdown', {
+  skip: process.platform === 'win32'
+    ? 'SIGTERM emulated as hard kill on Windows; Tauri shell uses CommandChild::kill instead'
+    : false,
+}, () => {
   it('exits with code 0 within 2s of SIGTERM', async () => {
     const child = spawn(SERVER_BIN, SERVER_ARGS, {
       env: { ...process.env, PORT: '3503', NO_OPEN: '1' },
