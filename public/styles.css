@@ -1220,3 +1220,30 @@ body.loading { cursor: progress; }
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* v0.7.3: Restart Now button in Settings → Updates.
+   Hidden by default (HTML `hidden` attr); unhidden by app.js after
+   check_for_updates returns UpdateStatus::Installed. Visual style
+   matches the wizard's primary button (brand-2 background, 8px
+   radius) with focus-visible outline for keyboard accessibility. */
+#restart-btn {
+  background: var(--brand-2, #4a9eff);
+  color: var(--text-on-brand, #fff);
+  border: 1px solid var(--brand-2, #4a9eff);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: background 120ms ease;
+}
+
+#restart-btn:hover {
+  background: var(--brand-3, #3a8eef);
+}
+
+#restart-btn:focus-visible {
+  outline: 2px solid var(--brand-2, #4a9eff);
+  outline-offset: 2px;
+}
