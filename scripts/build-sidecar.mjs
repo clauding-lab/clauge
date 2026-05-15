@@ -34,8 +34,22 @@ const startMs = Date.now();
 function log(msg) { console.log(`[build-sidecar] ${msg}`); }
 function fatal(msg) { console.error(`[build-sidecar] FATAL: ${msg}`); process.exit(1); }
 
+// Windows note: Node refuses to spawn .cmd/.bat files directly after
+// CVE-2024-27980; npx, npm, where, etc. are .cmd shims on Windows. Setting
+// shell: true on win32 routes the spawn through cmd.exe (which knows how to
+// resolve PATH-installed .cmd shims). Node escapes argv arrays correctly for
+// cmd.exe under shell: true, so callers don't need to manually quote.
+// POSIX builds keep shell: false to preserve the bash-spawn semantics that
+// were verified locally on macOS.
+const SHELL_ON_WIN = process.platform === 'win32';
+
 function run(cmd, args, opts = {}) {
-  const result = spawnSync(cmd, args, { stdio: 'inherit', cwd: REPO_ROOT, ...opts });
+  const result = spawnSync(cmd, args, {
+    stdio: 'inherit',
+    cwd: REPO_ROOT,
+    shell: SHELL_ON_WIN,
+    ...opts,
+  });
   if (result.status !== 0) {
     fatal(`${cmd} ${args.join(' ')} exited with status ${result.status}`);
   }
@@ -43,7 +57,12 @@ function run(cmd, args, opts = {}) {
 }
 
 function runCapture(cmd, args, opts = {}) {
-  const result = spawnSync(cmd, args, { encoding: 'utf8', cwd: REPO_ROOT, ...opts });
+  const result = spawnSync(cmd, args, {
+    encoding: 'utf8',
+    cwd: REPO_ROOT,
+    shell: SHELL_ON_WIN,
+    ...opts,
+  });
   if (result.status !== 0) {
     fatal(`${cmd} ${args.join(' ')} failed: ${result.stderr || ''}`);
   }
