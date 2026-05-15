@@ -19,7 +19,7 @@
     "test": "node --test test/*.test.js",
     "test:sea": "node --test test/sea-smoke.test.js",
     "test:e2e": "tsx --test test/e2e/v3.test.ts",
-    "build:sidecar": "bash scripts/build-sidecar.sh",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
     "tauri:dev": "cd src-tauri && cargo tauri dev",
     "tauri:build": "cd src-tauri && cargo tauri build"
   },
