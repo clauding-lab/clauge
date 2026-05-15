@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.3 (2026-05-XX) — Auto-update reliability hotfix
+## 0.7.3 (2026-05-15) — Auto-update reliability hotfix
 
 **Two changes to make auto-updates actually take effect across versions.**
 
