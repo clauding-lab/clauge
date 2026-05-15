@@ -39,9 +39,9 @@ pub struct AppState {
     /// Shared, mutex-serialized in-memory cache for the Claude Code OAuth
     /// credentials. Lives in `AppState` so concurrent dashboard polls share
     /// a single cached `ClaudeCodeCreds` and don't each re-prompt the user
-    /// against an ad-hoc-signed build's Keychain ACL. macOS-only because
-    /// the underlying `keychain` module only exists on macOS.
-    #[cfg(target_os = "macos")]
+    /// against an ad-hoc-signed build's Keychain ACL on macOS. On Windows
+    /// the underlying reader is filesystem-backed (no prompt), but the cache
+    /// still serves its purpose of reducing fs reads on rapid polling.
     pub keychain_cache: Arc<crate::keychain_cache::KeychainCache>,
 }
 
@@ -52,7 +52,6 @@ impl Default for AppState {
             shutdown: Arc::new(Notify::new()),
             shutting_down: Arc::new(AtomicBool::new(false)),
             children: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(target_os = "macos")]
             keychain_cache: Arc::new(crate::keychain_cache::KeychainCache::new()),
         }
     }
@@ -427,10 +426,7 @@ pub async fn get_connection_status(
     state: State<'_, AppState>,
     _app: tauri::AppHandle,
 ) -> Result<crate::connections::ConnectionStatus, String> {
-    #[cfg(target_os = "macos")]
     let mut status = crate::connections::detect(&state.keychain_cache);
-    #[cfg(not(target_os = "macos"))]
-    let mut status = crate::connections::detect();
 
     // Fetch /api/health from the local server for the extension heartbeat.
     // 2-second timeout: this is a 127.0.0.1 call and the dashboard polls this
@@ -491,21 +487,13 @@ pub async fn refresh_credentials(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        use tauri::Emitter;
-        match state.keychain_cache.refresh() {
-            Ok(_) => {
-                let _ = app.emit("connections-updated", ());
-                Ok(())
-            }
-            Err(e) => Err(e.to_string()),
+    use tauri::Emitter;
+    match state.keychain_cache.refresh() {
+        Ok(_) => {
+            let _ = app.emit("connections-updated", ());
+            Ok(())
         }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (state, app);
-        Err("refresh_credentials is only supported on macOS".to_string())
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -531,8 +519,9 @@ pub async fn wizard_complete(
     // still in Accessory mode (the state set in lib.rs::setup).
     crate::tray::show_dashboard(&app);
 
-    // Trigger keychain read (this is where the macOS prompt fires).
-    #[cfg(target_os = "macos")]
+    // Trigger credential read. On macOS this is where the Keychain prompt
+    // fires (and may be denied by the user). On Windows the read is silent
+    // (reads %USERPROFILE%\.claude\.credentials.json — no prompt).
     {
         use tauri::Emitter;
         match state.keychain_cache.refresh() {
@@ -540,15 +529,12 @@ pub async fn wizard_complete(
                 let _ = app.emit("connections-updated", ());
             }
             Err(e) => {
-                // User may have clicked Deny on the macOS prompt. Log + continue.
-                // The dashboard will show Claude Code as NotInstalled until they click ↻.
-                log::warn!("wizard_complete: keychain refresh failed: {}", e);
+                // Mac: user may have clicked Deny on the Keychain prompt.
+                // Windows: file missing or unreadable. Either way, log + continue —
+                // dashboard will show Claude Code as NotInstalled until they click ↻.
+                log::warn!("wizard_complete: credential refresh failed: {}", e);
             }
         }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = state;
     }
 
     // Close the wizard window last, after the prompt has been handled.

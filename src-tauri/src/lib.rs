@@ -5,9 +5,7 @@ mod port_discovery;
 mod sidecar;
 mod tray;
 mod windows;
-#[cfg(target_os = "macos")]
 mod keychain;
-#[cfg(target_os = "macos")]
 mod keychain_cache;
 pub mod anthropic_oauth;
 mod claude_ai_session;

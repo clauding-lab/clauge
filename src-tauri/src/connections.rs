@@ -101,7 +101,6 @@ pub fn compose_status(
 /// which the Hono server populates. We pass through whatever the JSON
 /// response contains; for this synchronous detect() call we pass None —
 /// the IPC handler composes with the heartbeat at the call site.
-#[cfg(target_os = "macos")]
 pub fn detect(cache: &crate::keychain_cache::KeychainCache) -> ConnectionStatus {
     let cc_version = match cache.get_or_load() {
         Ok(creds) => {
@@ -112,18 +111,15 @@ pub fn detect(cache: &crate::keychain_cache::KeychainCache) -> ConnectionStatus 
                 Some("authenticated")
             }
         }
-        Err(_) => None,
+        Err(e) => {
+            log::warn!("connections::detect: credential read failed: {:?}", e);
+            None
+        }
     };
 
     let claude_ai = crate::claude_ai_session::read_stored_cookie().is_ok();
 
     compose_status(cc_version, claude_ai, None)
-}
-
-#[cfg(not(target_os = "macos"))]
-pub fn detect() -> ConnectionStatus {
-    let claude_ai = crate::claude_ai_session::read_stored_cookie().is_ok();
-    compose_status(None, claude_ai, None)
 }
 
 #[cfg(test)]
