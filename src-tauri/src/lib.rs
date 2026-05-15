@@ -1,5 +1,6 @@
 mod ipc;
 mod menu;
+#[cfg(target_os = "macos")]
 mod native_popover;
 mod port_discovery;
 mod sidecar;
@@ -43,14 +44,26 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(ipc::AppState::default())
         .setup(|app| {
-            // Boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The dock
-            // icon flips ON when the dashboard window opens (tray.rs::show_dashboard
+            // macOS: boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The
+            // dock icon flips ON when the dashboard window opens (tray.rs::show_dashboard
             // and ipc::open_dashboard) and OFF again when the dashboard closes
-            // (windows.rs::create_dashboard window-close handler).
+            // (windows.rs::create_dashboard window-close handler). The native
+            // popover (NSStatusItem + NSPopover) is the always-visible % chiclet.
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                crate::native_popover::init(app.handle())?;
+            }
 
-            crate::native_popover::init(app.handle())?;
+            // Windows (and any non-macOS target): there is no menu-bar surface;
+            // the dashboard window IS the app. Open it on launch. Closing the
+            // window quits the app (see windows.rs cfg-gated close handler).
+            // The v0.7.2 first-launch onboarding wizard spawn (below in this
+            // setup closure) is cross-platform and works on Windows unchanged.
+            #[cfg(not(target_os = "macos"))]
+            {
+                crate::tray::show_dashboard(app.handle());
+            }
 
             // Native macOS app-wide menu (Clauge / Edit / View / Window / Help).
             // Custom ids (`menu:preferences`, `menu:refresh`, `menu:github`)
