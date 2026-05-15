@@ -590,6 +590,40 @@ fn mark_onboarding_completed(app: &tauri::AppHandle) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+/// Restart the Tauri shell after killing all sidecar children.
+///
+/// Used by the Settings → Updates "Restart Now" button after a successful
+/// `check_for_updates` install. Sequence:
+/// 1. signal_shutdown() — sets the shutting_down flag and notifies waiters
+///    so the supervisor in sidecar.rs exits its loop without respawning.
+/// 2. take_all_children() + kill — drops the live sidecar process.
+///    SIGKILL on a CommandChild we own; failures are logged.
+/// 3. sleep 200 ms — gives SIGKILL time to deliver before the process
+///    replaces itself.
+/// 4. app.restart() — Tauri's stable in-place re-exec. Does not return.
+///
+/// On macOS, app.restart() exec()s the binary path of the current .app
+/// bundle. After an auto-update has replaced /Applications/Clauge.app,
+/// the new process loads the new binary AND the new sidecar binary
+/// (because port_discovery's SpawnAt path will spawn a fresh child).
+#[tauri::command]
+pub async fn restart_app(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    state.signal_shutdown();
+    for child in state.take_all_children() {
+        let pid = child.pid();
+        if let Err(e) = child.kill() {
+            log::warn!("restart_app: failed to kill sidecar pid={}: {}", pid, e);
+        } else {
+            log::info!("restart_app: killed sidecar pid={}", pid);
+        }
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    app.restart();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

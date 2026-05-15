@@ -23,6 +23,7 @@
     "allow-has-claude-ai-session",
     "allow-refresh-credentials",
     "allow-wizard-complete",
-    "allow-wizard-skip"
+    "allow-wizard-skip",
+    "allow-restart-app"
   ]
 }

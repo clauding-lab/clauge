@@ -233,6 +233,7 @@ pub fn run() {
             ipc::refresh_credentials,
             ipc::wizard_complete,
             ipc::wizard_skip,
+            ipc::restart_app,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

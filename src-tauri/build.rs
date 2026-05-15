@@ -17,6 +17,7 @@ const APP_COMMANDS: &[&str] = &[
     "refresh_credentials",
     "wizard_complete",
     "wizard_skip",
+    "restart_app",
 ];
 
 fn main() {
