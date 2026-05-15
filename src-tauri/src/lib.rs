@@ -1,6 +1,5 @@
 mod ipc;
 mod menu;
-#[cfg(target_os = "macos")]
 mod native_popover;
 mod port_discovery;
 mod sidecar;
@@ -56,10 +55,11 @@ pub fn run() {
             }
 
             // Windows (and any non-macOS target): there is no menu-bar surface;
-            // the dashboard window IS the app. Open it on launch. Closing the
-            // window quits the app (see windows.rs cfg-gated close handler).
-            // The v0.7.2 first-launch onboarding wizard spawn (below in this
-            // setup closure) is cross-platform and works on Windows unchanged.
+            // the dashboard window IS the app. Open it on launch. Phase 1 Task 2
+            // will cfg-gate windows.rs's prevent_close+hide so closing the dashboard
+            // on Windows actually quits the app (today's close handler is
+            // unconditional and would leave the app as an invisible background
+            // process on Windows).
             #[cfg(not(target_os = "macos"))]
             {
                 crate::tray::show_dashboard(app.handle());
