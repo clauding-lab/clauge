@@ -20,7 +20,7 @@
   <img src="docs/screenshots/v0.5.0/popover-v2.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS app** (universal Apple Darwin DMG, signed auto-updater) plus the existing `npx clauge` browser dashboard. v0.5.0 ships a native NSPopover menu-bar surface (persists across app deactivation) and a compact 1100×800 dashboard.
+> Status: **V3 — native macOS app** (universal Apple Darwin DMG, signed auto-updater) plus the existing `npx clauge` browser dashboard. v0.7.x ships a guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates actually take effect on click.
 
 ## Install
 
@@ -35,7 +35,26 @@ Download the latest universal DMG from [Releases](https://github.com/clauding-la
 The app sits in your menu bar:
 - **Left-click** the menu-bar icon → glanceable popover (Plan Capacity rings + Finance + Today)
 - **Right-click** → Open Dashboard / Preferences / Check for Updates / Quit
-- **Auto-updates** from gh-pages on every launch
+- **Auto-updates** from gh-pages on every launch. When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** in Settings → Updates (or wait for the macOS notification). v0.7.3+ also self-heals across updates: if the previous version's sidecar is still running, the new launch detects the version mismatch and evicts it before adopting a fresh one.
+
+#### First launch — the Welcome wizard
+
+A 4-step Welcome wizard explains the one permission Clauge needs: read access to your Claude Code OAuth credentials in macOS Keychain. Walk through:
+
+1. **Welcome** — what Clauge does
+2. **macOS Keychain Access** — sets expectations for the system prompt that's about to fire
+3. **Other Permissions** — Notifications, Launch at Login, optional claude.ai sign-in
+4. **Ready to Connect** — click **Connect ✓** (or **Skip for now**)
+
+On Connect, macOS shows its standard Keychain prompt:
+
+> "Clauge wants to use your confidential information stored in 'Claude Code-credentials' in your keychain."
+
+Click **Always Allow**. The wizard closes and the dashboard appears with your data. Clauge never sees your Anthropic password, API key, or session token — it just reads the OAuth blob Claude Code itself wrote to your Keychain.
+
+> **Note for v0.7.x DMG flavor:** the build ships ad-hoc-signed (no Apple Developer ID yet — coming in v0.8.0 with the Mac App Store flavor). macOS Keychain can't durably remember "Always Allow" without a stable code-signing identity, so the prompt may reappear on each launch. The wizard's Step 2 explains this; v0.8.0 fixes it permanently. v0.7.2's in-memory cache means it only fires once per launch (down from once per 30s poll in older builds), and the **↻ Refresh** button next to the Claude Code row in Settings → Connections lets you re-trigger the read on demand (e.g., after running `claude /login` to rotate your token).
+
+If you click **Skip for now** instead, the dashboard appears immediately with Claude Code shown as "Not Installed". Click the **↻ Refresh** button on that row whenever you're ready to grant Keychain access — same Always Allow prompt fires.
 
 **Option B — Browser dashboard via npx (Linux, headless servers, or no-desktop-app preference):**
 
@@ -95,7 +114,7 @@ This is the architectural elegance: nothing to leak, nothing to rotate, nothing 
 
 ### What this means in practice
 
-- **No onboarding wizard, no account creation.** Install the app, open the dashboard. If you've used Claude Code on this machine, you'll see your data immediately.
+- **No account creation, no Anthropic credentials.** A 4-step first-launch wizard (v0.7.2+) explains the one macOS Keychain permission Clauge needs to read Claude Code's OAuth blob. It never asks for an account, password, or API key. After **Connect**, your data appears immediately — provided you've used Claude Code on this machine.
 - **No accounts, no plans, no passwords held by Clauge.** Compromise the binary, you compromise nothing about your Anthropic identity.
 - **No telemetry.** Clauge never phones home — Clauding-Lab does not know you exist.
 - **The extension is optional.** The dashboard works fine without it; you just won't see claude.ai plan-ring data (the Claude Code CLI metrics are unaffected).
