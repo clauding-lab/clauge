@@ -522,6 +522,13 @@ pub async fn wizard_complete(
         // Continue anyway — failing here would leave the user stuck in the wizard.
     }
 
+    // Surface the dashboard FIRST so the app activation policy flips to
+    // Regular and gets a Dock icon. macOS suppresses Keychain prompts for
+    // Accessory-mode apps without a foreground window, so cache.refresh()
+    // below would have its prompt silently dropped if we called it while
+    // still in Accessory mode (the state set in lib.rs::setup).
+    crate::tray::show_dashboard(&app);
+
     // Trigger keychain read (this is where the macOS prompt fires).
     #[cfg(target_os = "macos")]
     {
@@ -542,13 +549,10 @@ pub async fn wizard_complete(
         let _ = state;
     }
 
-    // Close the wizard window.
+    // Close the wizard window last, after the prompt has been handled.
     if let Some(w) = app.get_webview_window("onboarding") {
         let _ = w.close();
     }
-
-    // Surface the dashboard so the user has somewhere to land.
-    crate::tray::show_dashboard(&app);
 
     Ok(())
 }
