@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.2 (2026-05-XX) — Keychain UX + first-launch wizard + v0.7.x debt cleanup
+
+### Added
+
+- First-launch onboarding wizard (4 steps) explaining the macOS Keychain prompt and setting expectations for ad-hoc-signed builds. Fires on first launch; suppressed thereafter via `onboarding_completed` flag.
+- In-memory keychain cache: collapses ~120 keychain reads per hour (from 30s polling) to 1 read per launch. Manual `↻` Refresh button in Settings → Connections triggers a fresh read.
+- `refresh_credentials`, `wizard_complete`, `wizard_skip` IPC commands.
+- Expired-state amber dot in the Claude Code connection row (was previously collapsed to "Not Installed").
+
+### Fixed
+
+- Architecture A claude.ai login: cookie-capture polling now has a 60s ceiling (40 attempts × 1.5s); past that, the auth window closes and a `cookie-capture-timeout` event fires so the frontend can show "Sign-in didn't complete."
+- Popover JS not running on launch (commit `07fca20` from post-v0.7.1; rides v0.7.2).
+
+### Internal
+
+- Errno-based keychain error mapping replaces the brittle `e.to_string().contains(...)` pattern.
+- `KEYCHAIN_SERVICE`, `EXTENSION_FRESHNESS_MINUTES`, `LOCAL_HEALTH_TIMEOUT` extracted to module-level consts.
+- Shared `reqwest::Client` (`OAUTH_CLIENT`) via `once_cell::sync::Lazy`; replaces three per-call `Client::new()` sites.
+- Cache-invalidation contract documented on `fetch_oauth_usage` for v0.8.0 callers.
+
+### Known limitations
+
+- Keychain prompt still fires once per app launch. This is the ad-hoc-signing reality — without an Apple Developer ID signature, macOS Keychain can't durably bind the "Always Allow" ACL. Persistent fix lands in v0.8.0 alongside the Mac App Store flavor (Apple Developer enrollment is on the v0.8.0 plan as Task 12).
+
 ## 0.7.1 (2026-05-14) — UI polish + updater detection fix
 
 **Two small follow-ups from the v0.7.0 release smoke. No new features;
