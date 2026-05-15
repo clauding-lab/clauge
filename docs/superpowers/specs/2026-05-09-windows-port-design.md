@@ -3,8 +3,72 @@
 **Date:** 2026-05-09
 **Author:** brainstorming session
 **Status:** approved, ready for implementation plan
+**Last reviewed:** 2026-05-15 (see addendum below)
 **Target version:** v0.6.0
 **Platforms added:** Windows x86_64 (NSIS installer)
+
+---
+
+## Status update (2026-05-15) — design decisions stand, codebase context changed
+
+The design decisions in this document remain valid:
+
+- Dashboard-only on Windows (no tray icon, no popover)
+- NSIS installer, `installMode: perUser`, no Authenticode for v0.6.0
+- x86_64 only
+- Cross-platform Node ESM script for SEA builds
+- Unified `latest.json` via mirror-updater CI job
+- macOS path untouched
+
+**What changed since 2026-05-09:** four releases shipped on the macOS line
+(v0.7.0 through v0.7.3, 2026-05-14 to 2026-05-15) that added Mac-only code
+to modules this spec marks as "Unchanged (verified cross-platform)":
+
+| Spec claim | Reality after v0.7.3 |
+|---|---|
+| `src-tauri/src/ipc.rs` is cross-platform | Now calls into Mac-only `keychain.rs` for `refresh_credentials`, `get_connection_status`, and others |
+| `src-tauri/src/port_discovery.rs` is cross-platform | `kill_pid_on_port` shells out to Unix-only `lsof` + `kill -9` (added v0.7.3 for orphan-sidecar self-heal) |
+| (Not yet existing in this spec) | New module `src-tauri/src/keychain.rs` uses Apple-only `security-framework` crate |
+| (Not yet existing in this spec) | New module `src-tauri/src/keychain_cache.rs` wraps the keychain reader |
+| (Not yet existing in this spec) | New module `src-tauri/src/claude_ai_session.rs` uses WKWebView for cookie capture |
+| (Not yet existing in this spec) | New module `src-tauri/src/connections.rs` composes the three auth surfaces |
+
+The execution plan at
+`docs/superpowers/plans/2026-05-09-windows-implementation-plan.md` has been
+updated to add **Phase 7: v0.7.x integration** covering: cross-platform
+credential-store abstraction (Mac Keychain ↔ Windows Credential Manager
+via the `keyring` crate), cross-platform `kill_pid_on_port` (via
+`netstat -ano` + `taskkill /F /PID` on Windows), and verification tasks
+for the v0.7.2 first-launch wizard, v0.7.3 cold-launch self-heal, and
+Settings → Refresh / Restart Now IPCs.
+
+**New ⚠ empirical-verify gate:** before Phase 7 Task B can be designed
+concretely, Task A must execute — install Claude Code CLI on a real
+Windows box and verify where `claude /login` persists the OAuth token
+(Windows Credential Manager vs `%APPDATA%` JSON vs `%USERPROFILE%\.claude\`).
+This is the single highest-information action remaining for the Windows
+port.
+
+**Scope changes vs original spec:**
+
+- The "Modifies (cross-platform plumbing)" list grows to include
+  `src-tauri/src/keychain.rs` (extracted into `credential_store/macos.rs`)
+  and `src-tauri/src/port_discovery.rs` (`kill_pid_on_port` cfg-branched).
+- The "Adds (Windows-specific)" list grows to include
+  `src-tauri/src/credential_store/windows.rs` and a new `keyring` crate
+  dependency in `Cargo.toml`.
+- The "Unchanged (verified cross-platform)" list shrinks: `ipc.rs`,
+  `connections.rs`, and `port_discovery.rs` are no longer in it. The
+  underlying APIs they use are still cross-platform; the call sites
+  through `keychain` and `kill_pid_on_port` need cfg-routing.
+
+**Architecture A on Windows is empirically uncertain.** The spec assumes
+the Tauri WebviewWindow cookie API works identically on WKWebView (macOS)
+and WebView2 (Windows). Phase 7 Task D verifies this; if it doesn't work,
+Windows v0.6.0 ships Architecture B (Claude Code keychain) only, with a
+documented CHANGELOG limitation.
+
+---
 
 ## Problem
 
