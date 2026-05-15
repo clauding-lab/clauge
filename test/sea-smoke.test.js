@@ -17,7 +17,7 @@ describe('SEA sidecar smoke', { skip: SKIP_SMOKE ? 'SKIP_SEA_SMOKE=1 set' : fals
   before(() => {
     if (!existsSync(SIDECAR)) {
       console.log('[smoke] Building SEA sidecar (one-time)...');
-      execSync('bash scripts/build-sidecar.sh', { cwd: REPO_ROOT, stdio: 'inherit' });
+      execSync('node scripts/build-sidecar.mjs', { cwd: REPO_ROOT, stdio: 'inherit' });
     }
   });
 

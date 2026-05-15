@@ -91,7 +91,7 @@ jobs:
       # on macOS yet — both are tracked elsewhere).
       #
       # SKIP_SEA_SMOKE=1 is critical: without it, sea-smoke.test.js auto-runs
-      # `bash scripts/build-sidecar.sh` to produce the SEA binary, which
+      # `node scripts/build-sidecar.mjs` to produce the SEA binary, which
       # tauri-action's beforeBuildCommand then rebuilds again from scratch
       # below — wasting ~10 min and doubling exposure to nodejs.org flake.
       # The tauri-action invocation IS the SEA build smoke test in CI.
@@ -105,7 +105,7 @@ jobs:
       # ... doesn't exist".  We don't need REAL SEA binaries here because
       # cargo test only exercises Rust unit logic that wraps the sidecar,
       # not the sidecar itself.  tauri-action's beforeBuildCommand step
-      # later runs scripts/build-sidecar.sh which overwrites these stubs
+      # later runs scripts/build-sidecar.mjs which overwrites these stubs
       # with the real universal binaries before the DMG bundle is produced.
       - name: Stub external binaries for cargo test
         working-directory: src-tauri
@@ -141,7 +141,7 @@ jobs:
 
       # tauri-action invokes `cargo tauri build`, which honours
       # `build.beforeBuildCommand` from src-tauri/tauri.conf.json
-      # (currently `bash ../scripts/build-sidecar.sh`).  The sidecar
+      # (currently `node ../scripts/build-sidecar.mjs`).  The sidecar
       # script auto-detects the runner's native arch and downloads the
       # other-arch Node tarball from nodejs.org, producing both
       # clauge-server-aarch64-apple-darwin and
