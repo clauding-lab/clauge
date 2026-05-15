@@ -250,3 +250,22 @@ body.is-windows .platform-win { display: block; }
     color: #f4f4f5;
   }
 }
+
+/* Connect button feedback states. wizard-btn-connecting dims slightly while
+ * the IPC is in flight; wizard-btn-connected briefly shows green-tinted
+ * confirmation before the Rust-side window close lands.
+ * (Tauri's WebviewWindow.close() takes ~100-200ms — enough to register
+ * the flash visually without making the click feel slow.) */
+.wizard-btn-connecting {
+  opacity: 0.7;
+  cursor: progress;
+}
+.wizard-btn-connected {
+  background: #16a34a !important;
+  color: white;
+  border-color: #16a34a !important;
+}
+.wizard-btn-connected:hover {
+  background: #16a34a !important;
+  filter: none;
+}

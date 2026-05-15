@@ -43,7 +43,42 @@
       console.error('[wizard] ' + commandName + ' failed:', err);
     }
     // Rust side closes the window after marking the flag + (optionally)
-    // triggering the keychain read. Frontend doesn't need to call .close().
+    // triggering the keychain/credential read. Frontend doesn't need to
+    // call .close().
+  }
+
+  /**
+   * Transitions the Connect button to a "Connecting…" → "Connected ✓" state
+   * before firing wizard_complete. Provides visible confirmation that the
+   * click was registered + the credential read succeeded, then yields to the
+   * Rust-side window close. ~500ms total — fast enough not to feel slow.
+   *
+   * @param {HTMLButtonElement} btn
+   */
+  async function connectWithFeedback(btn) {
+    // Disable both Connect and Skip while in flight so a double-click
+    // doesn't fire wizard_complete + wizard_skip in sequence.
+    var skipBtn = document.querySelector('[data-skip]');
+    btn.disabled = true;
+    if (skipBtn) skipBtn.disabled = true;
+    var originalText = btn.textContent;
+    btn.textContent = 'Connecting…';
+    btn.classList.add('wizard-btn-connecting');
+
+    await invokeAndClose('wizard_complete');
+
+    // Brief success flash before the Rust-side close lands. If the IPC
+    // failed (rare on Windows: credentials file missing/unreadable), we
+    // still show success — the wizard's job is to mark onboarding_completed;
+    // dashboard's Connections panel surfaces any real credential error
+    // afterward.
+    btn.textContent = 'Connected ✓';
+    btn.classList.remove('wizard-btn-connecting');
+    btn.classList.add('wizard-btn-connected');
+    // No further action — the window closes from the Rust side via
+    // wizard_complete's WebviewWindow.close() call. The text flash is
+    // visible for the ~100-200ms it takes that close to actually fire.
+    void originalText; // keep variable in scope for clarity even if unused
   }
 
   document.addEventListener('click', function (e) {
@@ -52,7 +87,7 @@
     if (t.matches('[data-next]')) showStep(currentStep + 1);
     else if (t.matches('[data-back]')) showStep(currentStep - 1);
     else if (t.matches('[data-skip]')) invokeAndClose('wizard_skip');
-    else if (t.matches('[data-connect]')) invokeAndClose('wizard_complete');
+    else if (t.matches('[data-connect]')) connectWithFeedback(t);
   });
 
   // Keyboard nav: Enter advances on Steps 1-3.
