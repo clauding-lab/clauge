@@ -26,24 +26,39 @@
       </footer>
     </section>
 
-    <!-- Step 2: Keychain expectation-setting -->
+    <!-- Step 2: Credential read expectation-setting -->
     <section class="wizard-step" data-step="2">
-      <h1>macOS Keychain Access</h1>
-      <p>Next, macOS will ask permission to read your Claude Code credentials. When you see this dialog:</p>
+      <div class="platform-mac">
+        <h1>macOS Keychain Access</h1>
+        <p>Next, macOS will ask permission to read your Claude Code credentials. When you see this dialog:</p>
 
-      <div class="dialog-mock" role="img" aria-label="Mockup of the macOS Keychain prompt with Always Allow highlighted">
-        <p class="dialog-title">Clauge wants to use your confidential information stored in "Claude Code-credentials" in your keychain.</p>
-        <div class="dialog-buttons">
-          <button class="mock-btn" disabled>Deny</button>
-          <button class="mock-btn" disabled>Allow</button>
-          <button class="mock-btn highlighted" disabled>Always Allow</button>
+        <div class="dialog-mock" role="img" aria-label="Mockup of the macOS Keychain prompt with Always Allow highlighted">
+          <p class="dialog-title">Clauge wants to use your confidential information stored in "Claude Code-credentials" in your keychain.</p>
+          <div class="dialog-buttons">
+            <button class="mock-btn" disabled>Deny</button>
+            <button class="mock-btn" disabled>Allow</button>
+            <button class="mock-btn highlighted" disabled>Always Allow</button>
+          </div>
+          <p class="dialog-arrow">↑ click this one</p>
         </div>
-        <p class="dialog-arrow">↑ click this one</p>
+
+        <p class="note">
+          <strong>Heads up:</strong> until Clauge ships with Apple Developer signing, this prompt may reappear on each launch. Always click <strong>"Always Allow"</strong> when you see it.
+        </p>
       </div>
 
-      <p class="note">
-        <strong>Heads up:</strong> until Clauge ships with Apple Developer signing (planned for v0.8.0), this prompt may reappear on each launch. Always click <strong>"Always Allow"</strong> when you see it.
-      </p>
+      <div class="platform-win">
+        <h1>Reading Your Credentials</h1>
+        <p>Next, Clauge will read your Claude Code credentials from your user profile:</p>
+
+        <pre class="path-mock" aria-label="Path to the Claude Code credentials file">%USERPROFILE%\.claude\.credentials.json</pre>
+
+        <p>This is the file Claude Code's CLI writes when you run <code>claude /login</code>. No prompt — just a silent file read.</p>
+
+        <p class="note">
+          <strong>Heads up:</strong> if you haven't logged in to Claude Code yet, open a terminal and run <code>claude /login</code> first. Clauge can't read what isn't there.
+        </p>
+      </div>
 
       <footer class="wizard-nav">
         <button class="wizard-btn" data-back>← Back</button>
@@ -53,19 +68,22 @@
 
     <!-- Step 3: Other permissions -->
     <section class="wizard-step" data-step="3">
-      <h1>Other Permissions</h1>
+      <h1>Other Settings</h1>
       <ul class="permission-list">
         <li>
           <strong>Notifications</strong>
-          <p>Clauge will notify you when updates are available. Click "Allow" when macOS asks.</p>
+          <p class="platform-mac">Clauge will notify you when updates are available. Click "Allow" when macOS asks.</p>
+          <p class="platform-win">Clauge will notify you when updates are available via Windows notifications.</p>
         </li>
         <li>
           <strong>Launch at Login</strong>
-          <p>Clauge has been added to your login items so it starts when you log in to your Mac. Toggle off in System Settings → General → Login Items if you'd prefer manual launches.</p>
+          <p class="platform-mac">Clauge has been added to your login items so it starts when you log in to your Mac. Toggle off in System Settings → General → Login Items if you'd prefer manual launches.</p>
+          <p class="platform-win">Clauge has been added to your startup apps so it starts when you sign in to Windows. Toggle off in Settings → Apps → Startup if you'd prefer manual launches.</p>
         </li>
         <li>
           <strong>claude.ai sign-in</strong>
-          <p>Optional. Connect from Settings → Connections if you have a claude.ai account (separate from Claude Code).</p>
+          <p class="platform-mac">Optional. Connect from Settings → Connections if you have a claude.ai account (separate from Claude Code).</p>
+          <p class="platform-win">Not yet supported on Windows — coming in a future release. Claude Code CLI credentials are enough for most usage.</p>
         </li>
       </ul>
       <footer class="wizard-nav">
@@ -77,8 +95,13 @@
     <!-- Step 4: Ready to connect -->
     <section class="wizard-step" data-step="4">
       <h1>Ready to Connect</h1>
-      <p>Clicking <strong>Connect</strong> will trigger the macOS Keychain prompt.</p>
-      <p>Remember: click <strong>"Always Allow"</strong> when you see it.</p>
+      <div class="platform-mac">
+        <p>Clicking <strong>Connect</strong> will trigger the macOS Keychain prompt.</p>
+        <p>Remember: click <strong>"Always Allow"</strong> when you see it.</p>
+      </div>
+      <div class="platform-win">
+        <p>Clicking <strong>Connect</strong> will read your Claude Code credentials and open the dashboard.</p>
+      </div>
       <footer class="wizard-nav">
         <button class="wizard-btn" data-skip>Skip for now</button>
         <button class="wizard-btn primary" data-connect>Connect ✓</button>

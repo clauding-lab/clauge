@@ -9,6 +9,17 @@
   const TOTAL_STEPS = 4;
   let currentStep = 1;
 
+  // Platform detection — drives platform-only sections in the HTML.
+  // Mac is the default; Windows toggles `is-windows` on the body, which
+  // CSS uses to show .platform-win elements and hide .platform-mac ones.
+  const ua = (navigator.userAgent || '').toLowerCase();
+  const isWindows = ua.indexOf('windows') !== -1;
+  if (isWindows) {
+    document.body.classList.add('is-windows');
+  } else {
+    document.body.classList.add('is-mac');
+  }
+
   function showStep(n) {
     if (n < 1 || n > TOTAL_STEPS) return;
     document.querySelectorAll('.wizard-step').forEach(function (s) {

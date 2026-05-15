@@ -221,3 +221,32 @@ body {
   .wizard-nav { border-top-color: #2e2e2e; }
   #wizard-progress::-webkit-progress-bar { background: #2e2e2e; }
 }
+
+/* Platform-conditional content. Default (Mac) hides .platform-win; Windows
+ * (body.is-windows) flips: hides .platform-mac, shows .platform-win.
+ * Set in onboarding.js via navigator.userAgent at load time. */
+.platform-win { display: none; }
+body.is-windows .platform-mac { display: none; }
+body.is-windows .platform-win { display: block; }
+
+/* Windows credentials path mock — visual analog to the Mac dialog-mock. */
+.path-mock {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  margin: 16px 0;
+  overflow-x: auto;
+  white-space: pre;
+  color: #18181b;
+}
+
+@media (prefers-color-scheme: dark) {
+  .path-mock {
+    background: #27272a;
+    border-color: #3f3f46;
+    color: #f4f4f5;
+  }
+}
