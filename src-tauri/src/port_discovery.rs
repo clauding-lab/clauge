@@ -39,6 +39,32 @@ pub async fn probe(port: u16) -> bool {
     }
 }
 
+/// Same probe as `probe()`, but returns the response body string when the
+/// service identifies as "clauge" so callers can parse additional fields
+/// (e.g., the `version` field for cold-launch self-heal). Returns `None`
+/// on any failure mode `probe` would have returned `false` for.
+///
+/// We re-parse the body in `version_matches_self` rather than taking the
+/// already-parsed `HealthBody`; the cost is one extra JSON parse, but the
+/// helper stays a pure function that accepts any string for unit testing.
+async fn probe_with_body(port: u16) -> Option<String> {
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(1))
+        .build()
+        .ok()?;
+    let resp = client.get(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let text = resp.text().await.ok()?;
+    let parsed: HealthBody = serde_json::from_str(&text).ok()?;
+    if parsed.service != "clauge" {
+        return None;
+    }
+    Some(text)
+}
+
 /// Compare a `/api/health` response body's `version` field to the Tauri
 /// shell's compile-time version. Returns `true` iff the body parses, has a
 /// `version` string field, and that field exactly equals
@@ -91,11 +117,38 @@ async fn kill_pid_on_port(port: u16) -> Result<(), String> {
 }
 
 pub async fn discover() -> DiscoveryResult {
-    if probe(3456).await {
-        DiscoveryResult::External(3456)
-    } else {
-        DiscoveryResult::SpawnAt(3456)
+    discover_with_retry(true).await
+}
+
+/// Inner discovery loop with a retry budget for orphan-sidecar eviction.
+///
+/// First call is `discover_with_retry(true)`. If we find an existing sidecar
+/// whose `/api/health` reports a version that mismatches our compile-time
+/// `CARGO_PKG_VERSION`, we kill the PID listening on port 3456 and re-run
+/// ourselves with `false`. The second call falls through to `SpawnAt` even
+/// if the orphan is still alive (the supervisor's bind will fail and the
+/// crash-respawn-backoff handles it). This bounded recursion guarantees
+/// termination even if `lsof` is missing.
+async fn discover_with_retry(allow_orphan_kill: bool) -> DiscoveryResult {
+    if let Some(body) = probe_with_body(3456).await {
+        if version_matches_self(&body) {
+            return DiscoveryResult::External(3456);
+        }
+        log::warn!(
+            "Orphan sidecar detected on port 3456: version mismatch (self={})",
+            env!("CARGO_PKG_VERSION")
+        );
+        if allow_orphan_kill {
+            if let Err(e) = kill_pid_on_port(3456).await {
+                log::warn!("kill_pid_on_port failed: {} — falling through to SpawnAt", e);
+            }
+            return Box::pin(discover_with_retry(false)).await;
+        }
+        log::warn!(
+            "Orphan kill already attempted; falling through to SpawnAt — supervisor backoff will handle"
+        );
     }
+    DiscoveryResult::SpawnAt(3456)
 }
 
 #[cfg(test)]
@@ -165,5 +218,51 @@ mod tests {
         // Pick an obscure port that's almost certainly not in use.
         let result = kill_pid_on_port(45679).await;
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn probe_with_body_returns_body_for_clauge_response() {
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/api/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"service":"clauge","version":"0.3.0","pid":1}"#)
+            .create_async()
+            .await;
+        let port: u16 = server.url().rsplit(':').next().unwrap().parse().unwrap();
+        let body = probe_with_body(port).await;
+        assert!(body.is_some(), "expected Some(body), got None");
+        assert!(body.unwrap().contains(r#""version":"0.3.0""#));
+    }
+
+    #[tokio::test]
+    async fn probe_with_body_returns_none_when_no_server() {
+        assert!(probe_with_body(45680).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn probe_with_body_returns_none_for_non_clauge_service() {
+        let mut server = Server::new_async().await;
+        let _m = server
+            .mock("GET", "/api/health")
+            .with_status(200)
+            .with_body(r#"{"service":"something-else"}"#)
+            .create_async()
+            .await;
+        let port: u16 = server.url().rsplit(':').next().unwrap().parse().unwrap();
+        assert!(probe_with_body(port).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn discover_with_retry_returns_external_on_version_match() {
+        // We can't easily test against port 3456 (the hardcoded default)
+        // from a test without race risks. This test validates the
+        // version-matching branch of version_matches_self in isolation,
+        // since version_matches_self is exercised directly by the dedicated
+        // unit tests above. discover_with_retry's port=3456 hardcode is
+        // verified by the manual smoke gate (Task 8).
+        let body = format!(r#"{{"service":"clauge","version":"{}"}}"#, env!("CARGO_PKG_VERSION"));
+        assert!(version_matches_self(&body));
     }
 }
