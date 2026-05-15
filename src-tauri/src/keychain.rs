@@ -1,18 +1,28 @@
-//! macOS Keychain Services wrapper for the Claude Code OAuth credentials entry.
+//! Claude Code OAuth credentials reader.
 //!
-//! Service name: "Claude Code-credentials" (written by Anthropic's official
-//! Claude Code CLI when the user runs `claude /login`).
+//! Anthropic's Claude Code CLI persists OAuth tokens under the service name
+//! "Claude Code-credentials" — on macOS via Keychain Services (this module's
+//! historical reason for being called `keychain`), on Windows via a JSON file
+//! at `%USERPROFILE%\.claude\.credentials.json`. The blob schema is identical
+//! across platforms (verified empirically — see Phase 7 Task A notes at
+//! `docs/superpowers/notes/2026-05-15-windows-claude-code-creds.md`).
 //!
-//! Blob format (empirically observed; verified during Phase 2 manual smoke):
-//!     { "access_token": "...", "refresh_token": "...", "expires_at": "ISO8601", ... }
+//! Blob shape (deserialized via `ClaudeCodeCreds`):
 //!
-//! First read on a given user account triggers a macOS Keychain access prompt
-//! ("Clauge wants to use your confidential information stored in 'Claude Code-
-//! credentials' in your keychain"). User clicks "Always Allow" to silence
-//! subsequent prompts.
+//! ```text
+//! { "claudeAiOauth": { "accessToken": "...", "refreshToken": "...",
+//!                      "expiresAt": <unix-ms>, "scopes": [...],
+//!                      "subscriptionType": "...", "rateLimitTier": "..." } }
+//! ```
 //!
-//! On non-macOS targets the entire module is a no-op (the dependency
-//! `security-framework` is gated to macOS).
+//! macOS: first read on a fresh install triggers a Keychain access prompt.
+//! User clicks "Always Allow" to silence subsequent reads. Cached via
+//! `keychain_cache.rs` so we only hit Keychain Services once per launch.
+//!
+//! Windows: file-backed; no prompt, no cache strictly required, but
+//! `keychain_cache.rs` still reduces filesystem reads on rapid polling.
+//!
+//! Linux: not supported (returns `UnsupportedPlatform`).
 
 use serde::Deserialize;
 
@@ -85,6 +95,8 @@ pub enum KeychainError {
     Parse(#[from] serde_json::Error),
     #[error("security-framework error (OSStatus {code}): {message}")]
     Framework { code: i32, message: String },
+    #[error("filesystem error reading credentials: {0}")]
+    Io(#[from] std::io::Error),
     #[error("not supported on this platform")]
     UnsupportedPlatform,
 }
@@ -153,7 +165,40 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
     Ok(creds)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows: read Claude Code OAuth credentials from the per-user JSON file
+/// at %USERPROFILE%\.claude\.credentials.json. The CLI persists the same blob
+/// format Mac stores in Keychain Services (verified by Phase 7 Task A:
+/// docs/superpowers/notes/2026-05-15-windows-claude-code-creds.md).
+///
+/// Note: the filename has a leading dot (`.credentials.json`, not
+/// `credentials.json`) — Unix-style hidden-file convention that Claude Code
+/// uses across platforms.
+#[cfg(target_os = "windows")]
+pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
+    let userprofile = std::env::var("USERPROFILE").map_err(|e| KeychainError::Framework {
+        code: 0,
+        message: format!("USERPROFILE env var not set: {}", e),
+    })?;
+    let path = std::path::PathBuf::from(userprofile)
+        .join(".claude")
+        .join(".credentials.json");
+    read_from_path(&path)
+}
+
+/// Internal: read + parse the credentials file at a given path. Factored out
+/// so tests can exercise the parse/error logic with a temp file.
+#[cfg(target_os = "windows")]
+fn read_from_path(path: &std::path::Path) -> Result<ClaudeCodeCreds, KeychainError> {
+    let blob = std::fs::read(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => KeychainError::NotFound,
+        std::io::ErrorKind::PermissionDenied => KeychainError::AccessDenied,
+        _ => KeychainError::Io(e),
+    })?;
+    let creds: ClaudeCodeCreds = serde_json::from_slice(&blob)?;
+    Ok(creds)
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
     Err(KeychainError::UnsupportedPlatform)
 }
@@ -204,5 +249,52 @@ mod tests {
         // errSecAuthFailed = -25293
         let err = map_osstatus_to_error(-25293, "test");
         assert!(matches!(err, KeychainError::AccessDenied), "got {:?}", err);
+    }
+}
+
+#[cfg(test)]
+#[cfg(target_os = "windows")]
+mod windows_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn sample_creds_json() -> &'static str {
+        r#"{"claudeAiOauth":{"accessToken":"a-token","refreshToken":"r-token","expiresAt":1900000000000,"scopes":["user:inference"],"subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#
+    }
+
+    #[test]
+    fn read_from_path_returns_not_found_for_missing_file() {
+        let path = std::env::temp_dir().join(format!("clauge-test-missing-{}.json", std::process::id()));
+        // Ensure it doesn't exist
+        let _ = std::fs::remove_file(&path);
+        let err = read_from_path(&path).expect_err("expected NotFound");
+        assert!(matches!(err, KeychainError::NotFound), "got {:?}", err);
+    }
+
+    #[test]
+    fn read_from_path_parses_valid_json() {
+        let path = std::env::temp_dir().join(format!("clauge-test-valid-{}.json", std::process::id()));
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(sample_creds_json().as_bytes()).unwrap();
+        drop(f);
+
+        let creds = read_from_path(&path).expect("read should succeed");
+        assert_eq!(creds.claude_ai_oauth.access_token, "a-token");
+        assert_eq!(creds.claude_ai_oauth.refresh_token.as_deref(), Some("r-token"));
+        assert_eq!(creds.claude_ai_oauth.expires_at, Some(1_900_000_000_000));
+        assert_eq!(creds.claude_ai_oauth.subscription_type.as_deref(), Some("max"));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_from_path_returns_parse_error_for_garbage() {
+        let path = std::env::temp_dir().join(format!("clauge-test-garbage-{}.json", std::process::id()));
+        std::fs::write(&path, b"not valid json at all").unwrap();
+
+        let err = read_from_path(&path).expect_err("expected Parse error");
+        assert!(matches!(err, KeychainError::Parse(_)), "got {:?}", err);
+
+        let _ = std::fs::remove_file(&path);
     }
 }
