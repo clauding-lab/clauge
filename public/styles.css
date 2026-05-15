@@ -1247,3 +1247,42 @@ body.loading { cursor: progress; }
   outline: 2px solid var(--brand-2, #4a9eff);
   outline-offset: 2px;
 }
+
+/* Plan-capacity empty-state walkthrough (v0.8.0). Shown alongside the four
+ * placeholder rings when no usage snapshot has been ingested yet. Gives the
+ * user a concrete 3-step path to populate plan rings via the browser extension. */
+.plan-empty-hint {
+  grid-column: 1 / -1;
+  margin-top: 16px;
+  padding: 16px 20px;
+  background: var(--glass-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.plan-empty-hint-title {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: var(--text-1);
+  font-size: 13.5px;
+}
+.plan-empty-hint-steps {
+  margin: 0;
+  padding-left: 22px;
+}
+.plan-empty-hint-steps li {
+  margin-bottom: 4px;
+}
+.plan-empty-hint-steps a {
+  color: var(--brand-2, #4a9eff);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.plan-empty-hint-aside {
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+}

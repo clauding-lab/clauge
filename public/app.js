@@ -215,10 +215,27 @@ function renderPlanCapacity() {
     planTag.textContent = '○ Awaiting sync';
     planTag.style.background = 'var(--glass-2)';
     planTag.style.color = 'var(--text-3)';
-    // Render four placeholder rings so the layout doesn't collapse.
-    body.innerHTML = ['Session', 'Weekly', 'Sonnet', 'Design']
+    // Empty-state: render 4 placeholder rings (so layout doesn't collapse)
+    // PLUS an inline walkthrough explaining how to get the rings to populate.
+    // Plan-ring data lives behind two paths in v0.8.0:
+    //  - claude.ai signed-in (Architecture A — Mac only in v0.8.0)
+    //  - Clauge Sync browser extension (cross-platform, only path on Windows)
+    const isWindows = /windows/i.test(navigator.userAgent || '');
+    const placeholders = ['Session', 'Weekly', 'Sonnet', 'Design']
       .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
       .join('');
+    const walkthrough = `
+      <div class="plan-empty-hint">
+        <p class="plan-empty-hint-title">No plan data yet${isWindows ? ' (install Clauge Sync)' : ''}</p>
+        <ol class="plan-empty-hint-steps">
+          <li>Install <a href="https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga" target="_blank" rel="noopener noreferrer">Clauge Sync</a> from the Chrome Web Store.</li>
+          <li>Open <a href="https://claude.ai" target="_blank" rel="noopener noreferrer">claude.ai</a> in your browser and sign in (Edge users: extensions install from the Chrome Web Store too).</li>
+          <li>The rings above populate within ~30 seconds — the extension posts usage snapshots back to this app.</li>
+        </ol>
+        ${isWindows ? '<p class="plan-empty-hint-aside">claude.ai sign-in inside Clauge is not yet supported on Windows — the browser extension is currently the only path.</p>' : '<p class="plan-empty-hint-aside">Alternative: sign in to claude.ai from Settings → Connections to pull plan data directly without the extension.</p>'}
+      </div>
+    `;
+    body.innerHTML = placeholders + walkthrough;
     inline.hidden = true;
     return;
   }
