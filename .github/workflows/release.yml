@@ -153,7 +153,13 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: '--target ${{ matrix.target }} --bundles ${{ matrix.bundles }}'
-          includeUpdaterJson: false
+          # includeUpdaterJson: true generates AND uploads latest.json. Both
+          # matrix entries upload to the Release (last-writer-wins race —
+          # harmless because the mirror-updater job overwrites with the
+          # merged file at the end). Setting this to false suppresses JSON
+          # generation entirely (verified v0.8.0-rc1) — find-step then can't
+          # locate it on disk.
+          includeUpdaterJson: true
 
       - name: Find and upload latest.json as artifact
         shell: bash
