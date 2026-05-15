@@ -60,6 +60,36 @@ fn version_matches_self(health_response: &str) -> bool {
     server_version == env!("CARGO_PKG_VERSION")
 }
 
+/// Find any PIDs listening on the given TCP port and kill them with SIGKILL.
+///
+/// Shells out to `lsof -i :PORT -t` (one PID per line, no extra columns)
+/// then runs `kill -9 PID` for each. If `lsof` is missing or fails to
+/// spawn (returns Err), the caller decides whether to retry discovery
+/// or fall through. Failures from `kill` (process already dead, owned by
+/// another user) are silently ignored — the post-condition is "port is
+/// free", and we tolerate races where the process exited on its own.
+///
+/// Sleeps 300 ms after the kill attempts to let the OS release the port.
+async fn kill_pid_on_port(port: u16) -> Result<(), String> {
+    use tokio::process::Command;
+    let lsof = Command::new("lsof")
+        .args(["-i", &format!(":{}", port), "-t"])
+        .output()
+        .await
+        .map_err(|e| format!("lsof spawn failed: {}", e))?;
+    let stdout = std::str::from_utf8(&lsof.stdout).unwrap_or("");
+    let pids: Vec<&str> = stdout.split_whitespace().collect();
+    if pids.is_empty() {
+        return Ok(());
+    }
+    for pid in pids {
+        log::info!("kill_pid_on_port: SIGKILL pid={} on port={}", pid, port);
+        let _ = Command::new("kill").args(["-9", pid]).status().await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Ok(())
+}
+
 pub async fn discover() -> DiscoveryResult {
     if probe(3456).await {
         DiscoveryResult::External(3456)
@@ -128,5 +158,12 @@ mod tests {
     fn version_matches_self_false_when_malformed_json() {
         let body = "not json at all";
         assert!(!version_matches_self(body));
+    }
+
+    #[tokio::test]
+    async fn kill_pid_on_port_succeeds_when_no_pid_listening() {
+        // Pick an obscure port that's almost certainly not in use.
+        let result = kill_pid_on_port(45679).await;
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }
 }
