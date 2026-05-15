@@ -39,6 +39,27 @@ pub async fn probe(port: u16) -> bool {
     }
 }
 
+/// Compare a `/api/health` response body's `version` field to the Tauri
+/// shell's compile-time version. Returns `true` iff the body parses, has a
+/// `version` string field, and that field exactly equals
+/// `env!("CARGO_PKG_VERSION")`.
+///
+/// Three failure modes (malformed JSON, missing field, mismatched value)
+/// all return `false`. The compile-time `env!` guarantees the comparison
+/// is against THIS Tauri shell's version, not whatever the running sidecar
+/// claims to be.
+fn version_matches_self(health_response: &str) -> bool {
+    let v: serde_json::Value = match serde_json::from_str(health_response) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let server_version = match v.get("version").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return false,
+    };
+    server_version == env!("CARGO_PKG_VERSION")
+}
+
 pub async fn discover() -> DiscoveryResult {
     if probe(3456).await {
         DiscoveryResult::External(3456)
@@ -83,5 +104,29 @@ mod tests {
             .await;
         let port: u16 = server.url().rsplit(':').next().unwrap().parse().unwrap();
         assert!(!probe(port).await);
+    }
+
+    #[test]
+    fn version_matches_self_true_when_version_field_matches_self() {
+        let body = format!(r#"{{"service":"clauge","version":"{}"}}"#, env!("CARGO_PKG_VERSION"));
+        assert!(version_matches_self(&body));
+    }
+
+    #[test]
+    fn version_matches_self_false_when_version_mismatch() {
+        let body = r#"{"service":"clauge","version":"0.0.0-not-a-real-version"}"#;
+        assert!(!version_matches_self(body));
+    }
+
+    #[test]
+    fn version_matches_self_false_when_missing_field() {
+        let body = r#"{"service":"clauge"}"#;
+        assert!(!version_matches_self(body));
+    }
+
+    #[test]
+    fn version_matches_self_false_when_malformed_json() {
+        let body = "not json at all";
+        assert!(!version_matches_self(body));
     }
 }
