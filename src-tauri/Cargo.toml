@@ -14,7 +14,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.0", features = ["tray-icon", "image-png", "devtools"] }
+# `macos-private-api` is required on the base line (not per-target) because
+# tauri-build's allowlist check (build.rs) walks Cargo.toml's [dependencies]
+# table only — it doesn't union per-target blocks. Adding it here matches
+# `app.macOSPrivateApi: true` in tauri.conf.json. Tauri's own internal
+# cfg-gates restrict the actual macOS-private API usage to target_os="macos",
+# so requesting the feature on non-Apple targets is harmless. See Phase 1
+# Task 3 + Phase 7 Task C postmortem in the Windows port plan.
+tauri = { version = "2.0", features = ["macos-private-api", "tray-icon", "image-png", "devtools"] }
 tauri-plugin-shell = "2.0"
 tauri-plugin-single-instance = "2.0"
 tauri-plugin-autostart = "2.0"
@@ -34,7 +41,6 @@ thiserror = "1"
 once_cell = "1.19"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2.0", features = ["macos-private-api"] }
 objc2 = "0.6"
 security-framework = "2.11"
 objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSView", "NSPanel", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "NSEvent", "NSPopover", "NSViewController", "NSApplication", "NSControl", "NSButton", "NSCell"] }
