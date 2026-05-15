@@ -16,7 +16,9 @@ const STATE_LABELS = {
   },
   claude_ai: {
     signed_in: 'Signed in to claude.ai',
-    not_connected: 'Sign in to see plan-ring data even without Claude Code.',
+    not_connected: IS_WINDOWS
+      ? 'Not yet supported on Windows — install Clauge Sync below for plan-ring data.'
+      : 'Sign in to see plan-ring data even without Claude Code.',
     expired: 'Sign-in expired. Click to re-authenticate.',
   },
   extension: {
@@ -55,10 +57,12 @@ function applyStatus(status) {
   applyRow('conn-extension', status.extension, STATE_LABELS.extension);
 
   // claude.ai sign-in / sign-out button visibility.
+  // On Windows the Architecture A path is deferred to a future release —
+  // hide both buttons entirely; the row's state text explains the situation.
   const signinBtn = document.getElementById('signin-claude-ai');
   const signoutBtn = document.getElementById('signout-claude-ai');
-  if (signinBtn) signinBtn.hidden = status.claude_ai === 'signed_in';
-  if (signoutBtn) signoutBtn.hidden = status.claude_ai !== 'signed_in';
+  if (signinBtn) signinBtn.hidden = IS_WINDOWS || status.claude_ai === 'signed_in';
+  if (signoutBtn) signoutBtn.hidden = IS_WINDOWS || status.claude_ai !== 'signed_in';
 
   // Extension "Install Clauge Sync" CTA visibility — hide when active.
   // (Task 11 reviewer's Important #2 fix.)
