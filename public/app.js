@@ -690,22 +690,32 @@ async function initSettingsGeneralControls() {
     }
   });
 
+  const restartBtn = document.getElementById('restart-btn');
+
   updatesBtn.addEventListener('click', async () => {
     if (updatesBtn.disabled) return;
     updatesBtn.disabled = true;
     if (updatesStatus) updatesStatus.textContent = 'Checking…';
     try {
-      // tauri-plugin-updater 2.10 returns the Update object directly when an
-      // update exists (or null when up-to-date). It does NOT expose an
-      // `.available` boolean — truthy-check on the Update itself is the
-      // right shape. The buggy `update.available` check shipped in v0.7.0
-      // made the dashboard report "Up to date" even when 0.5.0 → 0.7.0 was
-      // detected; this lands in the next release.
-      const update = await invoke('plugin:updater|check');
-      if (updatesStatus) {
-        updatesStatus.textContent = update
-          ? `v${update.version} available — restart app to apply`
-          : 'Up to date';
+      // v0.7.3: switched from `plugin:updater|check` (returns Update | null) to
+      // the `check_for_updates` IPC, which downloads + installs in one shot
+      // and returns a tagged enum:
+      //   {status: "up_to_date"}                          → nothing changed
+      //   {status: "installed", version: "X.Y.Z"}         → restart to apply
+      // The previous handler shipped in v0.7.0 buggy (`update.available`),
+      // got patched in v0.7.1 to truthy-check `update`, and is now superseded
+      // by the install-on-check flow plus a Restart Now button.
+      const result = await invoke('check_for_updates');
+      if (result?.status === 'installed') {
+        if (restartBtn) {
+          restartBtn.textContent = `↻ Restart Now to apply v${result.version}`;
+          restartBtn.hidden = false;
+        }
+        if (updatesStatus) {
+          updatesStatus.textContent = `v${result.version} installed — restart to apply`;
+        }
+      } else if (updatesStatus) {
+        updatesStatus.textContent = 'Up to date';
       }
     } catch (err) {
       console.error('updater check failed:', err);
@@ -714,6 +724,17 @@ async function initSettingsGeneralControls() {
       updatesBtn.disabled = false;
     }
   });
+
+  if (restartBtn) {
+    restartBtn.addEventListener('click', () => {
+      // Fire-and-forget: the Tauri shell exec()s itself before any response
+      // can come back. The .catch is only reached if the IPC layer rejects
+      // before the kill (which `app.restart()` shouldn't do — it returns ()).
+      invoke('restart_app').catch((err) => {
+        console.error('[updates] restart_app rejected', err);
+      });
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
