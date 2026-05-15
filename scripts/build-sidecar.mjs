@@ -12,14 +12,22 @@
 
 import { spawnSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, copyFileSync, copyFileSync as _copy,
-  rmSync, readdirSync, statSync, createReadStream, createWriteStream,
+  existsSync, mkdirSync, copyFileSync,
+  rmSync, readdirSync, statSync,
   readFileSync, writeFileSync, chmodSync,
 } from 'node:fs';
-import { resolve, dirname, join, basename } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+
+// esbuild + postject have Node APIs. Using them directly avoids the npx
+// .cmd-shim spawn problem on Windows (CVE-2024-27980 hardened Node against
+// direct .bat/.cmd spawn) AND avoids shell-quoting issues with the esbuild
+// `--banner:js=` value, which contains spaces, single quotes, and
+// semicolons — cmd.exe's argv splitter mangles the banner if we shell out.
+import { build as esbuildBuild } from 'esbuild';
+import { inject as postjectInject } from 'postject';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(__filename), '..');
@@ -102,20 +110,21 @@ function copyPopoverAssets() {
   }
 }
 
-// 1. Bundle server.js + lib/ into a single ESM file.
-function bundleServer() {
+// 1. Bundle server.js + lib/ into a single ESM file via the esbuild Node API.
+async function bundleServer() {
   log('Bundling server + lib into ESM...');
   mkdirSync(DIST, { recursive: true });
   const banner = "import { createRequire as __seaCreateRequire } from 'node:module'; const require = __seaCreateRequire(import.meta.url);";
-  run('npx', [
-    'esbuild', 'server.js',
-    '--bundle',
-    '--platform=node',
-    '--target=node22',
-    '--format=esm',
-    `--banner:js=${banner}`,
-    `--outfile=${BUNDLE}`,
-  ]);
+  await esbuildBuild({
+    absWorkingDir: REPO_ROOT,
+    entryPoints: ['server.js'],
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'esm',
+    banner: { js: banner },
+    outfile: BUNDLE,
+  });
 }
 
 // 2. Build the SEA blob (architecture-independent).
@@ -124,22 +133,22 @@ function generateSeaBlob() {
   run('node', ['--experimental-sea-config', 'scripts/sea-config.json']);
 }
 
-// 3. Inject SEA blob into a Node binary copy. Per-platform postject args.
-function injectSea({ srcNode, outPath, codesign }) {
+// 3. Inject SEA blob into a Node binary copy via the postject Node API.
+async function injectSea({ srcNode, outPath, codesign }) {
   copyFileSync(srcNode, outPath);
   if (codesign) {
     // Strip any existing signature (codesign refuses to re-inject otherwise).
     spawnSync('codesign', ['--remove-signature', outPath], { stdio: 'inherit' });
   }
 
-  const postjectArgs = [
-    'postject', outPath, 'NODE_SEA_BLOB', 'sea-prep.blob',
-    '--sentinel-fuse', SENTINEL,
-  ];
+  const blob = readFileSync(SEA_BLOB);
+  const injectOptions = {
+    sentinelFuse: SENTINEL,
+  };
   if (process.platform === 'darwin') {
-    postjectArgs.push('--macho-segment-name', 'NODE_SEA');
+    injectOptions.machoSegmentName = 'NODE_SEA';
   }
-  run('npx', postjectArgs);
+  await postjectInject(outPath, 'NODE_SEA_BLOB', blob, injectOptions);
 
   if (process.platform !== 'win32') {
     chmodSync(outPath, 0o755);
@@ -170,7 +179,7 @@ async function buildMacOSUniversal() {
   if (!(currentArch in currentMap)) fatal(`Unsupported macOS arch: ${currentArch}`);
 
   // Inject for the current arch using the local Node binary.
-  injectSea({
+  await injectSea({
     srcNode: currentNode,
     outPath: join(BIN_DIR, `clauge-server-${currentMap[currentArch]}`),
     codesign: true,
@@ -201,7 +210,7 @@ async function buildMacOSUniversal() {
   run('tar', ['-xzf', join(tmpDir, tarballName), '-C', tmpDir]);
   const otherNodePath = join(tmpDir, `node-v${nodeVersion}-darwin-${otherArchTarball}`, 'bin', 'node');
 
-  injectSea({
+  await injectSea({
     srcNode: otherNodePath,
     outPath: join(BIN_DIR, `clauge-server-${otherTriple}`),
     codesign: true,
@@ -231,11 +240,11 @@ async function buildMacOSUniversal() {
 }
 
 // 4b. Windows branch: single x64 binary.
-function buildWindowsX64() {
+async function buildWindowsX64() {
   const currentNode = runCapture('where', ['node']).split('\n')[0]
     .replace(/\r$/, '');
 
-  injectSea({
+  await injectSea({
     srcNode: currentNode,
     outPath: join(BIN_DIR, 'clauge-server-x86_64-pc-windows-msvc.exe'),
     codesign: false,
@@ -267,13 +276,13 @@ async function main() {
   mkdirSync(BIN_DIR, { recursive: true });
 
   copyPopoverAssets();
-  bundleServer();
+  await bundleServer();
   generateSeaBlob();
 
   if (process.platform === 'darwin') {
     await buildMacOSUniversal();
   } else if (process.platform === 'win32') {
-    buildWindowsX64();
+    await buildWindowsX64();
   } else {
     fatal(`Unsupported platform: ${process.platform}. Supported: darwin, win32.`);
   }
