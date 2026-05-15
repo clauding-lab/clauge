@@ -163,15 +163,28 @@ jobs:
 
       - name: Find and upload latest.json as artifact
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          LATEST_JSON=$(find src-tauri/target -name 'latest.json' -type f | head -n 1)
+          # tauri-action with includeUpdaterJson: true uploads latest.json to
+          # the Release but doesn't always leave a copy on disk in the bundle
+          # dir (empirically verified on v0.8.0-rc1 retry — `Uploading
+          # latest.json...` appears in the action log but find under
+          # src-tauri/target returns empty). Try the broad on-disk search
+          # first; fall back to downloading from the Release we just published.
+          LATEST_JSON=$(find . -name 'latest.json' -type f -not -path '*/node_modules/*' 2>/dev/null | head -n 1 || true)
           if [ -z "$LATEST_JSON" ]; then
-            echo "::error::latest.json not found after build" >&2
-            exit 1
+            echo "latest.json not found on disk; downloading from Release..."
+            TAG="${{ github.ref_name }}"
+            REPO="${{ github.repository }}"
+            gh release download "$TAG" --pattern 'latest.json' --dir . --repo "$REPO"
+            LATEST_JSON="./latest.json"
           fi
           echo "Found latest.json: $LATEST_JSON"
           cp "$LATEST_JSON" "${{ matrix.artifact-name }}"
+          echo "Captured per-platform latest.json contents:"
+          cat "${{ matrix.artifact-name }}"
 
       - name: Upload latest.json as workflow artifact
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
