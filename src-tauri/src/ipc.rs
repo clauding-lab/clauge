@@ -143,13 +143,15 @@ pub fn get_server_port(state: State<AppState>) -> Result<u16, String> {
     read_port(&state)
 }
 
-/// Outcome of `check_for_updates`. Serialized as `"up_to_date"` or `"installed"`
-/// for the frontend to distinguish "nothing to do" from "restart pending".
+/// Outcome of `check_for_updates`. Serialized as a tagged enum:
+/// - `{"status":"up_to_date"}` — nothing to do
+/// - `{"status":"installed","version":"X.Y.Z"}` — new version installed
+///   on disk; user needs to restart (frontend surfaces a Restart Now button).
 #[derive(serde::Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum UpdateStatus {
     UpToDate,
-    Installed,
+    Installed { version: String },
 }
 
 /// Walk up `exe`'s ancestor path and return the first `.app` bundle dir.
@@ -255,7 +257,7 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
                 log::warn!("Failed to dispatch update notification: {}", e);
             }
 
-            Ok(UpdateStatus::Installed)
+            Ok(UpdateStatus::Installed { version: new_version })
         }
         Ok(None) => Ok(UpdateStatus::UpToDate),
         Err(e) => Err(e.to_string()),
