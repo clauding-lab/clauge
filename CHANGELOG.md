@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.2 (2026-05-XX) — Keychain UX + first-launch wizard + v0.7.x debt cleanup
+## 0.7.2 (2026-05-15) — Keychain UX + first-launch wizard + v0.7.x debt cleanup
 
 ### Added
 

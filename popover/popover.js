@@ -1,4 +1,4 @@
-// Clauge popover (v0.7.1).
+// Clauge popover (v0.7.2).
 //
 // Loads inside the native NSPopover's WKWebView, served by the SEA sidecar at
 // http://127.0.0.1:{port}/popover/index.html — so /api/* fetches are
