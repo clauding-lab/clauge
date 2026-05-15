@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.0 (2026-05-XX) — Windows port
+
+**First Windows release.** Clauge now ships as an NSIS installer alongside the existing macOS DMG. Same codebase, same auto-updater channel — your existing v0.7.3 macOS install gets the v0.8.0 update normally; new Windows users download `Clauge_0.8.0_x64-setup.exe` from the Releases page. Windows users see a Microsoft Defender SmartScreen warning on first launch (Authenticode signing is deferred); README documents the click-through.
+
+### Added
+
+- **Windows x86_64 NSIS installer** with per-user install mode (no UAC admin prompt). Tauri's WebView2 download bootstrapper handles the rare Windows 10 machine without Edge WebView2 pre-installed.
+- **Cross-platform `kill_pid_on_port`** (`port_discovery.rs`) — Unix path unchanged; new Windows branch parses `netstat -ano` and `taskkill /F /PID`. Closes the same orphan-sidecar gap on Windows that v0.7.3 closed on macOS.
+- **Filesystem credential reader** (`keychain.rs::read_claude_code_credentials` Windows impl) — reads `%USERPROFILE%\.claude\.credentials.json` directly. Schema is identical to the macOS Keychain blob (empirical verification at `docs/superpowers/notes/2026-05-15-windows-claude-code-creds.md`); no struct changes needed.
+- **Windows multi-resolution icon** (`src-tauri/icons/icon.ico`, 7 sizes: 16/32/48/64/96/128/256).
+
+### Changed
+
+- **`scripts/build-sidecar.mjs`** (cross-platform Node ESM) replaces the bash + `lipo` `scripts/build-sidecar.sh`. macOS branch reproduces the prior arm64 + x86_64 + universal flow byte-for-functional-equivalent; Windows branch produces `clauge-server-x86_64-pc-windows-msvc.exe`.
+- **`tauri.conf.json::build.beforeBuildCommand`** now invokes the .mjs script.
+- **CI release workflow** restructured to a build matrix (`macos-14` + `windows-2022`) with a third `mirror-updater` job that merges per-platform `latest.json` files into a unified file served from `gh-pages`. Auto-updater client picks the correct entry per OS/arch.
+
+### Windows-specific UX notes
+
+- **No system-tray icon on Windows** — closing the dashboard window quits the app (Start Menu shortcut relaunches). The macOS menu-bar % chiclet has no Windows equivalent without dynamic-ICO rendering; deferred.
+- **First-launch wizard** (v0.7.2 feature) works identically on Windows. No Keychain prompt to explain — the wizard's "macOS keychain" step is benign no-op on Windows.
+- **Restart Now button** (v0.7.3 feature) works on Windows via `AppHandle::restart()`.
+
+### Known limitations (Windows)
+
+- **Unsigned binary** — SmartScreen will warn on first launch. Authenticode signing (~$300-500/yr EV cert) deferred until download volume justifies. README has click-through instructions.
+- **Architecture A (claude.ai sign-in) not supported on Windows in v0.8.0.** The 3 IPCs degenerate to `NotAuthenticated`. Architecture B (Claude Code CLI keychain → credentials file) is the only path; Anthropic OAuth bearer is read from the file as on macOS. WebView2 cookie-capture port deferred to v0.8.x.
+- **x86_64 only** — Surface Pro X / Snapdragon Copilot+ (ARM64 Windows) not supported. Add when there's a user.
+- **No MSI bundle** — NSIS only. Add MSI variant if a corporate IT team asks.
+
+### Internal
+
+- `KeychainError` gained an `Io(std::io::Error)` variant for Windows filesystem errors. Mac-side `Framework { code, message }` variant unchanged.
+- `port_discovery::kill_pid_on_port` split into `kill_pid_on_port_unix` (`#[cfg(unix)]`) + `kill_pid_on_port_windows` (`#[cfg(windows)]`); 3 new Windows-only tests for file-reader edge cases (NotFound, valid JSON, garbage JSON).
+- `macos-private-api` Tauri feature stays on the base `[dependencies]` line — tauri-build's allowlist check rejects the per-target placement attempt. Documented in plan.
+- `mod native_popover;` stays unconditional — the module already exposes cross-platform stubs at lines 676-682 for non-macOS callers.
+
 ## 0.7.3 (2026-05-15) — Auto-update reliability hotfix
 
 **Two changes to make auto-updates actually take effect across versions.**
