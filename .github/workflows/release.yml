@@ -173,3 +173,78 @@ jobs:
           name: ${{ matrix.artifact-name }}
           path: ${{ matrix.artifact-name }}
           retention-days: 7
+
+  mirror-updater:
+    name: Merge latest.json and mirror to gh-pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download latest-macos.json
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: latest-macos.json
+          path: ./macos
+      - name: Download latest-windows.json
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: latest-windows.json
+          path: ./windows
+
+      - name: Merge per-platform JSONs into latest.json
+        run: |
+          set -euo pipefail
+          # Each per-platform file has the shape:
+          # { "version": "...", "notes": "...", "pub_date": "...",
+          #   "platforms": { "<key>": { "url": "...", "signature": "..." } } }
+          # Merge: union the platforms keys, take version/notes/pub_date from
+          # macOS (both runs produce identical values for tagged builds).
+          jq -s '
+            .[0] as $base |
+            {
+              version: $base.version,
+              notes: $base.notes,
+              pub_date: $base.pub_date,
+              platforms: ((.[0].platforms // {}) + (.[1].platforms // {}))
+            }
+          ' macos/latest-macos.json windows/latest-windows.json > latest.json
+          echo "Merged latest.json:"
+          cat latest.json
+
+      - name: Upload merged latest.json to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber
+
+      - name: Mirror latest.json to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
+
+          # Guard: does gh-pages exist on remote?
+          if ! git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" gh-pages | grep -q 'refs/heads/gh-pages'; then
+            echo "::warning::gh-pages branch does not exist — skipping latest.json mirror."
+            exit 0
+          fi
+
+          GH_PAGES_DIR=$(mktemp -d)
+          git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$GH_PAGES_DIR"
+          cp latest.json "$GH_PAGES_DIR/latest.json"
+
+          cd "$GH_PAGES_DIR"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json
+          if git diff --cached --quiet -- latest.json; then
+            echo 'latest.json unchanged — nothing to push.'
+            exit 0
+          fi
+          git commit -m "release: ${TAG} latest.json mirror"
+          git push origin gh-pages
