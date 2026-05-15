@@ -1240,7 +1240,7 @@ body.loading { cursor: progress; }
 }
 
 #restart-btn:hover {
-  background: var(--brand-3, #3a8eef);
+  filter: brightness(1.05);
 }
 
 #restart-btn:focus-visible {
