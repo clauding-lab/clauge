@@ -34,6 +34,32 @@ on the macOS line that materially change the Windows-port surface area:
   call now triggers the v0.7.3 self-heal path. Step 2's `replace with:` snippet
   must be re-derived against the live file before applying. See updated Task 1
   Step 2 below.
+
+**KNOWN-WRONG INSTRUCTIONS IN THIS PLAN (discovered during 2026-05-15 execution
+on branch clauding-lab/windows-port-v060 — read before re-running):**
+
+- **Phase 1 Task 1 Step 1 is unnecessary.** Do NOT cfg-gate `mod native_popover;`
+  at `lib.rs:3`. `native_popover.rs:676-682` already exposes cross-platform
+  stubs (`#[cfg(not(target_os = "macos"))] pub fn reload_for_port(...) {}` +
+  similar `init`). Two unconditional callers (`lib.rs::External` discovery arm,
+  `sidecar.rs::spawn_one`) rely on those stubs. Gating the module declaration
+  would break the Windows compile. Recovered in commit `5ccc8eb`. Just do
+  Step 2 (the setup-closure cfg-gate) and skip Step 1.
+- **Phase 1 Task 3 (move `macos-private-api` to per-target block) is wrong.**
+  Cargo would union the features correctly at build time, but `tauri-build`'s
+  static allowlist check walks ONLY the base `[dependencies]` table and
+  demands the feature be listed there to match `app.macOSPrivateApi: true`
+  in `tauri.conf.json`. The per-target placement causes `cargo build` to
+  panic with: *"The `tauri` dependency features on the `Cargo.toml` file
+  does not match the allowlist defined under `tauri.conf.json`."* Recovered
+  in commit `e269cd6`. Leave `macos-private-api` on the base `tauri` features
+  line. The feature on Windows is harmless because Tauri's own internal
+  cfg-gates restrict the actual private-API usage to `target_os="macos"`.
+- **Phase 3 Task 10 `installMode: "perUser"` is wrong.** Tauri 2.x's NSIS
+  schema only accepts `"currentUser"`, `"perMachine"`, or `"both"`. Use
+  `"currentUser"` (same semantics — install per-user, no UAC admin prompt).
+  Recovered in commit `e269cd6`. Update the verbatim JSON snippet in Task 10
+  Step 1 accordingly.
 - **New work** that the original plan does not cover: cross-platform credential
   store (Mac Keychain vs Windows Credential Manager), cross-platform
   `kill_pid_on_port`, claude.ai sign-in path on Windows (WKWebView is Apple-only;
