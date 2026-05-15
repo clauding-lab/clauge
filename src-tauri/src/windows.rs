@@ -119,17 +119,21 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build()?;
 
-    // Hide-on-close so reopens are instant (preserves window state + DOM).
-    let win_handle = win.clone();
-    let app_handle_for_close = app.clone();
-    win.on_window_event(move |event| {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            if let Err(e) = win_handle.hide() {
-                log::warn!("Failed to hide dashboard window on close: {}", e);
-            }
-            #[cfg(target_os = "macos")]
-            {
+    // Hide-on-close (macOS) vs let-OS-close (Windows). On macOS the menu-bar
+    // popover keeps the app resident, so we hide instead of close to make
+    // reopens instant (preserves window state + DOM). On Windows there is no
+    // menu-bar surface; closing the window must quit the app (otherwise the
+    // user has no way to relaunch).
+    #[cfg(target_os = "macos")]
+    {
+        let win_handle = win.clone();
+        let app_handle_for_close = app.clone();
+        win.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(e) = win_handle.hide() {
+                    log::warn!("Failed to hide dashboard window on close: {}", e);
+                }
                 if let Err(e) = app_handle_for_close
                     .set_activation_policy(tauri::ActivationPolicy::Accessory)
                 {
@@ -139,8 +143,12 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
                     );
                 }
             }
-        }
-    });
+        });
+    }
+    // On non-macOS targets we install no close handler — Tauri's default
+    // behavior (let the OS close the window; auto-quit when the last window
+    // closes) is what we want. The existing RunEvent::ExitRequested handler
+    // in lib.rs::run drains the sidecar children on quit.
 
     Ok(())
 }
