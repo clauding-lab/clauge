@@ -24,6 +24,7 @@ const sea = require('node:sea');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 if (!sea.isSea()) {
   // eslint-disable-next-line no-console
@@ -75,7 +76,13 @@ process.on('exit', () => {
 });
 
 const bundlePath = path.join(tmpDir, 'server.bundle.mjs');
-import(bundlePath).catch((err) => {
+// Convert to file:// URL before dynamic import. Required on Windows where
+// Node's ESM loader refuses raw Windows paths (the drive-letter scheme
+// `c:` is rejected as ERR_UNSUPPORTED_ESM_URL_SCHEME). pathToFileURL
+// produces `file:///foo/bar` on POSIX and `file:///C:/...` on Windows,
+// both of which the loader accepts. No-op on macOS where raw absolute
+// paths happen to work.
+import(pathToFileURL(bundlePath).href).catch((err) => {
   // eslint-disable-next-line no-console
   console.error('[clauge] Failed to load embedded ESM server:', err);
   process.exit(1);
