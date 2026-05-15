@@ -24,6 +24,7 @@
     "allow-refresh-credentials",
     "allow-wizard-complete",
     "allow-wizard-skip",
-    "allow-restart-app"
+    "allow-restart-app",
+    "allow-check-for-updates"
   ]
 }

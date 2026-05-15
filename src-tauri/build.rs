@@ -18,6 +18,7 @@ const APP_COMMANDS: &[&str] = &[
     "wizard_complete",
     "wizard_skip",
     "restart_app",
+    "check_for_updates",
 ];
 
 fn main() {
