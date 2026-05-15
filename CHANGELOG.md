@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.7.3 (2026-05-XX) — Auto-update reliability hotfix
+
+**Two changes to make auto-updates actually take effect across versions.**
+
+### Fixed
+
+- **Orphan sidecar across auto-updates.** When the Tauri auto-updater replaced `/Applications/Clauge.app` on disk, the old `clauge-server` sidecar process kept running on port 3456 across the user's restart. The new Tauri shell's `port_discovery` would find the orphan responding on `/api/health` and use it as the sidecar — serving the OLD `package.json` version. Cold-launch self-heal now version-checks the External-discovery sidecar against the Tauri shell's `CARGO_PKG_VERSION` and `lsof -i :3456 -t` + `kill -9` evicts the orphan on mismatch, then re-runs discovery to spawn a fresh child.
+- **No in-app affordance to apply updates.** Settings → Updates → Check Now downloads + installs the new .app, but the only signal to restart was a single macOS notification ("Restart to apply") that's easily missed. New "Restart Now" button surfaces in the same pane after install, with the new version in its label.
+
+### Added
+
+- `restart_app` IPC command (signal_shutdown → kill children → sleep 200 ms → app.restart()).
+- `↻ Restart Now to apply vX.Y.Z` button in Settings → Updates, hidden by default and unhidden after `check_for_updates` returns `Installed`.
+
+### Internal
+
+- `port_discovery::version_matches_self` and `kill_pid_on_port` helpers (4 + 1 unit tests).
+- `port_discovery::discover` split into `discover` + `discover_with_retry` (single retry on orphan-kill prevents infinite recursion if `lsof` is missing).
+- `UpdateStatus::Installed` extended to `Installed { version: String }` (tagged-enum payload).
+- v0.7.2 plan Task 17 amended with a "Lessons learned" addendum noting `bash scripts/build-sidecar.sh` requirement for local builds (CI is unaffected via `tauri.conf.json::build.beforeBuildCommand`).
+
+### Known limitations
+
+- Same as v0.7.2: keychain prompt still fires once per app launch (ad-hoc-signing reality), and the claude.ai sessionKey path remains uncached. Both ride v0.8.0.
+
 ## 0.7.2 (2026-05-15) — Keychain UX + first-launch wizard + v0.7.x debt cleanup
 
 ### Added
