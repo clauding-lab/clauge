@@ -20,7 +20,7 @@
   <img src="docs/screenshots/v0.5.0/popover-v2.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS app** (universal Apple Darwin DMG, signed auto-updater) plus the existing `npx clauge` browser dashboard. v0.7.x ships a guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates actually take effect on click.
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater) plus the existing `npx clauge` browser dashboard. v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 adds the Windows port (per-user install at `%LOCALAPPDATA%\Programs\Clauge`, dashboard-only — no tray icon on Windows yet).
 
 ## Install
 
@@ -56,7 +56,35 @@ Click **Always Allow**. The wizard closes and the dashboard appears with your da
 
 If you click **Skip for now** instead, the dashboard appears immediately with Claude Code shown as "Not Installed". Click the **↻ Refresh** button on that row whenever you're ready to grant Keychain access — same Always Allow prompt fires.
 
-**Option B — Browser dashboard via npx (Linux, headless servers, or no-desktop-app preference):**
+**Option B — Native Windows app (v0.8.0+):**
+
+Download `Clauge_0.8.0_x64-setup.exe` from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
+
+You'll click through two "unknown publisher" warnings on the first install — this is normal for unsigned indie apps. Authenticode code-signing is on the v0.8.x roadmap; until then:
+
+1. **Browser download warning** — Edge / Chrome may flag the `.exe` as "uncommon" and block the download. Expand the bar and choose **Keep** (Chrome) or **More info → Keep anyway** (Edge).
+2. **SmartScreen on launch** — Windows shows a blue **"Windows protected your PC"** dialog. Click **More info**, then **Run anyway**.
+
+Clauge is open-source and reproducible from each tagged release on GitHub — you can audit the source or rebuild from the tag yourself if you'd rather not trust the published binary.
+
+The NSIS installer runs as **per-user, no UAC** (no admin prompt). When it finishes, you'll have:
+- Install location: `%LOCALAPPDATA%\Programs\Clauge`
+- A **Clauge** entry in your Start Menu (and an optional desktop shortcut, your choice during install)
+- An auto-launched dashboard window at 1100×800
+
+There is **no Windows system-tray icon in v0.8.0** — the macOS menu-bar percentage chiclet has no cheap Windows equivalent (Win32 tray icons can't render dynamic numbers without per-frame ICO compositing, which is deferred to a later v0.8.x). On Windows, just **close the dashboard window to quit** the app; relaunch from the Start Menu.
+
+The 4-step Welcome wizard (described above) applies to Windows too — same window, same flow. The one difference: **the "macOS Keychain Access" step is a no-op on Windows.** Claude Code on Windows stores its OAuth credentials in a per-user file (`%USERPROFILE%\.claude\.credentials.json`) instead of a system keychain, so there's no permission prompt to click through. Walk past Step 2, click **Connect ✓** on Step 4, and the dashboard populates.
+
+**Auto-updates work the same as macOS.** Settings → Updates → **Check Now** queries the shared `gh-pages/latest.json` manifest (which now lists `darwin-aarch64`, `darwin-x86_64`, **and** `windows-x86_64` entries side-by-side). When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** — the running app exits and the new installer takes over.
+
+> **Verify the download (optional, advanced):** the GitHub Release page lists the SHA-256 of `Clauge_0.8.0_x64-setup.exe`. In PowerShell: `Get-FileHash Clauge_0.8.0_x64-setup.exe -Algorithm SHA256` and compare against the value on the Releases page.
+
+> **Known Windows limitations in v0.8.0:**
+> - The SmartScreen "publisher unknown" warning fires until Authenticode signing lands. Reputation accrues over time even on an unsigned cert, but the cleanest fix is a paid EV/OV code-signing certificate (v0.8.x).
+> - **No claude.ai sign-in yet on Windows.** Architecture A (the native claude.ai OAuth pop-up planned for v0.8.x) is deferred — Windows v0.8.0 is Claude Code CLI integration only. The claude.ai connection row in the dashboard will read "Not Connected" with no Sign-in button. To still see plan-ring data, install the [Clauge Sync browser extension](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) (Step 2 below) — it works on Edge / Chrome / Brave on Windows just like on macOS.
+
+**Option C — Browser dashboard via npx (Linux, headless servers, or no-desktop-app preference):**
 
 ```bash
 npx clauge
@@ -231,7 +259,8 @@ npm start         # plain start
 
 ## What's coming
 
-- **Windows installer (v0.6.0)** — NSIS build via the same Tauri codebase, dashboard-only on Windows. Spec + plan in `docs/superpowers/`.
+- **Authenticode code-signing for Windows (v0.8.x)** — eliminates the SmartScreen "publisher unknown" click-through on the Windows installer. EV/OV certificate path TBD.
+- **claude.ai sign-in on Windows (v0.8.x)** — Architecture A native OAuth pop-up parity with the macOS surface. v0.8.0 ships Windows with Claude Code CLI integration only.
 - **Auto-detect missing extension + first-run install prompt** — detect whether Clauge Sync is installed and, if not, surface a Chrome Web Store install banner in the dashboard on first launch.
 - **Intelligence banner** with pace projections (priority rules: extra usage near cap, session reset imminent, weekly-vs-Sonnet routing hints, etc.)
 - **One-shot success rate** per task category
