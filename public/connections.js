@@ -1,9 +1,16 @@
 // v0.7.0: Connections panel live updates.
 // Polls get_connection_status IPC every 30s + on connections-updated event.
 
+// Platform-conditional copy. On Windows the OAuth blob lives in a
+// per-user JSON file (%USERPROFILE%\.claude\.credentials.json) rather
+// than Keychain Services, so the "Authenticated via" tagline differs.
+const IS_WINDOWS = /windows/i.test(navigator.userAgent || '');
+
 const STATE_LABELS = {
   claude_code: {
-    authenticated: 'Authenticated via macOS Keychain (Claude Code-credentials)',
+    authenticated: IS_WINDOWS
+      ? 'Authenticated via Claude Code credentials file'
+      : 'Authenticated via macOS Keychain (Claude Code-credentials)',
     not_installed: 'Claude Code CLI not installed or not logged in',
     expired: 'OAuth token expired — re-run `claude /login`',
   },
