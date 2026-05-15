@@ -68,6 +68,12 @@ jobs:
             rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
             bundles: 'app,dmg'
             artifact-name: latest-macos.json
+          - platform-name: Windows x64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            rust-targets: 'x86_64-pc-windows-msvc'
+            bundles: 'nsis'
+            artifact-name: latest-windows.json
 
     steps:
       - name: Checkout
@@ -105,6 +111,14 @@ jobs:
           touch binaries/clauge-server-aarch64-apple-darwin
           touch binaries/clauge-server-x86_64-apple-darwin
           chmod +x binaries/clauge-server-aarch64-apple-darwin binaries/clauge-server-x86_64-apple-darwin
+
+      - name: Stub external binaries for cargo test (Windows)
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path binaries | Out-Null
+          New-Item -ItemType File -Force -Path binaries\clauge-server-x86_64-pc-windows-msvc.exe | Out-Null
 
       - name: Run Rust unit tests
         working-directory: src-tauri
