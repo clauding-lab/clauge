@@ -54,13 +54,20 @@ concurrency:
 
 jobs:
   build:
-    name: Build universal macOS DMG
-    # Pinned to macos-14 (Sonoma, arm64) for reproducibility.  GitHub bumps
-    # the `macos-latest` alias every ~12 months without notice; an explicit
-    # version label means the release pipeline doesn't silently change OS
-    # under us between V3.x point releases.
-    runs-on: macos-14
+    name: Build ${{ matrix.platform-name }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform-name: macOS universal
+            runner: macos-14
+            target: universal-apple-darwin
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            bundles: 'app,dmg'
+            artifact-name: latest-macos.json
 
     steps:
       - name: Checkout
@@ -75,7 +82,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-05-08
         with:
-          targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+          targets: ${{ matrix.rust-targets }}
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
@@ -85,29 +92,13 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # Fail fast: don't waste 10+ minutes on a Tauri build if the JS or Rust
-      # tests are red.  The SEA + tauri-driver smoke suites are skipped here
-      # (SEA smoke needs the binaries built first; tauri-driver doesn't run
-      # on macOS yet — both are tracked elsewhere).
-      #
-      # SKIP_SEA_SMOKE=1 is critical: without it, sea-smoke.test.js auto-runs
-      # `node scripts/build-sidecar.mjs` to produce the SEA binary, which
-      # tauri-action's beforeBuildCommand then rebuilds again from scratch
-      # below — wasting ~10 min and doubling exposure to nodejs.org flake.
-      # The tauri-action invocation IS the SEA build smoke test in CI.
       - name: Run JS unit tests
         env:
           SKIP_SEA_SMOKE: '1'
         run: npm test
 
-      # Tauri's build-script (tauri-build) validates externalBin paths at
-      # compile time — cargo test would otherwise fail with "resource path
-      # ... doesn't exist".  We don't need REAL SEA binaries here because
-      # cargo test only exercises Rust unit logic that wraps the sidecar,
-      # not the sidecar itself.  tauri-action's beforeBuildCommand step
-      # later runs scripts/build-sidecar.mjs which overwrites these stubs
-      # with the real universal binaries before the DMG bundle is produced.
-      - name: Stub external binaries for cargo test
+      - name: Stub external binaries for cargo test (macOS)
+        if: runner.os == 'macOS'
         working-directory: src-tauri
         run: |
           mkdir -p binaries
@@ -119,18 +110,14 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
-      # Boolean presence check on the updater signing secrets.  If either is
-      # missing, fail BEFORE invoking tauri-action — otherwise tauri-action
-      # silently produces an unsigned .app.tar.gz.sig and we'd publish a
-      # broken updater payload.  Do not echo lengths, hashes, or any portion
-      # of the secret values; presence-only.
       - name: Verify signing secrets are present
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
         run: |
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is empty or unset. Refusing to publish unsigned release." >&2
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is empty or unset." >&2
             exit 1
           fi
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}" ]; then
@@ -139,16 +126,7 @@ jobs:
           fi
           echo "Signing secrets present."
 
-      # tauri-action invokes `cargo tauri build`, which honours
-      # `build.beforeBuildCommand` from src-tauri/tauri.conf.json
-      # (currently `node ../scripts/build-sidecar.mjs`).  The sidecar
-      # script auto-detects the runner's native arch and downloads the
-      # other-arch Node tarball from nodejs.org, producing both
-      # clauge-server-aarch64-apple-darwin and
-      # clauge-server-x86_64-apple-darwin under src-tauri/binaries/.
-      # That matches the universal-apple-darwin Tauri externalBin
-      # convention, so the SEA sidecar ships in the universal app bundle.
-      - name: Build, sign, and publish DMG
+      - name: Build, sign, and publish artifacts
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -160,56 +138,24 @@ jobs:
           releaseName: 'Clauge ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
-          # Universal binary: lipo-merged arm64 + x86_64 in a single .app.
-          # The SEA sidecar build script handles both arches itself, so we
-          # only need Tauri to produce the universal Rust shell.
-          args: '--target universal-apple-darwin'
-          # Emit and upload latest.json so the updater can consume it once
-          # gh-pages is initialised (T26).  Until then the file is just a
-          # passive Release asset.
-          includeUpdaterJson: true
+          args: '--target ${{ matrix.target }} --bundles ${{ matrix.bundles }}'
+          includeUpdaterJson: false
 
-      # Mirror the latest.json that tauri-action just uploaded to the Release
-      # into the gh-pages branch, where the auto-updater endpoint serves it.
-      # Guards on gh-pages existence — until the branch is bootstrapped (T26-c),
-      # this step warns and exits 0 instead of failing the release.
-      - name: Mirror latest.json to gh-pages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find and upload latest.json as artifact
+        shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
-          REPO="${{ github.repository }}"
-
-          # Guard: does gh-pages exist on remote?
-          if ! git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" gh-pages | grep -q 'refs/heads/gh-pages'; then
-            echo "::warning::gh-pages branch does not exist — skipping latest.json mirror. Bootstrap gh-pages (T26-c) before next release."
-            exit 0
+          LATEST_JSON=$(find src-tauri/target -name 'latest.json' -type f | head -n 1)
+          if [ -z "$LATEST_JSON" ]; then
+            echo "::error::latest.json not found after build" >&2
+            exit 1
           fi
+          echo "Found latest.json: $LATEST_JSON"
+          cp "$LATEST_JSON" "${{ matrix.artifact-name }}"
 
-          # Download the latest.json that tauri-action just uploaded
-          DOWNLOAD_DIR=$(mktemp -d)
-          gh release download "$TAG" --pattern 'latest.json' --dir "$DOWNLOAD_DIR" --repo "$REPO"
-
-          # Clone gh-pages, swap latest.json, push
-          GH_PAGES_DIR=$(mktemp -d)
-          git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$GH_PAGES_DIR"
-
-          cp "$DOWNLOAD_DIR/latest.json" "$GH_PAGES_DIR/latest.json"
-
-          cd "$GH_PAGES_DIR"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          # Stage first, then check the index against HEAD: this catches both
-          # the "file changed" and "file is brand-new on gh-pages" cases.
-          # Using `git diff --quiet HEAD -- latest.json` directly would miss
-          # untracked-new-file because diff ignores untracked paths.
-          git add latest.json
-          if git diff --cached --quiet -- latest.json; then
-            echo 'latest.json unchanged — nothing to push.'
-            exit 0
-          fi
-
-          git commit -m "release: ${TAG} latest.json mirror"
-          git push origin gh-pages
+      - name: Upload latest.json as workflow artifact
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-name }}
+          retention-days: 7
