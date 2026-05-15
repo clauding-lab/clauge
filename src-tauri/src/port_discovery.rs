@@ -88,15 +88,29 @@ fn version_matches_self(health_response: &str) -> bool {
 
 /// Find any PIDs listening on the given TCP port and kill them with SIGKILL.
 ///
-/// Shells out to `lsof -i :PORT -t` (one PID per line, no extra columns)
-/// then runs `kill -9 PID` for each. If `lsof` is missing or fails to
-/// spawn (returns Err), the caller decides whether to retry discovery
-/// or fall through. Failures from `kill` (process already dead, owned by
-/// another user) are silently ignored — the post-condition is "port is
-/// free", and we tolerate races where the process exited on its own.
+/// Unix: shells out to `lsof -i :PORT -t` then `kill -9 PID` for each.
+/// Windows: parses `netstat -ano` for LISTENING rows on the given port,
+/// then `taskkill /F /PID <pid>` for each.
+///
+/// Errors only on tool-spawn failures (lsof / netstat missing). Failures
+/// from kill / taskkill (process already dead, owned by another user) are
+/// silently ignored — the post-condition is "port is free", and we
+/// tolerate races where the process exited on its own.
 ///
 /// Sleeps 300 ms after the kill attempts to let the OS release the port.
 async fn kill_pid_on_port(port: u16) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        kill_pid_on_port_unix(port).await
+    }
+    #[cfg(windows)]
+    {
+        kill_pid_on_port_windows(port).await
+    }
+}
+
+#[cfg(unix)]
+async fn kill_pid_on_port_unix(port: u16) -> Result<(), String> {
     use tokio::process::Command;
     let lsof = Command::new("lsof")
         .args(["-i", &format!(":{}", port), "-t"])
@@ -111,6 +125,44 @@ async fn kill_pid_on_port(port: u16) -> Result<(), String> {
     for pid in pids {
         log::info!("kill_pid_on_port: SIGKILL pid={} on port={}", pid, port);
         let _ = Command::new("kill").args(["-9", pid]).status().await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn kill_pid_on_port_windows(port: u16) -> Result<(), String> {
+    use tokio::process::Command;
+    // netstat -ano outputs lines like:
+    //   "  TCP    127.0.0.1:3456    0.0.0.0:0    LISTENING    12345"
+    // We grep for ":<port> " (with a trailing space to anchor the port,
+    // since netstat right-pads), then pull the last whitespace-delimited
+    // token (the PID). Only LISTENING rows count to avoid killing
+    // transient TIME_WAIT entries.
+    let netstat = Command::new("netstat")
+        .args(["-ano"])
+        .output()
+        .await
+        .map_err(|e| format!("netstat spawn failed: {}", e))?;
+    let stdout = std::str::from_utf8(&netstat.stdout).unwrap_or("");
+    let port_pat = format!(":{} ", port);
+    let mut pids = std::collections::HashSet::new();
+    for line in stdout.lines() {
+        if !line.contains(&port_pat) { continue; }
+        if !line.contains("LISTENING") { continue; }
+        if let Some(pid) = line.split_whitespace().last() {
+            pids.insert(pid.to_string());
+        }
+    }
+    if pids.is_empty() {
+        return Ok(());
+    }
+    for pid in pids {
+        log::info!("kill_pid_on_port: taskkill /F /PID {} on port={}", pid, port);
+        let _ = Command::new("taskkill")
+            .args(["/F", "/PID", &pid])
+            .status()
+            .await;
     }
     tokio::time::sleep(Duration::from_millis(300)).await;
     Ok(())
