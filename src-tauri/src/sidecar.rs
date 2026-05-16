@@ -135,6 +135,59 @@ pub async fn spawn_and_supervise(app: AppHandle) {
         state.as_ref().map(|s| s.is_shutting_down()).unwrap_or(false)
     }
 
+    // v0.9.0 MAS flavor: resolve the user-granted security-scoped bookmark to
+    // ~/.claude (or wherever they pointed the picker) ONCE, before the spawn
+    // loop. Hold the resulting `ScopedHandle` in a function-local for as long
+    // as this function runs — when `spawn_and_supervise` returns on app exit,
+    // `_mas_scope_guard` drops and `stopAccessingSecurityScopedResource` fires.
+    //
+    // Resolving once rather than per-spawn matters because:
+    //   1. The bookmark blob doesn't change across crash-respawn cycles.
+    //   2. Repeated `start...` calls without intervening `stop...` are not
+    //      documented as additive — Apple's behavior is "the URL is in scope
+    //      from start until stop"; second start may or may not be a no-op.
+    //   3. The sidecar inherits the parent's security-scoped sandbox grant
+    //      through the process tree (Apple's sandbox model), so as long as
+    //      the parent holds the scope, every child it spawns inherits it.
+    //
+    // Critical lifetime contract: this binding MUST live for the entire
+    // supervisor function — moving it inside the loop would drop the scope
+    // between iterations and orphan in-flight sidecar reads. The leading `_`
+    // silences "unused" warnings when the bookmark is absent (None case).
+    //
+    // If the bookmark is missing or stale (user hasn't completed the wizard's
+    // grant step yet, or the persisted blob no longer resolves), we log and
+    // proceed. The sidecar will see filesystem ENOENT/EPERM when it reads
+    // JSONL inside the sandbox and surface empty data; the wizard's grant
+    // step is the recovery path.
+    #[cfg(feature = "mas")]
+    let _mas_scope_guard = {
+        use crate::security_scoped_bookmark::{acquire_scoped_path, MAS_CLAUDE_DIR};
+        match acquire_scoped_path(&app) {
+            Ok((path, guard)) => {
+                // Populate MAS_CLAUDE_DIR so keychain.rs's MAS branch can find
+                // .credentials.json without `&AppHandle` in its zero-arg
+                // signature. `OnceLock::set` is idempotent — `Err` here means
+                // another caller raced and won, which we don't care about
+                // because both code paths resolve to the same bookmark blob
+                // and would set identical values.
+                let _ = MAS_CLAUDE_DIR.set(std::path::PathBuf::from(&path));
+                log::info!(
+                    "MAS flavor: security-scoped CLAUDE_DIR resolved at {}",
+                    path
+                );
+                Some(guard)
+            }
+            Err(e) => {
+                log::warn!(
+                    "MAS bookmark not yet granted: {}. Sidecar will start with CLAUDE_DIR=$HOME/.claude (sandbox-redirected to container subfolder, expected to be empty); user must grant via wizard step 2 or Settings → Connections.",
+                    e
+                );
+                None
+            }
+        }
+    };
+
     loop {
         // Level-triggered guard: covers the case where ExitRequested fired
         // while we were sleeping in BackoffRespawn or between phases. Without
@@ -314,13 +367,41 @@ async fn spawn_one(
     // popover's Open Dashboard button was correctly creating a Tauri
     // webview, but the sidecar's auto-open was racing the user and they
     // saw Chrome appear first.
-    let (mut rx, child): (Receiver<CommandEvent>, CommandChild) = app
+    //
+    // v0.9.0 MAS flavor: forward the resolved CLAUDE_DIR from the
+    // security-scoped bookmark down to the child. server.js:40 already
+    // honors $CLAUDE_DIR as the parent of `projects/`. We read from the
+    // process-wide MAS_CLAUDE_DIR OnceLock that spawn_and_supervise
+    // populates BEFORE entering this loop, so by the time we get here the
+    // value is either set (bookmark resolved) or unset (user hasn't granted
+    // yet — sidecar runs with its default $HOME/.claude, which the sandbox
+    // redirects to the container subfolder and is expected to be empty).
+    //
+    // DMG flavor: no CLAUDE_DIR env set — server.js:40 falls back to
+    // $HOME/.claude on its own, which is the right value outside a sandbox.
+    let claude_dir_env: Option<String> = {
+        #[cfg(feature = "mas")]
+        {
+            crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+                .get()
+                .map(|p| p.to_string_lossy().into_owned())
+        }
+        #[cfg(not(feature = "mas"))]
+        {
+            None
+        }
+    };
+
+    let mut builder = app
         .shell()
         .sidecar("clauge-server")
         .map_err(|e| e.to_string())?
-        .env("NO_OPEN", "1")
-        .spawn()
-        .map_err(|e| e.to_string())?;
+        .env("NO_OPEN", "1");
+    if let Some(dir) = &claude_dir_env {
+        builder = builder.env("CLAUDE_DIR", dir);
+    }
+    let (mut rx, child): (Receiver<CommandEvent>, CommandChild) =
+        builder.spawn().map_err(|e| e.to_string())?;
 
     // Park the child in an Option so the shutdown branch can `take()` and
     // call the consuming `kill(self)`. Same pattern as the supervise loop.

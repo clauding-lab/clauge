@@ -107,7 +107,10 @@ pub enum KeychainError {
 /// - errSecUserCanceled (-128)   → AccessDenied
 /// - errSecAuthFailed (-25293)   → AccessDenied (user denied or auth flow failed)
 /// Anything else falls through to Framework { code, message }.
-#[cfg(target_os = "macos")]
+///
+/// Only compiled for the DMG flavor — MAS Mac uses a filesystem read path
+/// (no Keychain Services) so the OSStatus mapping is irrelevant there.
+#[cfg(all(target_os = "macos", not(feature = "mas")))]
 fn map_osstatus_to_error(code: i32, msg: &str) -> KeychainError {
     match code {
         -25300 => KeychainError::NotFound,
@@ -119,7 +122,18 @@ fn map_osstatus_to_error(code: i32, msg: &str) -> KeychainError {
     }
 }
 
-#[cfg(target_os = "macos")]
+/// DMG-flavor Mac: read Claude Code OAuth credentials via Keychain Services.
+/// Triggers a per-user macOS Keychain prompt on first access; user clicks
+/// "Always Allow" to silence subsequent reads.
+///
+/// MAS-flavor Mac uses the alternate branch below (see `feature = "mas"`)
+/// because the sandbox profile of an App Store app does NOT include the
+/// keychain-access-groups entitlement Claude Code's blob requires for
+/// silent cross-app read — App Store guidelines effectively forbid that
+/// entitlement for non-Apple bundles. The MAS branch reads the same blob
+/// from `~/.claude/.credentials.json` via the user-granted security-scoped
+/// bookmark instead.
+#[cfg(all(target_os = "macos", not(feature = "mas")))]
 pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
 
@@ -161,6 +175,43 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
         }
     };
 
+    let creds: ClaudeCodeCreds = serde_json::from_slice(&blob)?;
+    Ok(creds)
+}
+
+/// MAS Mac: read `~/.claude/.credentials.json` via the security-scoped
+/// bookmark path populated by `sidecar::spawn_and_supervise` on supervisor
+/// start (Task 6 of v0.9.0).
+///
+/// Zero-arg signature (Option B from v0.9.0 spec § Credential reading):
+/// preserves the `keychain_cache::ReaderFn` zero-arg closure type intact —
+/// no cache rewrite, no `&AppHandle` plumbing, no test-injection churn.
+///
+/// If the supervisor hasn't yet populated `MAS_CLAUDE_DIR` (e.g. the user
+/// hasn't completed the wizard's grant step, or the persisted bookmark
+/// failed to resolve), this returns `NotFound` — same surface the cache's
+/// "not yet authenticated" UI already handles. The wizard's grant step
+/// then drives the supervisor restart that populates the OnceLock.
+#[cfg(all(target_os = "macos", feature = "mas"))]
+pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
+    let claude_dir = crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+        .get()
+        .ok_or(KeychainError::NotFound)?;
+    let path = claude_dir.join(".credentials.json");
+    read_from_path_unix(&path)
+}
+
+/// Internal: read + parse credentials file at a given Unix path. Mirrors
+/// the Windows `read_from_path` helper. Factored so future MAS-Mac unit
+/// tests can exercise the parse/error logic with a temp file without
+/// touching the global `MAS_CLAUDE_DIR` OnceLock.
+#[cfg(all(target_os = "macos", feature = "mas"))]
+fn read_from_path_unix(path: &std::path::Path) -> Result<ClaudeCodeCreds, KeychainError> {
+    let blob = std::fs::read(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => KeychainError::NotFound,
+        std::io::ErrorKind::PermissionDenied => KeychainError::AccessDenied,
+        _ => KeychainError::Io(e),
+    })?;
     let creds: ClaudeCodeCreds = serde_json::from_slice(&blob)?;
     Ok(creds)
 }
@@ -214,7 +265,7 @@ pub fn is_expired(creds: &ClaudeCodeCreds) -> bool {
 }
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "mas")))]
 mod tests {
     use super::*;
 
