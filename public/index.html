@@ -447,7 +447,21 @@
               </div>
             </div>
 
-            <!-- Row 4 (Claude Code logs bookmark) is added in v0.7.1 (MAS flavor only). -->
+            <!-- Row 4: Claude Code logs (MAS-only — sandboxed builds need a
+                 user-granted security-scoped bookmark for ~/.claude/ before
+                 they can read JSONL transcripts and the keychain credentials
+                 file. .flavor-mas hides the row on DMG/NSIS, where the full
+                 filesystem is accessible without consent.) -->
+            <div class="connection-row flavor-mas" id="conn-claude-code-logs" data-state="not_granted">
+              <span class="conn-dot" aria-hidden="true">●</span>
+              <div class="conn-body">
+                <div class="conn-title">Claude Code logs</div>
+                <div class="conn-status">Read-only access to ~/.claude/ for credentials + per-session analytics.</div>
+              </div>
+              <div class="conn-actions">
+                <button type="button" class="conn-cta" id="regrant-claude-code-logs">Re-select folder</button>
+              </div>
+            </div>
           </section>
         </div>
 

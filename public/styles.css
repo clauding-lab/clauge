@@ -1153,9 +1153,25 @@ body.loading { cursor: progress; }
 }
 
 /* ═══════════════════════════════════════════════════════════
+   v0.9.0: flavor-level gating for the dashboard.
+   Mirrors public/onboarding/onboarding.css's .flavor-mas /
+   .flavor-dmg-nsis rules so MAS-only surfaces (e.g. Settings →
+   Connections row 4 "Claude Code logs") stay hidden on DMG/NSIS.
+   Default hides .flavor-mas; body.is-flavor-mas flips: hides
+   .flavor-dmg-nsis, shows .flavor-mas. The body class is set in
+   public/app.js (initFlavorGate, mirrors onboarding.js's IPC
+   call to is_mas_flavor). The default-hidden rule means the
+   IPC failing is safe — DMG/NSIS users never see the row.
+   ═══════════════════════════════════════════════════════════ */
+.flavor-mas { display: none; }
+body.is-flavor-mas .flavor-dmg-nsis { display: none; }
+body.is-flavor-mas .flavor-mas { display: flex; }
+
+/* ═══════════════════════════════════════════════════════════
    v0.7.0: Connections panel rows.
    The Settings → Connections panel composes Claude Code CLI,
    claude.ai web, and the browser extension into three rows.
+   v0.9.0 (MAS only) adds a 4th row for Claude Code logs grant.
    data-state on each .connection-row drives the dot color via
    attribute selectors below. CTA visibility is JS-controlled
    (public/connections.js) — the [hidden] selector takes care

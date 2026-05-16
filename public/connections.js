@@ -30,6 +30,12 @@ const STATE_LABELS = {
     active: 'Clauge Sync active — last sync recently',
     not_detected: 'Optional. Useful for browser-only setups.',
   },
+  // v0.9.0 MAS: Claude Code logs grant row. Only rendered when the payload
+  // includes `claude_code_logs` (cfg(feature="mas") gates the Rust field).
+  claude_code_logs: {
+    granted: 'Granted — Clauge can read ~/.claude/ credentials + transcripts.',
+    not_granted: 'Not granted — Clauge cannot read transcripts until you re-select the folder.',
+  },
 };
 
 // State name shown to assistive tech via aria-label on .conn-dot
@@ -38,11 +44,13 @@ const A11Y_DOT_LABEL = {
   authenticated: 'connected',
   signed_in: 'connected',
   active: 'connected',
+  granted: 'connected',
   expired: 'expired',
   optional: 'optional',
   not_installed: 'not connected',
   not_connected: 'not connected',
   not_detected: 'not connected',
+  not_granted: 'not connected',
 };
 
 async function refreshConnections() {
@@ -81,6 +89,14 @@ function applyStatus(status) {
 
   applyRow('conn-extension', status.extension, STATE_LABELS.extension);
 
+  // v0.9.0 MAS: Claude Code logs grant row. Payload field is gated by the
+  // `mas` Cargo feature on the Rust side (skip_serializing_if = "Option::is_none"),
+  // so DMG/NSIS payloads omit it entirely. Field-absence → hide the row
+  // (defense-in-depth against the CSS gate, which already hides `.flavor-mas`
+  // unless `body.is-flavor-mas` is set). Field-presence → render the grant
+  // state and unhide the row so it shows alongside the other 3.
+  applyClaudeCodeLogsRow(status.claude_code_logs);
+
   // claude.ai sign-in / sign-out button visibility.
   // On Windows the Architecture A path is deferred to a future release —
   // hide both buttons entirely; the row's state text explains the situation.
@@ -94,6 +110,38 @@ function applyStatus(status) {
   if (extRow) {
     var installCta = extRow.querySelector('.conn-cta');
     if (installCta) installCta.hidden = status.extension === 'active';
+  }
+}
+
+function applyClaudeCodeLogsRow(logs) {
+  const row = document.getElementById('conn-claude-code-logs');
+  if (!row) return;
+  // Field absent → DMG/NSIS payload; CSS keeps the row hidden via .flavor-mas
+  // unless body.is-flavor-mas is set. Be doubly defensive: explicit hidden.
+  if (!logs) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+  // logs.status is "granted" | "not_granted" per ClaudeDirGrantStatus enum.
+  const state = logs.status;
+  row.setAttribute('data-state', state);
+  const statusEl = row.querySelector('.conn-status');
+  if (statusEl) {
+    const baseText = STATE_LABELS.claude_code_logs[state] || '';
+    // When granted and the path is resolved, append it so the user sees the
+    // concrete folder path. Falsy logs.path → just the label (the user hasn't
+    // re-grant'd this session or MAS_CLAUDE_DIR isn't populated yet).
+    statusEl.textContent =
+      state === 'granted' && logs.path
+        ? `${baseText} (${logs.path})`
+        : baseText;
+  }
+  const dot = row.querySelector('.conn-dot');
+  if (dot) {
+    const label = A11Y_DOT_LABEL[state] || state;
+    dot.setAttribute('aria-label', label);
+    dot.removeAttribute('aria-hidden');
   }
 }
 
@@ -149,6 +197,35 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.classList.remove('spinning');
+      }
+    });
+  }
+
+  // v0.9.0 MAS: Re-select folder button on the Claude Code logs row. Calls
+  // grant_claude_dir_access (no-op on DMG/NSIS — IPC returns Ok(()) there),
+  // which opens NSOpenPanel pre-pointed at ~/.claude and persists a new
+  // security-scoped bookmark on Choose. After grant, re-fetch the connection
+  // status so the row re-renders with the new state. We deliberately keep
+  // the button enabled on DMG/NSIS too — the row is CSS-hidden there, so the
+  // user can't click it anyway, and not gating the handler keeps the wiring
+  // identical to the other rows' click handlers.
+  const regrantLogsBtn = document.getElementById('regrant-claude-code-logs');
+  if (regrantLogsBtn) {
+    regrantLogsBtn.addEventListener('click', async () => {
+      if (!window.__TAURI__?.core?.invoke) return;
+      regrantLogsBtn.disabled = true;
+      try {
+        await window.__TAURI__.core.invoke('grant_claude_dir_access');
+        // Re-fetch the connection status so the row picks up the new state
+        // (Granted + path resolved on Mac, or unchanged on cancel).
+        await refreshConnections();
+      } catch (err) {
+        console.warn('[connections] grant_claude_dir_access failed', err);
+        if (typeof window.showToast === 'function') {
+          window.showToast('Folder grant failed: ' + err, 'error');
+        }
+      } finally {
+        regrantLogsBtn.disabled = false;
       }
     });
   }
