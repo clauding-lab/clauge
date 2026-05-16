@@ -19,6 +19,13 @@ const APP_COMMANDS: &[&str] = &[
     "wizard_skip",
     "restart_app",
     "check_for_updates",
+    // v0.8.1: splash.js calls get_server_port for the fallback poll;
+    // app.js calls take_pending_focus_connections to land on
+    // Settings → Connections after wizard_complete. Both need to be
+    // listed here so tauri-build autogenerates the allow-* permissions
+    // referenced from capabilities/main.json.
+    "get_server_port",
+    "take_pending_focus_connections",
 ];
 
 fn main() {

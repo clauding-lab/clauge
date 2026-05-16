@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-take-pending-focus-connections"
+description = "Enables the take_pending_focus_connections command without any pre-configured scope."
+commands.allow = ["take_pending_focus_connections"]
+
+[[permission]]
+identifier = "deny-take-pending-focus-connections"
+description = "Denies the take_pending_focus_connections command without any pre-configured scope."
+commands.deny = ["take_pending_focus_connections"]
