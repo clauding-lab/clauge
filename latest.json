@@ -1,31 +1,31 @@
 {
   "version": "0.8.2",
   "notes": "",
-  "pub_date": "2026-05-16T12:23:31.051Z",
+  "pub_date": "2026-05-16T12:55:51.925Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUdoYk1UYXVrWSsvUGRZWXY5SmhBTkNabW0zYjJpYUx2LzZVTDhEMFJVTjJWaEcvRGtTMkhEamhiRGJydDJBRDM5aktKRkVwRGI3SENPdzJ0SUFhWUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM0MjAxCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKUzd3UzRUajQ5OHBIMU5FM3NmSlhoWk5pQ0lSSEc3OUNMNWg0OHB5dG5yZ2gwdTNuK3I1VEM1dlVRWUZGSDhkQVk3akpHRmx1MEtrUHhwbjVIUFZkQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2-rc1/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUkvVVYxY1ZKbjE4WXFHSSsveXZaanN1OW03ZGlnOE02bHZ3dEk4V0pLbTdleDhJc3VuRndPV3gzVTlKanI3cldQNTdRQU04US9mcmRxSi83Rkk3bUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM2MTQyCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKbmZzbzI4TXl2WFNzK0JtZi9DUkttNzcvZ3FpZktVLzZ2ekVXTi9qOEFwaU8rNXM4WUZDMVJHejl6R01oL29wMEloZEE0azZvOEwwSHRiYmtNelArQ2c9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2/Clauge_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUdoYk1UYXVrWSsvUGRZWXY5SmhBTkNabW0zYjJpYUx2LzZVTDhEMFJVTjJWaEcvRGtTMkhEamhiRGJydDJBRDM5aktKRkVwRGI3SENPdzJ0SUFhWUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM0MjAxCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKUzd3UzRUajQ5OHBIMU5FM3NmSlhoWk5pQ0lSSEc3OUNMNWg0OHB5dG5yZ2gwdTNuK3I1VEM1dlVRWUZGSDhkQVk3akpHRmx1MEtrUHhwbjVIUFZkQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2-rc1/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUkvVVYxY1ZKbjE4WXFHSSsveXZaanN1OW03ZGlnOE02bHZ3dEk4V0pLbTdleDhJc3VuRndPV3gzVTlKanI3cldQNTdRQU04US9mcmRxSi83Rkk3bUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM2MTQyCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKbmZzbzI4TXl2WFNzK0JtZi9DUkttNzcvZ3FpZktVLzZ2ekVXTi9qOEFwaU8rNXM4WUZDMVJHejl6R01oL29wMEloZEE0azZvOEwwSHRiYmtNelArQ2c9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2/Clauge_universal.app.tar.gz"
     },
     "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUdoYk1UYXVrWSsvUGRZWXY5SmhBTkNabW0zYjJpYUx2LzZVTDhEMFJVTjJWaEcvRGtTMkhEamhiRGJydDJBRDM5aktKRkVwRGI3SENPdzJ0SUFhWUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM0MjAxCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKUzd3UzRUajQ5OHBIMU5FM3NmSlhoWk5pQ0lSSEc3OUNMNWg0OHB5dG5yZ2gwdTNuK3I1VEM1dlVRWUZGSDhkQVk3akpHRmx1MEtrUHhwbjVIUFZkQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2-rc1/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUkvVVYxY1ZKbjE4WXFHSSsveXZaanN1OW03ZGlnOE02bHZ3dEk4V0pLbTdleDhJc3VuRndPV3gzVTlKanI3cldQNTdRQU04US9mcmRxSi83Rkk3bUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM2MTQyCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKbmZzbzI4TXl2WFNzK0JtZi9DUkttNzcvZ3FpZktVLzZ2ekVXTi9qOEFwaU8rNXM4WUZDMVJHejl6R01oL29wMEloZEE0azZvOEwwSHRiYmtNelArQ2c9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2/Clauge_universal.app.tar.gz"
     },
     "darwin-x86_64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUdoYk1UYXVrWSsvUGRZWXY5SmhBTkNabW0zYjJpYUx2LzZVTDhEMFJVTjJWaEcvRGtTMkhEamhiRGJydDJBRDM5aktKRkVwRGI3SENPdzJ0SUFhWUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM0MjAxCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKUzd3UzRUajQ5OHBIMU5FM3NmSlhoWk5pQ0lSSEc3OUNMNWg0OHB5dG5yZ2gwdTNuK3I1VEM1dlVRWUZGSDhkQVk3akpHRmx1MEtrUHhwbjVIUFZkQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2-rc1/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUkvVVYxY1ZKbjE4WXFHSSsveXZaanN1OW03ZGlnOE02bHZ3dEk4V0pLbTdleDhJc3VuRndPV3gzVTlKanI3cldQNTdRQU04US9mcmRxSi83Rkk3bUFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM2MTQyCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKbmZzbzI4TXl2WFNzK0JtZi9DUkttNzcvZ3FpZktVLzZ2ekVXTi9qOEFwaU8rNXM4WUZDMVJHejl6R01oL29wMEloZEE0azZvOEwwSHRiYmtNelArQ2c9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2/Clauge_universal.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU1obGhYYXBGSVZVZ2E1UXlGRGw0VHRKWDhkTFlTUUtWNjVYR1duSDNXbkhMenhUU3htUzMzS0hyRVNzeU0yT2o1MDBJYzdQNXhscXVpS0ZQbmlIREF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM0MjIwCWZpbGU6Q2xhdWdlXzAuOC4yX3g2NC1zZXR1cC5leGUKc0VNQ0M2S1hyVFVQNGxQTThlQjB1Wlh2Z0wvTnNySDAreVIyZ3J0UVRPQnh4V2NucVF0Sk01K2NWbStvR3JxSVR0Rk90OHJTR2h6d09iL3dFOHhLQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2-rc1/Clauge_0.8.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUtaNWd5UENFc3llK0svenZqMnJrVUh0RmNMb3BPUVNOSHl1bW5XeWlFbE5jdkpsMGMrc1FqeGpsVVJHd3VIclNWZzZyTjE1NUhEckFxODZqV1NIakE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM2MTUyCWZpbGU6Q2xhdWdlXzAuOC4yX3g2NC1zZXR1cC5leGUKa2xMZjBlNUJFdlhmd2Y1Z250ZHYyTEIweVV6VnJuK3dWVDFXdjVwZEtYemwzMG92QVI4K3VOZElkS0tuWFBPaU5uNkxpQjNGUTdpdytyT2hJYTBuQ2c9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2/Clauge_0.8.2_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU1obGhYYXBGSVZVZ2E1UXlGRGw0VHRKWDhkTFlTUUtWNjVYR1duSDNXbkhMenhUU3htUzMzS0hyRVNzeU0yT2o1MDBJYzdQNXhscXVpS0ZQbmlIREF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM0MjIwCWZpbGU6Q2xhdWdlXzAuOC4yX3g2NC1zZXR1cC5leGUKc0VNQ0M2S1hyVFVQNGxQTThlQjB1Wlh2Z0wvTnNySDAreVIyZ3J0UVRPQnh4V2NucVF0Sk01K2NWbStvR3JxSVR0Rk90OHJTR2h6d09iL3dFOHhLQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2-rc1/Clauge_0.8.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUtaNWd5UENFc3llK0svenZqMnJrVUh0RmNMb3BPUVNOSHl1bW5XeWlFbE5jdkpsMGMrc1FqeGpsVVJHd3VIclNWZzZyTjE1NUhEckFxODZqV1NIakE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTM2MTUyCWZpbGU6Q2xhdWdlXzAuOC4yX3g2NC1zZXR1cC5leGUKa2xMZjBlNUJFdlhmd2Y1Z250ZHYyTEIweVV6VnJuK3dWVDFXdjVwZEtYemwzMG92QVI4K3VOZElkS0tuWFBPaU5uNkxpQjNGUTdpdytyT2hJYTBuQ2c9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v0.8.2/Clauge_0.8.2_x64-setup.exe"
     }
   }
 }
