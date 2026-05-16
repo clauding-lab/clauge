@@ -36,6 +36,13 @@
       const isMas = await window.__TAURI__.core.invoke('is_mas_flavor');
       if (isMas) {
         document.body.classList.add('is-flavor-mas');
+        // Cheap insurance against a slow IPC: if the user has already
+        // navigated to a flavor-aware step (2 or 5) before the IPC
+        // resolved, re-render that step now so they see the MAS copy
+        // instead of the default DMG/NSIS copy.
+        if (currentStep === 2 || currentStep === 5) {
+          showStep(currentStep);
+        }
       }
     } catch (e) {
       // IPC failed — defensive default (CSS hides .flavor-mas) keeps the

@@ -84,12 +84,13 @@
         <button class="wizard-btn" data-back>← Back</button>
         <!-- DMG/NSIS: single Next button. -->
         <button class="wizard-btn primary flavor-dmg-nsis" data-next>Next →</button>
-        <!-- MAS: Grant Access + dedicated Skip-with-dismiss-flag. data-skip-grant
-             is intentionally distinct from data-skip-step (used by step 4's
-             extension-install skip) so the localStorage dismiss marker only
-             fires for the grant-folder skip. -->
-        <button class="wizard-btn primary flavor-mas" data-grant-folder>Grant Access</button>
+        <!-- MAS: Skip-with-dismiss-flag + Grant Access. Skip on the left,
+             primary CTA on the right — matches the convention used by step 4
+             and step 5. data-skip-grant is intentionally distinct from
+             data-skip-step (used by step 4's extension-install skip) so the
+             localStorage dismiss marker only fires for the grant-folder skip. -->
         <button class="wizard-btn flavor-mas" data-skip-grant>Skip for now</button>
+        <button class="wizard-btn primary flavor-mas" data-grant-folder>Grant Access</button>
       </footer>
     </section>
 
