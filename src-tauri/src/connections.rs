@@ -27,19 +27,29 @@ pub enum ConnectionState {
     Expired,
 }
 
+/// v0.9.0 MAS: grant outcome for ~/.claude/ folder access. Serializes as
+/// `"granted"` / `"not_granted"` via `rename_all = "snake_case"` so the
+/// JSON wire format matches the Task 10 frontend contract.
+#[cfg(feature = "mas")]
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeDirGrantStatus {
+    Granted,
+    NotGranted,
+}
+
 /// v0.9.0 MAS: state of the user's grant for ~/.claude/ folder access.
 /// Absent from DMG/NSIS payloads (frontend hides the row when missing —
 /// see Task 10 connections.js).
 ///
-/// `status` is one of "granted" / "not_granted". `path` is `Some(...)` only
-/// when the security-scoped bookmark has been resolved AND
-/// `MAS_CLAUDE_DIR` is populated (i.e. the sidecar supervisor has acquired
-/// the scope for the current run).
+/// `path` is `Some(...)` only when the security-scoped bookmark has been
+/// resolved AND `MAS_CLAUDE_DIR` is populated (i.e. the sidecar supervisor
+/// has acquired the scope for the current run).
 #[cfg(feature = "mas")]
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ClaudeCodeLogsState {
-    pub status: String, // "granted" or "not_granted"
+    pub status: ClaudeDirGrantStatus,
     pub path: Option<String>,
 }
 

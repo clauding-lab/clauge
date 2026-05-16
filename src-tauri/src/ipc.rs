@@ -203,6 +203,8 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
     #[cfg(feature = "mas")]
     {
         use tauri_plugin_shell::ShellExt;
+        // TODO(deprecation): migrate to tauri-plugin-opener when bumping Tauri.
+        // shell.open is #[deprecated(since = "2.1.0")]; see lib.rs same pattern.
         app.shell()
             .open("macappstore://apps.apple.com/app/clauge/idXXXXXXXXX", None)
             .map_err(|e| format!("failed to open App Store: {}", e))?;
@@ -530,12 +532,12 @@ pub async fn get_connection_status(
                 .get()
                 .map(|p| p.to_string_lossy().into_owned());
             crate::connections::ClaudeCodeLogsState {
-                status: "granted".to_string(),
+                status: crate::connections::ClaudeDirGrantStatus::Granted,
                 path,
             }
         } else {
             crate::connections::ClaudeCodeLogsState {
-                status: "not_granted".to_string(),
+                status: crate::connections::ClaudeDirGrantStatus::NotGranted,
                 path: None,
             }
         };
