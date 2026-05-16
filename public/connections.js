@@ -154,11 +154,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // v0.8.1: Wire the existing "Install Clauge Sync" CTA in the extension row
-  // to actually open the Web Store. Web Store URL works for Chrome and Edge.
+  // to actually open the Web Store. The CTA is an <a target="_blank"> in
+  // index.html, which would normally route through Tauri's on_new_window
+  // handler. We preventDefault and explicitly invoke shell.open so the URL
+  // lives canonically in this file (CLAUGE_SYNC_WEB_STORE constant) — no
+  // double-open from the anchor's target="_blank" racing the IPC call.
   var extRow = document.getElementById('conn-extension');
   var installCta = extRow ? extRow.querySelector('.conn-cta') : null;
   if (installCta) {
-    installCta.addEventListener('click', async function () {
+    installCta.addEventListener('click', async function (e) {
+      e.preventDefault();
       if (!window.__TAURI__?.core?.invoke) return;
       try {
         await window.__TAURI__.core.invoke('plugin:shell|open', { path: CLAUGE_SYNC_WEB_STORE });
