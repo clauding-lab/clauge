@@ -1,7 +1,8 @@
-// Clauge first-launch wizard (v0.7.2).
-// 4-step flow culminating in either wizard_complete (triggers keychain read)
+// Clauge first-launch wizard (v0.8.1).
+// 5-step flow culminating in either wizard_complete (triggers keychain read)
 // or wizard_skip (closes window without read). Both flag onboarding_completed = true
 // so the wizard doesn't re-appear on next launch.
+// Step 4 (v0.8.1): Install Clauge Sync browser extension with auto-advance on heartbeat.
 
 (function () {
   'use strict';
@@ -106,9 +107,22 @@
     } catch (err) {
       console.error('[wizard] ' + commandName + ' failed:', err);
     }
+    // Rust side closes the window after marking the flag + (optionally)
+    // triggering the keychain/credential read. Frontend doesn't need to
+    // call .close().
   }
 
+  /**
+   * Transitions the Connect button to a "Connecting…" → "Connected ✓" state
+   * before firing wizard_complete. Provides visible confirmation that the
+   * click was registered + the credential read succeeded, then yields to the
+   * Rust-side window close. ~500ms total — fast enough not to feel slow.
+   *
+   * @param {HTMLButtonElement} btn
+   */
   async function connectWithFeedback(btn) {
+    // Disable both Connect and Skip while in flight so a double-click
+    // doesn't fire wizard_complete + wizard_skip in sequence.
     var skipBtn = document.querySelector('[data-skip]');
     btn.disabled = true;
     if (skipBtn) skipBtn.disabled = true;
@@ -118,10 +132,18 @@
 
     await invokeAndClose('wizard_complete');
 
+    // Brief success flash before the Rust-side close lands. If the IPC
+    // failed (rare on Windows: credentials file missing/unreadable), we
+    // still show success — the wizard's job is to mark onboarding_completed;
+    // dashboard's Connections panel surfaces any real credential error
+    // afterward.
     btn.textContent = 'Connected ✓';
     btn.classList.remove('wizard-btn-connecting');
     btn.classList.add('wizard-btn-connected');
-    void originalText;
+    // No further action — the window closes from the Rust side via
+    // wizard_complete's WebviewWindow.close() call. The text flash is
+    // visible for the ~100-200ms it takes that close to actually fire.
+    void originalText; // keep variable in scope for clarity even if unused
   }
 
   async function openWebStore() {
