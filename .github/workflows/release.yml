@@ -57,6 +57,10 @@ jobs:
     name: Build ${{ matrix.platform-name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    # v0.9.0: MAS-flavor row is allowed to fail without blocking the DMG/NSIS
+    # release. MAS submission is a manual Transporter step (Task 14) so a CI
+    # failure here is a transparency-artifact regression, not a ship-blocker.
+    continue-on-error: ${{ matrix.mas == true }}
 
     strategy:
       fail-fast: false
@@ -68,12 +72,26 @@ jobs:
             rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
             bundles: 'app,dmg'
             artifact-name: latest-macos.json
+            mas: false
           - platform-name: Windows x64
             runner: windows-2022
             target: x86_64-pc-windows-msvc
             rust-targets: 'x86_64-pc-windows-msvc'
             bundles: 'nsis'
             artifact-name: latest-windows.json
+            mas: false
+          # v0.9.0: Mac App Store sandboxed flavor. Produces an unsigned .app
+          # (Task 14 signs + submits via Transporter on a developer Mac). The
+          # .app.zip uploaded to each Release is a TRANSPARENCY artifact —
+          # not consumed by Tauri's updater (createUpdaterArtifacts: false in
+          # tauri.mas.conf.json).
+          - platform-name: macOS MAS universal
+            runner: macos-14
+            target: universal-apple-darwin
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            bundles: 'app'
+            artifact-name: ''
+            mas: true
 
     steps:
       - name: Checkout
@@ -125,6 +143,10 @@ jobs:
         run: cargo test --locked
 
       - name: Verify signing secrets are present
+        # MAS flavor uses --no-sign (Task 14 signs manually via Transporter on a
+        # developer Mac with the 3rd Party Mac Developer Application cert), so
+        # the updater signing keys aren't needed for that row.
+        if: matrix.mas != true
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -141,6 +163,11 @@ jobs:
           echo "Signing secrets present."
 
       - name: Build, sign, and publish artifacts
+        # DMG + NSIS flavors: tauri-action handles build + Release upload +
+        # updater JSON generation. MAS flavor uses a separate build step below
+        # (different config overlay, --no-sign, no updater JSON, custom .app.zip
+        # naming for transparency).
+        if: matrix.mas != true
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,7 +188,73 @@ jobs:
           # locate it on disk.
           includeUpdaterJson: true
 
+      - name: Build MAS-flavor unsigned .app
+        # v0.9.0: applies tauri.mas.conf.json overlay (RFC 7396 merge), enables
+        # the `mas` Cargo feature, --no-sign because Task 14 signs manually with
+        # the 3rd Party Mac Developer Application cert via Transporter.
+        if: matrix.mas == true
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          cargo tauri build \
+            --features mas \
+            --config tauri.mas.conf.json \
+            --bundles ${{ matrix.bundles }} \
+            --target ${{ matrix.target }} \
+            --no-sign
+
+      - name: Zip MAS .app (transparency artifact)
+        if: matrix.mas == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          if [ ! -d "$BUNDLE_DIR/Clauge.app" ]; then
+            echo "::error::Expected MAS bundle at $BUNDLE_DIR/Clauge.app but it does not exist." >&2
+            ls -la "$BUNDLE_DIR" || true
+            exit 1
+          fi
+          cd "$BUNDLE_DIR"
+          ZIP_NAME="Clauge-MAS-${{ github.ref_name }}.app.zip"
+          zip -r "$ZIP_NAME" Clauge.app
+          echo "Created $BUNDLE_DIR/$ZIP_NAME"
+
+      - name: Upload MAS .app zip to GitHub Release
+        # Transparency artifact only — Tauri's updater is disabled in the MAS
+        # overlay (createUpdaterArtifacts: false, plugins.updater: null), so
+        # this .app.zip is for observers to inspect the sandboxed binary, not
+        # for the in-app update flow.
+        if: matrix.mas == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          ZIP_PATH="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Clauge-MAS-${TAG}.app.zip"
+          # --clobber so re-runs of the same tag don't fail on a pre-existing
+          # asset. The DMG/NSIS rows upload via tauri-action which creates the
+          # Release; if MAS finishes before them the Release may not exist yet.
+          # gh release upload errors with "release not found" in that case, so
+          # we wait briefly and retry. Capped at ~2 minutes total.
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if gh release upload "$TAG" "$ZIP_PATH" --clobber --repo "$REPO"; then
+              echo "Uploaded MAS .app zip on attempt $i."
+              exit 0
+            fi
+            echo "Release $TAG not ready yet; sleeping 10s (attempt $i/12)."
+            sleep 10
+          done
+          echo "::error::Failed to upload MAS .app zip after 12 attempts." >&2
+          exit 1
+
       - name: Find and upload latest.json as artifact
+        # MAS row has createUpdaterArtifacts: false in its overlay config, so
+        # there is no latest.json to capture for it. Skipping keeps the
+        # mirror-updater job's per-platform download list (macos + windows only)
+        # unaffected.
+        if: matrix.mas != true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -187,6 +280,7 @@ jobs:
           cat "${{ matrix.artifact-name }}"
 
       - name: Upload latest.json as workflow artifact
+        if: matrix.mas != true
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: ${{ matrix.artifact-name }}

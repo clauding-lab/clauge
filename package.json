@@ -21,7 +21,8 @@
     "test:e2e": "tsx --test test/e2e/v3.test.ts",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "tauri:dev": "cd src-tauri && cargo tauri dev",
-    "tauri:build": "cd src-tauri && cargo tauri build"
+    "tauri:build": "cd src-tauri && cargo tauri build",
+    "tauri:build:mas": "cd src-tauri && cargo tauri build --features mas --config tauri.mas.conf.json --bundles app --target universal-apple-darwin --no-sign"
   },
   "engines": {
     "node": ">=22.0.0"
