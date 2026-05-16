@@ -28,41 +28,68 @@
 
     <!-- Step 2: Credential read expectation-setting -->
     <section class="wizard-step" data-step="2">
-      <div class="platform-mac">
-        <h1>macOS Keychain Access</h1>
-        <p>Next, macOS will ask permission to read your Claude Code credentials. When you see this dialog:</p>
 
-        <div class="dialog-mock" role="img" aria-label="Mockup of the macOS Keychain prompt with Always Allow highlighted">
-          <p class="dialog-title">Clauge wants to use your confidential information stored in "Claude Code-credentials" in your keychain.</p>
-          <div class="dialog-buttons">
-            <button class="mock-btn" disabled>Deny</button>
-            <button class="mock-btn" disabled>Allow</button>
-            <button class="mock-btn highlighted" disabled>Always Allow</button>
+      <!-- DMG (Mac Keychain prompt) + NSIS (Windows filesystem) copy.
+           v0.9.0: wrapped in .flavor-dmg-nsis so MAS users see the
+           .flavor-mas block below instead. -->
+      <div class="flavor-dmg-nsis">
+        <div class="platform-mac">
+          <h1>macOS Keychain Access</h1>
+          <p>Next, macOS will ask permission to read your Claude Code credentials. When you see this dialog:</p>
+
+          <div class="dialog-mock" role="img" aria-label="Mockup of the macOS Keychain prompt with Always Allow highlighted">
+            <p class="dialog-title">Clauge wants to use your confidential information stored in "Claude Code-credentials" in your keychain.</p>
+            <div class="dialog-buttons">
+              <button class="mock-btn" disabled>Deny</button>
+              <button class="mock-btn" disabled>Allow</button>
+              <button class="mock-btn highlighted" disabled>Always Allow</button>
+            </div>
+            <p class="dialog-arrow">↑ click this one</p>
           </div>
-          <p class="dialog-arrow">↑ click this one</p>
+
+          <p class="note">
+            <strong>Heads up:</strong> until Clauge ships with Apple Developer signing, this prompt may reappear on each launch. Always click <strong>"Always Allow"</strong> when you see it.
+          </p>
         </div>
 
-        <p class="note">
-          <strong>Heads up:</strong> until Clauge ships with Apple Developer signing, this prompt may reappear on each launch. Always click <strong>"Always Allow"</strong> when you see it.
-        </p>
+        <div class="platform-win">
+          <h1>Reading Your Credentials</h1>
+          <p>Next, Clauge will read your Claude Code credentials from your user profile:</p>
+
+          <pre class="path-mock" aria-label="Path to the Claude Code credentials file">%USERPROFILE%\.claude\.credentials.json</pre>
+
+          <p>This is the file Claude Code's CLI writes when you run <code>claude /login</code>. No prompt — just a silent file read.</p>
+
+          <p class="note">
+            <strong>Heads up:</strong> if you haven't logged in to Claude Code yet, open a terminal and run <code>claude /login</code> first. Clauge can't read what isn't there.
+          </p>
+        </div>
       </div>
 
-      <div class="platform-win">
-        <h1>Reading Your Credentials</h1>
-        <p>Next, Clauge will read your Claude Code credentials from your user profile:</p>
-
-        <pre class="path-mock" aria-label="Path to the Claude Code credentials file">%USERPROFILE%\.claude\.credentials.json</pre>
-
-        <p>This is the file Claude Code's CLI writes when you run <code>claude /login</code>. No prompt — just a silent file read.</p>
+      <!-- MAS (Mac App Store) "Grant folder access" copy. v0.9.0: shown only
+           when body.is-flavor-mas is set by initFlavorGate (which calls the
+           is_mas_flavor IPC at wizard load). -->
+      <div class="flavor-mas">
+        <h1>Grant access to your Claude Code logs</h1>
+        <p>Clauge needs read-only access to <code>~/.claude/</code> to read your Claude Code login and per-session analytics. macOS will show a folder picker — click <strong>Choose</strong> on the pre-selected folder. You only do this once.</p>
 
         <p class="note">
           <strong>Heads up:</strong> if you haven't logged in to Claude Code yet, open a terminal and run <code>claude /login</code> first. Clauge can't read what isn't there.
         </p>
+
+        <p>On the next screen we'll show what gets read.</p>
       </div>
 
       <footer class="wizard-nav">
         <button class="wizard-btn" data-back>← Back</button>
-        <button class="wizard-btn primary" data-next>Next →</button>
+        <!-- DMG/NSIS: single Next button. -->
+        <button class="wizard-btn primary flavor-dmg-nsis" data-next>Next →</button>
+        <!-- MAS: Grant Access + dedicated Skip-with-dismiss-flag. data-skip-grant
+             is intentionally distinct from data-skip-step (used by step 4's
+             extension-install skip) so the localStorage dismiss marker only
+             fires for the grant-folder skip. -->
+        <button class="wizard-btn primary flavor-mas" data-grant-folder>Grant Access</button>
+        <button class="wizard-btn flavor-mas" data-skip-grant>Skip for now</button>
       </footer>
     </section>
 
@@ -132,8 +159,15 @@
     <section class="wizard-step" data-step="5">
       <h1>Ready to Connect</h1>
       <div class="platform-mac">
-        <p>Clicking <strong>Connect</strong> will trigger the macOS Keychain prompt.</p>
-        <p>Remember: click <strong>"Always Allow"</strong> when you see it.</p>
+        <!-- v0.9.0: split Mac copy by flavor. DMG triggers Keychain; MAS reads
+             from the security-scoped bookmark stored in step 2. -->
+        <div class="flavor-dmg-nsis">
+          <p>Clicking <strong>Connect</strong> will trigger the macOS Keychain prompt.</p>
+          <p>Remember: click <strong>"Always Allow"</strong> when you see it.</p>
+        </div>
+        <div class="flavor-mas">
+          <p>Clicking <strong>Connect</strong> will read your Claude Code credentials from the folder you granted access to in step 2 and open the dashboard.</p>
+        </div>
       </div>
       <div class="platform-win">
         <p>Clicking <strong>Connect</strong> will read your Claude Code credentials and open the dashboard.</p>
