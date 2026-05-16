@@ -1,10 +1,22 @@
 [package]
 name = "clauge"
-version = "0.8.2"
+version = "0.9.0"
 description = "Clauge — Claude Code analytics native shell"
 authors = ["clauding-lab"]
 edition = "2021"
 rust-version = "1.77.2"
+
+[features]
+default = []
+# v0.9.0: Mac App Store sandboxed flavor. When enabled:
+#  - keychain.rs MAS branch reads ~/.claude/.credentials.json via filesystem
+#    (zero-arg signature; reads path from MAS_CLAUDE_DIR OnceLock populated by
+#    the supervisor on acquire_scoped_path)
+#  - security_scoped_bookmark.rs module compiles in
+#  - tauri_plugin_updater is NOT registered (App Store owns updates)
+#  - check_for_updates IPC opens macappstore:// instead of polling latest.json
+#  - is_mas_flavor IPC returns true
+mas = []
 
 [lib]
 name = "clauge_lib"
