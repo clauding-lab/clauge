@@ -189,7 +189,10 @@ pub fn prompt_for_folder_grant(app: &tauri::AppHandle) -> Result<(), BookmarkErr
             None,
             None,
         )
-        .map_err(|err| BookmarkError::Resolution(format!("bookmark create failed: {:?}", err)))?;
+        .map_err(|err| {
+            log::warn!("NSURL bookmarkDataWithOptions failed: {}", err);
+            BookmarkError::Resolution(format!("bookmark create failed: {}", err))
+        })?;
 
     // `to_vec()` is the safe accessor — copies the NSData buffer into a
     // Rust `Vec<u8>`. Avoids the raw pointer alternative.
@@ -227,14 +230,16 @@ pub fn acquire_scoped_path(
     // fileID).
     let mut is_stale = Bool::new(false);
 
-    // The whole resolve + scope-start pipeline is a single unsafe section
-    // because:
-    // - URLByResolvingBookmarkData_*: unsafe because `is_stale` is a *mut Bool
-    // - startAccessingSecurityScopedResource: unsafe in the binding
-    // - stopAccessingSecurityScopedResource (in Drop): unsafe in the binding
-    //
-    // We don't extend the unsafe contract to caller code beyond the path
-    // String borrow.
+    // SAFETY: `is_stale` is a stack-allocated `Bool` whose address remains
+    // valid for the duration of the unsafe block; the binding requires
+    // either a valid `*mut Bool` or null and we pass a valid reference.
+    // `nsdata` is a valid `Retained<NSData>` per objc2's reference-counting
+    // invariants (constructed via the safe `NSData::with_bytes` above).
+    // The `relative_to` argument is `None`, matching the binding's
+    // `Option<&NSURL>` signature. `URLByResolvingBookmarkData_*` returns
+    // `Result<Retained<NSURL>, Retained<NSError>>` — the binding handles
+    // the raw out-pointer null-check for the URL itself, so we only need
+    // to keep the `is_stale` borrow alive across the call.
     let url = unsafe {
         NSURL::URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(
             &nsdata,
@@ -242,18 +247,32 @@ pub fn acquire_scoped_path(
             None,
             &mut is_stale,
         )
-        .map_err(|err| BookmarkError::Resolution(format!("bookmark resolve failed: {:?}", err)))?
+        .map_err(|err| {
+            log::warn!("NSURL URLByResolvingBookmarkData failed: {}", err);
+            BookmarkError::Resolution(format!("bookmark resolve failed: {}", err))
+        })?
     };
 
     if is_stale.as_bool() {
-        return Err(BookmarkError::Resolution(
-            "bookmark reported stale; user must re-grant".into(),
-        ));
+        // Per the v0.9.0 plan: log a warning but proceed best-effort. The
+        // bookmark may still resolve to a working path (folder moved on
+        // disk but reachable via fileID). If subsequent reads fail, the
+        // user should re-grant via Settings → Connections. Tri-state UX
+        // (stale-but-usable vs stale-and-broken) is deferred to v0.9.1.
+        log::warn!(
+            "security-scoped bookmark resolved as stale; proceeding best-effort. \
+             If reads fail, the user should re-grant via Settings → Connections."
+        );
     }
 
-    // SAFETY: see the comment block above the resolve call.
+    // SAFETY: `url` is a valid `Retained<NSURL>` returned by the resolve
+    // call above; the binding for `startAccessingSecurityScopedResource`
+    // requires a live NSURL receiver, satisfied by ARC keeping `url`
+    // alive until end of scope. Returns a plain `bool` — no pointer
+    // unsafety to manage.
     let started = unsafe { url.startAccessingSecurityScopedResource() };
     if !started {
+        log::warn!("startAccessingSecurityScopedResource returned false for resolved bookmark");
         return Err(BookmarkError::ScopeStart);
     }
 
@@ -262,6 +281,7 @@ pub fn acquire_scoped_path(
     let path_ns = match url.path() {
         Some(p) => p,
         None => {
+            log::warn!("scope started but NSURL.path() returned None; stopping defensively");
             // Defensive: release the scope grant before bailing out. We
             // can't construct a `ScopedHandle` to do this via `Drop`
             // because that's what we'd be returning on success, so call
@@ -448,6 +468,19 @@ mod tests {
             format!("{}", BookmarkError::Store("abc".into())),
             "tauri store error: abc"
         );
+    }
+
+    #[test]
+    fn scoped_handle_is_send_and_sync() {
+        // Compile-only regression guard: if a future objc2-foundation
+        // version retracts `Retained<NSURL>: Send + Sync`, this test stops
+        // compiling and surfaces the breakage before the supervisor in
+        // `sidecar.rs` (which moves a `ScopedHandle` across threads) fails
+        // at use-site with a less obvious error.
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<ScopedHandle>();
+        assert_sync::<ScopedHandle>();
     }
 
     #[test]
