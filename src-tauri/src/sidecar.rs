@@ -148,6 +148,19 @@ pub async fn spawn_and_supervise(app: AppHandle) {
             Ok((port, mut rx, child)) => {
                 let pid = child.pid();
                 log::info!("Sidecar bound to port {} (pid={})", port, pid);
+                // v0.8.1: emit `sidecar-ready` Tauri event so the splash
+                // window can redirect to the dashboard URL. Splash uses this
+                // as its primary trigger; absent the event it falls back to
+                // polling get_server_port IPC.
+                {
+                    use tauri::Emitter;
+                    if let Err(e) = app.emit(
+                        "sidecar-ready",
+                        serde_json::json!({ "port": port }),
+                    ) {
+                        log::warn!("Failed to emit sidecar-ready event: {}", e);
+                    }
+                }
                 if let Some(ref s) = state {
                     if let Err(e) = s.set_port(port) {
                         log::error!("Failed to record sidecar port: {}", e);
