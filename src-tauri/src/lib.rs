@@ -10,6 +10,12 @@ mod keychain_cache;
 pub mod anthropic_oauth;
 mod claude_ai_session;
 pub mod connections;
+// v0.9.0 MAS flavor only: NSURL security-scoped bookmark wrapper for the
+// user-granted read access to ~/.claude/. The DMG flavor reads the
+// filesystem directly and does not compile this module. Task 6 wires it
+// into keychain.rs + sidecar.rs.
+#[cfg(feature = "mas")]
+mod security_scoped_bookmark;
 
 use tauri::Manager;
 
@@ -50,6 +56,12 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         // TODO(T18): configure store path/migration when popover settings handler lands.
         .plugin(tauri_plugin_store::Builder::default().build())
+        // v0.9.0: dialog plugin is consumed by the MAS-flavor
+        // security-scoped bookmark module to present NSOpenPanel for the
+        // user-granted ~/.claude/ read access. Registered unconditionally
+        // because the cost is dormant on DMG (no code calls into it) and
+        // ACL on main.json gates any frontend access (none granted).
+        .plugin(tauri_plugin_dialog::init())
         .manage(ipc::AppState::default())
         .setup(|app| {
             // macOS: boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The
