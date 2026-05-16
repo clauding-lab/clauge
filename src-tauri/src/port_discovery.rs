@@ -19,24 +19,20 @@ struct HealthBody {
     service: String,
 }
 
+/// Probe a port for an existing clauge-server. Returns `true` iff
+/// `/api/health` answers 200 with a parseable JSON body whose `service`
+/// field equals `"clauge"`. Thin wrapper over `probe_with_body(port)` —
+/// kept as a named alias so call sites that don't need the response body
+/// read cleanly. (v0.8.1 dedup: was a near-duplicate of probe_with_body's
+/// body; same network/JSON contract, only the return type collapses
+/// `Option<String>` → `bool`.)
+///
+/// Currently only exercised by the unit tests below; `discover_with_retry`
+/// switched to `probe_with_body` in v0.7.3 to read the version field. Kept
+/// `pub` as a stable boolean-probe shorthand for future callers.
+#[allow(dead_code)]
 pub async fn probe(port: u16) -> bool {
-    let url = format!("http://127.0.0.1:{}/api/health", port);
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    match client.get(&url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<HealthBody>().await {
-                Ok(body) => body.service == "clauge",
-                Err(_) => false,
-            }
-        }
-        _ => false,
-    }
+    probe_with_body(port).await.is_some()
 }
 
 /// Same probe as `probe()`, but returns the response body string when the
