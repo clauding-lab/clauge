@@ -72,22 +72,31 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     let win = builder
         .on_navigation(move |u| {
-            // v0.8.1: two allowed navigation classes:
-            //   1. tauri://localhost/<file> — the bundled splash + any other
-            //      Tauri-internal asset (splash → dashboard transition fires
-            //      this once on initial load).
-            //   2. http://127.0.0.1:<port>/* or http://localhost:<port>/* —
-            //      the sidecar's dashboard, with port read live from AppState
-            //      so crash-respawned sidecars on fallback ports don't lock
-            //      the dashboard out.
-            if u.scheme() == "tauri" && matches!(u.host_str(), Some("localhost")) {
+            // v0.8.1: bundled splash via WebviewUrl::App. Tauri 2's actual URL
+            // varies by platform:
+            //   macOS / Linux: tauri://localhost/<file>
+            //   Windows:       http://tauri.localhost/<file>
+            //                  (WebView2 doesn't allow custom protocol schemes,
+            //                  so Tauri uses a subdomain of localhost instead.)
+            // Allow both shapes so the splash → dashboard transition works on
+            // every platform. Plus the existing http://127.0.0.1:<port> /
+            // http://localhost:<port> allow-list for the sidecar's dashboard,
+            // with port read live from AppState so crash-respawned sidecars on
+            // fallback ports don't lock the dashboard out.
+            let host = u.host_str();
+            if u.scheme() == "tauri" && matches!(host, Some("localhost")) {
+                return true;
+            }
+            if matches!(host, Some("tauri.localhost"))
+                && matches!(u.scheme(), "http" | "https")
+            {
                 return true;
             }
             let live_port = app_for_handler
                 .try_state::<crate::ipc::AppState>()
                 .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
                 .unwrap_or(3456);
-            let host_ok = matches!(u.host_str(), Some("127.0.0.1") | Some("localhost"));
+            let host_ok = matches!(host, Some("127.0.0.1") | Some("localhost"));
             let port_ok = u.port_or_known_default() == Some(live_port);
             let scheme_ok = u.scheme() == "http";
             let allowed = host_ok && port_ok && scheme_ok;
