@@ -507,6 +507,12 @@ td.ok { color: var(--ok); }
   border-radius: 999px;
   background: var(--brand);
 }
+/* v0.8.2: gated state when Anthropic disabled extra_usage at the org level.
+   Neutral mid-gray (no brand color) communicates "inactive" rather than the
+   alarm-color a red bar would imply. */
+.bar-fill.bar-fill--gated {
+  background: rgba(255, 240, 230, 0.18);
+}
 
 .tag {
   display: inline-block;
