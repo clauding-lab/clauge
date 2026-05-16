@@ -146,11 +146,28 @@ pub fn get_server_port(state: State<AppState>) -> Result<u16, String> {
 /// - `{"status":"up_to_date"}` — nothing to do
 /// - `{"status":"installed","version":"X.Y.Z"}` — new version installed
 ///   on disk; user needs to restart (frontend surfaces a Restart Now button).
+/// - `{"status":"opened_storefront"}` — v0.9.0 MAS: we don't poll
+///   latest.json; the function opens the Mac App Store storefront instead.
+///   Frontend renders "Opened the Mac App Store. Updates ship through
+///   Apple." (See public/app.js handler.)
+///
+/// MAS builds only ever construct `OpenedStorefront`; DMG/NSIS only ever
+/// construct `UpToDate` / `Installed`. We keep the variants present on both
+/// flavors so the type's serde tag space stays stable, and silence the
+/// dead-code warnings on whichever flavor isn't constructing them with
+/// `#[allow(dead_code)]`.
 #[derive(serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum UpdateStatus {
     UpToDate,
     Installed { version: String },
+    /// v0.9.0 MAS: opened the Mac App Store storefront instead of polling
+    /// latest.json. Frontend renders the "Updates ship through Apple"
+    /// message. Gated to the `mas` feature so DMG/NSIS builds don't generate
+    /// a dead-code warning for a variant they can never construct.
+    #[cfg(feature = "mas")]
+    OpenedStorefront,
 }
 
 /// Walk up `exe`'s ancestor path and return the first `.app` bundle dir.
@@ -160,7 +177,13 @@ pub enum UpdateStatus {
 /// (no `.app` in any ancestor) and the *innermost* `.app` for nested helper
 /// bundles, which matches what we want — strip quarantine from the bundle
 /// that actually contains the running executable.
+///
+/// Used only by the non-MAS update path's xattr-strip block; MAS builds
+/// route through the App Store and never touch this helper. `allow(dead_code)`
+/// silences the unused-function warning under `--features mas` while keeping
+/// the helper's tests reachable on every flavor (test baselines stay stable).
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn find_app_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
     exe.ancestors()
         .find(|p| p.extension().is_some_and(|e| e == "app"))
@@ -168,98 +191,119 @@ fn find_app_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
 
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
-    use tauri_plugin_notification::NotificationExt;
-    use tauri_plugin_updater::UpdaterExt;
+    // v0.9.0 MAS: Apple App Store policy forbids in-app self-updates. Instead
+    // of polling latest.json + downloading a DMG, we open the Mac App Store
+    // storefront so the user can update through Apple's normal mechanism.
+    // The Settings → Updates button hits this same IPC on both flavors;
+    // frontend keys off the returned `OpenedStorefront` variant to render
+    // the "Updates ship through Apple" message.
+    //
+    // idXXXXXXXXX is a placeholder — replaced in Task 14 with the real
+    // numeric App ID issued by App Store Connect during listing creation.
+    #[cfg(feature = "mas")]
+    {
+        use tauri_plugin_shell::ShellExt;
+        app.shell()
+            .open("macappstore://apps.apple.com/app/clauge/idXXXXXXXXX", None)
+            .map_err(|e| format!("failed to open App Store: {}", e))?;
+        return Ok(UpdateStatus::OpenedStorefront);
+    }
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(update)) => {
-            // Capture version before `download_and_install` consumes `update`.
-            // Field is a public `String` on `tauri_plugin_updater::Update` (verified
-            // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
-            // a `version()` method.
-            let new_version = update.version.clone();
+    #[cfg(not(feature = "mas"))]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        use tauri_plugin_updater::UpdaterExt;
 
-            update
-                .download_and_install(|_, _| {}, || {})
-                .await
-                .map_err(|e| e.to_string())?;
+        let updater = app.updater().map_err(|e| e.to_string())?;
+        match updater.check().await {
+            Ok(Some(update)) => {
+                // Capture version before `download_and_install` consumes `update`.
+                // Field is a public `String` on `tauri_plugin_updater::Update` (verified
+                // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
+                // a `version()` method.
+                let new_version = update.version.clone();
 
-            // Strip quarantine attr on the running .app bundle so unsigned updates
-            // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
-            //
-            // Dev mode caveat: `current_exe()` returns the dev target binary
-            // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
-            // returns None and the xattr block silently skips. In production it
-            // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
-            // ancestors() walks up to the .app bundle.
-            //
-            // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
-            // dispatch a TOAST telling the user the update installed but Gatekeeper
-            // will reappear, with the right-click → Open workaround.
-            #[cfg(target_os = "macos")]
-            {
-                use tokio::process::Command;
-                let mut xattr_failed = false;
-                if let Ok(exe) = std::env::current_exe() {
-                    if let Some(bundle) = find_app_bundle(&exe) {
-                        match Command::new("xattr")
-                            .args(["-dr", "com.apple.quarantine"])
-                            .arg(bundle)
-                            .output()
-                            .await
+                update
+                    .download_and_install(|_, _| {}, || {})
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                // Strip quarantine attr on the running .app bundle so unsigned updates
+                // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
+                //
+                // Dev mode caveat: `current_exe()` returns the dev target binary
+                // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
+                // returns None and the xattr block silently skips. In production it
+                // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
+                // ancestors() walks up to the .app bundle.
+                //
+                // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
+                // dispatch a TOAST telling the user the update installed but Gatekeeper
+                // will reappear, with the right-click → Open workaround.
+                #[cfg(target_os = "macos")]
+                {
+                    use tokio::process::Command;
+                    let mut xattr_failed = false;
+                    if let Ok(exe) = std::env::current_exe() {
+                        if let Some(bundle) = find_app_bundle(&exe) {
+                            match Command::new("xattr")
+                                .args(["-dr", "com.apple.quarantine"])
+                                .arg(bundle)
+                                .output()
+                                .await
+                            {
+                                Ok(out) if out.status.success() => {
+                                    log::info!("Stripped quarantine from {:?}", bundle);
+                                }
+                                Ok(out) => {
+                                    log::warn!(
+                                        "xattr exited non-zero stripping quarantine: {}",
+                                        String::from_utf8_lossy(&out.stderr)
+                                    );
+                                    xattr_failed = true;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to invoke xattr: {}", e);
+                                    xattr_failed = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if xattr_failed {
+                        if let Err(e) = app
+                            .notification()
+                            .builder()
+                            .title("Clauge update issue")
+                            .body("Update installed but Gatekeeper warning will reappear. Right-click Clauge.app → Open after launch.")
+                            .show()
                         {
-                            Ok(out) if out.status.success() => {
-                                log::info!("Stripped quarantine from {:?}", bundle);
-                            }
-                            Ok(out) => {
-                                log::warn!(
-                                    "xattr exited non-zero stripping quarantine: {}",
-                                    String::from_utf8_lossy(&out.stderr)
-                                );
-                                xattr_failed = true;
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to invoke xattr: {}", e);
-                                xattr_failed = true;
-                            }
+                            log::warn!("Failed to dispatch xattr-fail notification: {}", e);
                         }
                     }
                 }
 
-                if xattr_failed {
-                    if let Err(e) = app
-                        .notification()
-                        .builder()
-                        .title("Clauge update issue")
-                        .body("Update installed but Gatekeeper warning will reappear. Right-click Clauge.app → Open after launch.")
-                        .show()
-                    {
-                        log::warn!("Failed to dispatch xattr-fail notification: {}", e);
-                    }
+                // User-visible notification that update is installed (spec §6.5).
+                // Platform-agnostic; capability `notification:default` is granted in
+                // src-tauri/capabilities/main.json.
+                if let Err(e) = app
+                    .notification()
+                    .builder()
+                    .title("Clauge updated")
+                    .body(format!(
+                        "Updated to v{}. Restart the app to apply.",
+                        new_version
+                    ))
+                    .show()
+                {
+                    log::warn!("Failed to dispatch update notification: {}", e);
                 }
-            }
 
-            // User-visible notification that update is installed (spec §6.5).
-            // Platform-agnostic; capability `notification:default` is granted in
-            // src-tauri/capabilities/main.json.
-            if let Err(e) = app
-                .notification()
-                .builder()
-                .title("Clauge updated")
-                .body(format!(
-                    "Updated to v{}. Restart the app to apply.",
-                    new_version
-                ))
-                .show()
-            {
-                log::warn!("Failed to dispatch update notification: {}", e);
+                Ok(UpdateStatus::Installed { version: new_version })
             }
-
-            Ok(UpdateStatus::Installed { version: new_version })
+            Ok(None) => Ok(UpdateStatus::UpToDate),
+            Err(e) => Err(e.to_string()),
         }
-        Ok(None) => Ok(UpdateStatus::UpToDate),
-        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -473,6 +517,31 @@ pub async fn get_connection_status(
         }
     }
 
+    // v0.9.0 MAS: fill in the claude_code_logs field after the pure compositor
+    // has returned. compose_status() defaults this to None because it lacks an
+    // AppHandle; we fill it here where `_app` is in scope. The bookmark
+    // presence is the source of truth for "granted" — `MAS_CLAUDE_DIR` may not
+    // yet be populated this run (sidecar supervisor sets it on acquire), so
+    // we report `path = None` in that case while still surfacing "granted".
+    #[cfg(feature = "mas")]
+    {
+        let logs_state = if crate::security_scoped_bookmark::has_bookmark(&_app) {
+            let path = crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+                .get()
+                .map(|p| p.to_string_lossy().into_owned());
+            crate::connections::ClaudeCodeLogsState {
+                status: "granted".to_string(),
+                path,
+            }
+        } else {
+            crate::connections::ClaudeCodeLogsState {
+                status: "not_granted".to_string(),
+                path: None,
+            }
+        };
+        status.claude_code_logs = Some(logs_state);
+    }
+
     Ok(status)
 }
 
@@ -591,6 +660,8 @@ fn mark_onboarding_completed(app: &tauri::AppHandle) -> Result<(), Box<dyn std::
     store.save()?;
     Ok(())
 }
+
+// --- v0.9.0 MAS flavor IPCs ---
 
 /// Returns true if this build was compiled with the `mas` Cargo feature.
 /// Used by frontend JS to gate flavor-specific UI (wizard step 2 + step 5
