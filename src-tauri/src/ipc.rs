@@ -537,15 +537,19 @@ pub async fn wizard_complete(
         }
     }
 
-    // v0.8.1: tell the dashboard to switch to Settings → Connections so the
-    // user immediately sees their freshly-read credentials reflected in the
-    // connection state. Emitted unconditionally — even if the credential
-    // read above failed, the user clicked Connect and should see the
-    // Connections panel (which will surface the failure state).
+    // v0.8.1 (fix): set a persistent flag in the store so the dashboard's
+    // app.js reads it on load and switches to Settings → Connections. We
+    // previously emitted a Tauri event here, but Tauri events don't buffer
+    // for late subscribers — on macOS first-launch the dashboard webview
+    // hasn't loaded yet when this code runs, so the event was lost and the
+    // dashboard would land on Overview instead of Connections.
     {
-        use tauri::Emitter;
-        if let Err(e) = app.emit("navigate-to-connections", ()) {
-            log::warn!("wizard_complete: failed to emit navigate-to-connections: {}", e);
+        use tauri_plugin_store::StoreExt;
+        if let Ok(store) = app.store("settings.json") {
+            store.set("pending_focus_connections", serde_json::Value::Bool(true));
+            if let Err(e) = store.save() {
+                log::warn!("wizard_complete: failed to persist pending_focus_connections: {}", e);
+            }
         }
     }
 
@@ -586,6 +590,24 @@ fn mark_onboarding_completed(app: &tauri::AppHandle) -> Result<(), Box<dyn std::
     store.set("onboarding_completed", serde_json::Value::Bool(true));
     store.save()?;
     Ok(())
+}
+
+/// v0.8.1: dashboard's app.js calls this on load to check whether the wizard
+/// just completed via Connect (and thus the user should land on Settings →
+/// Connections). Read + clear in one call so we don't loop on the flag.
+#[tauri::command]
+pub fn take_pending_focus_connections(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app.store("settings.json").map_err(|e| e.to_string())?;
+    let pending = store
+        .get("pending_focus_connections")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if pending {
+        store.delete("pending_focus_connections");
+        store.save().map_err(|e| e.to_string())?;
+    }
+    Ok(pending)
 }
 
 /// Restart the Tauri shell after killing all sidecar children.

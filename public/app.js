@@ -802,18 +802,25 @@ function bindSegments() {
 
   // v0.8.1: When the first-launch wizard completes via the Connect button,
   // the dashboard should land on Settings → Connections so the user sees
-  // their freshly-read credentials. Rust emits this event from the
-  // wizard_complete IPC handler.
-  if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
-    window.__TAURI__.event.listen('navigate-to-connections', function () {
-      switchTab('settings');
-      // Click the Settings sub-nav button for the Connections panel.
-      // Note: the attribute is data-set="sync" (legacy name from v0.5.x
-      // extension-autodetect era); the user-facing label is "Connections".
-      var btn = document.querySelector('.set-side button[data-set="sync"]');
-      if (btn) btn.click();
-    });
-  }
+  // their freshly-read credentials. Uses a persisted flag (not a Tauri
+  // event) because the dashboard webview may not have loaded yet when
+  // wizard_complete runs on macOS first-launch — events don't buffer for
+  // late subscribers.
+  (async function checkPendingFocusConnections() {
+    if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) return;
+    try {
+      var pending = await window.__TAURI__.core.invoke('take_pending_focus_connections');
+      if (pending) {
+        switchTab('settings');
+        // Settings sub-nav button for Connections — attribute is data-set="sync"
+        // (legacy name from v0.5.x extension-autodetect era).
+        var btn = document.querySelector('.set-side button[data-set="sync"]');
+        if (btn) btn.click();
+      }
+    } catch (err) {
+      console.warn('[app] take_pending_focus_connections failed:', err);
+    }
+  })();
 
   // Settings sub-nav
   document.querySelectorAll('.set-side button').forEach((b) => {

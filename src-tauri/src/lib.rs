@@ -245,6 +245,7 @@ pub fn run() {
             ipc::wizard_complete,
             ipc::wizard_skip,
             ipc::restart_app,
+            ipc::take_pending_focus_connections,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

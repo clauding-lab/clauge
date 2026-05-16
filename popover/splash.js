@@ -51,6 +51,22 @@
     });
   }
 
+  // v0.8.1 (fix): eager check on script load. If the sidecar was already
+  // bound BEFORE the splash mounted its listener (the macOS first-launch case
+  // after wizard_complete creates the dashboard), the `sidecar-ready` event
+  // already fired and is gone. Without this check, the splash would sit for
+  // 5 seconds before falling back to polling. With it, we collapse the wait
+  // for the already-up case.
+  (async function eagerPortCheck() {
+    if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) return;
+    try {
+      const port = await window.__TAURI__.core.invoke('get_server_port');
+      if (typeof port === 'number') navigateToDashboard(port);
+    } catch (_err) {
+      // "server port not yet set" — the listener + 5s fallback will handle it.
+    }
+  })();
+
   // Fallback path: after 5s without the event, poll get_server_port IPC.
   // Handles edge cases where event subscription races the emit (rare but
   // possible on a slow Windows VM first launch).
