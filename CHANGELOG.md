@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.1] — 2026-05-16
+
+### Added
+
+- **Splash screen on first launch.** Replaces the WebView2 "page not loaded, please refresh" flash on Windows cold-launch (sidecar takes ~2-4s to bind first time). Branded Clauge logo + spinner appears within ~100ms; transitions to dashboard once `/api/health` responds. Less visible on Mac (sidecar boots in ~200-500ms) but provides consistent UX.
+- **First-launch wizard step "Install Clauge Sync".** New step 4 (between Permissions and Connect) walks Windows users through installing the Clauge Sync browser extension from the Chrome Web Store (also installable in Edge). Wizard auto-advances once the extension's first heartbeat arrives.
+- **Wizard Connect lands on Settings → Connections.** After a successful credential read, the dashboard switches to the Connections panel so users immediately see their freshly-detected state. Skip stays on Overview.
+
+### Changed
+
+- **claude.ai row UX de-alarmed when Clauge Sync is providing data.** Windows: row hidden entirely (sign-in is deferred). Mac: when extension is active and user is not signed in to claude.ai, the row shows a neutral gray dot + "Optional — plan data is flowing via Clauge Sync" instead of the alarm-colored "not connected" state.
+
+### Fixed
+
+- **Font 404s on dashboard.** `inter-latin-variable.woff2` and `jetbrains-mono-latin-variable.woff2` are now bundled in the SEA manifest at `public/fonts/`, matching how `public/styles.css` requests them. Browsers no longer fall back to system fonts.
+
+### Internal
+
+- `port_discovery::probe` now delegates to `probe_with_body(port).is_some()`, removing the duplicated probe body and silencing a `dead_code` warning.
+
 ## 0.8.0 (2026-05-XX) — Windows port
 
 **First Windows release.** Clauge now ships as an NSIS installer alongside the existing macOS DMG. Same codebase, same auto-updater channel — your existing v0.7.3 macOS install gets the v0.8.0 update normally; new Windows users download `Clauge_0.8.0_x64-setup.exe` from the Releases page. Windows users see a Microsoft Defender SmartScreen warning on first launch (Authenticode signing is deferred); README documents the click-through.
