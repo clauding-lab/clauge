@@ -10,7 +10,7 @@
 <body>
   <header class="wizard-header">
     <img src="/clauge-icon-512.svg" alt="" class="wizard-icon" />
-    <progress max="4" value="1" id="wizard-progress" aria-label="Setup progress"></progress>
+    <progress max="5" value="1" id="wizard-progress" aria-label="Setup progress"></progress>
   </header>
 
   <main class="wizard-main">
@@ -92,8 +92,44 @@
       </footer>
     </section>
 
-    <!-- Step 4: Ready to connect -->
+    <!-- Step 4: Install Clauge Sync (v0.8.1) -->
     <section class="wizard-step" data-step="4">
+      <h1>Install Clauge Sync</h1>
+      <div class="install-extension-icon" aria-hidden="true">
+        <!-- Same icon used in the menubar / dashboard / wizard header -->
+        <img src="/clauge-icon-512.svg" alt="" width="64" height="64" />
+      </div>
+
+      <div class="platform-mac">
+        <p>
+          <strong>Clauge Sync</strong> is a small browser extension that syncs your claude.ai plan usage to this dashboard.
+        </p>
+        <p class="note">
+          Optional but recommended. Provides plan-ring data even without claude.ai sign-in inside Clauge.
+        </p>
+      </div>
+
+      <div class="platform-win">
+        <p>
+          <strong>Clauge Sync</strong> is a small browser extension that syncs your claude.ai plan usage to this dashboard.
+        </p>
+        <p class="note">
+          Required for plan-ring data on Windows (claude.ai sign-in inside Clauge is a future release).
+        </p>
+      </div>
+
+      <p class="install-status" id="install-status" data-status="idle">
+        Not yet installed.
+      </p>
+
+      <footer class="wizard-nav">
+        <button class="wizard-btn" data-skip-step>Skip for now</button>
+        <button class="wizard-btn primary" data-install-extension>Install Clauge Sync</button>
+      </footer>
+    </section>
+
+    <!-- Step 5: Ready to connect -->
+    <section class="wizard-step" data-step="5">
       <h1>Ready to Connect</h1>
       <div class="platform-mac">
         <p>Clicking <strong>Connect</strong> will trigger the macOS Keychain prompt.</p>

@@ -269,3 +269,64 @@ body.is-windows .platform-win { display: block; }
   background: #16a34a !important;
   filter: none;
 }
+
+/* v0.8.1: Install Clauge Sync step styles. */
+
+.install-extension-icon {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 16px 0;
+}
+
+.install-extension-icon img {
+  width: 64px;
+  height: 64px;
+}
+
+.install-status {
+  margin-top: 16px;
+  text-align: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  min-height: 1.4em;
+  transition: background 200ms ease, color 200ms ease;
+}
+
+.install-status[data-status="idle"] {
+  background: transparent;
+  color: var(--text-muted, #666);
+}
+
+.install-status[data-status="waiting"] {
+  background: oklch(94% 0.05 75);
+  color: oklch(40% 0.15 75);
+  animation: install-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-color-scheme: dark) {
+  .install-status[data-status="waiting"] {
+    background: oklch(25% 0.05 75);
+    color: oklch(85% 0.1 75);
+  }
+}
+
+.install-status[data-status="installed"],
+.install-status[data-status="already-installed"] {
+  background: oklch(92% 0.08 150);
+  color: oklch(35% 0.15 150);
+}
+
+@media (prefers-color-scheme: dark) {
+  .install-status[data-status="installed"],
+  .install-status[data-status="already-installed"] {
+    background: oklch(28% 0.08 150);
+    color: oklch(85% 0.12 150);
+  }
+}
+
+@keyframes install-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
