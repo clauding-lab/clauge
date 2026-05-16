@@ -70,15 +70,42 @@ async function syncOnce() {
     // claude.ai prepaid balance — confirmed endpoint:
     //   GET /api/organizations/{uuid}/prepaid/credits
     //   { amount, currency, auto_reload_settings, ... }
+    //
+    // v0.1.8: instrument with the same probe-logging pattern the platform
+    // balance fetch uses. Without it, every failure mode collapses to
+    // `claudeBalance = null` with no diagnostic — the dashboard's
+    // CLAUDE.AI BALANCE card just shows empty and we can't tell why.
     const ouuid = encodeURIComponent(org.uuid);
     let claudeBalance = null;
+    const prepaidProbeLog = [];
     try {
-      const r = await fetch(
-        `https://claude.ai/api/organizations/${ouuid}/prepaid/credits`,
-        { credentials: 'include', cache: 'no-store' }
-      );
-      if (r.ok) claudeBalance = await r.json();
-    } catch { /* swallow */ }
+      const prepaidUrl = `https://claude.ai/api/organizations/${ouuid}/prepaid/credits`;
+      prepaidProbeLog.push(`prepaid GET ${prepaidUrl}`);
+      const r = await fetch(prepaidUrl, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      prepaidProbeLog.push(`prepaid → ${r.status} ${r.statusText}`);
+      if (r.ok) {
+        try {
+          claudeBalance = await r.json();
+          prepaidProbeLog.push(
+            `prepaid amount: ${claudeBalance?.amount ?? 'missing'} ${claudeBalance?.currency ?? ''}`
+          );
+        } catch (parseErr) {
+          prepaidProbeLog.push(`prepaid JSON parse error: ${String(parseErr?.message ?? parseErr)}`);
+        }
+      } else {
+        try {
+          const bodySnippet = (await r.text()).slice(0, 300);
+          prepaidProbeLog.push(`prepaid body (first 300): ${bodySnippet}`);
+        } catch (readErr) {
+          prepaidProbeLog.push(`prepaid body read error: ${String(readErr?.message ?? readErr)}`);
+        }
+      }
+    } catch (e) {
+      prepaidProbeLog.push(`prepaid fetch threw: ${String(e?.message ?? e)}`);
+    }
 
     // API console balance — confirmed endpoint shape:
     //   GET https://platform.claude.com/api/console/organizations/{platform-uuid}/credits
@@ -148,9 +175,16 @@ async function syncOnce() {
         balanceProbeLog.push(`credits fetch error: ${String(e?.message || e)}`);
       }
     }
-    // expose probe trail to popup for debugging
-    await chrome.storage.local.set({ cl_balance_probe: balanceProbeLog });
-    console.log('[Clauge Sync] balance probe:', balanceProbeLog);
+    // expose probe trail to popup for debugging. v0.1.8: prepend the
+    // prepaid probe so the popup's "Balance probe log" shows BOTH the
+    // claude.ai prepaid fetch and the platform.claude.com balance fetch.
+    const combinedProbeLog = [
+      ...prepaidProbeLog,
+      '--- platform.claude.com ---',
+      ...balanceProbeLog,
+    ];
+    await chrome.storage.local.set({ cl_balance_probe: combinedProbeLog });
+    console.log('[Clauge Sync] balance probe:', combinedProbeLog);
 
     const post = await fetch(ingestUrl, {
       method: 'POST',
