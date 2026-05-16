@@ -20,7 +20,7 @@
   <img src="docs/screenshots/v0.5.0/popover-v2.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater) plus the existing `npx clauge` browser dashboard. v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 adds the Windows port (per-user install at `%LOCALAPPDATA%\Programs\Clauge`, dashboard-only — no tray icon on Windows yet).
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater) plus the existing `npx clauge` browser dashboard. v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side.
 
 ## Install
 
@@ -39,12 +39,13 @@ The app sits in your menu bar:
 
 #### First launch — the Welcome wizard
 
-A 4-step Welcome wizard explains the one permission Clauge needs: read access to your Claude Code OAuth credentials in macOS Keychain. Walk through:
+A 5-step Welcome wizard explains the one permission Clauge needs (read access to Claude Code's OAuth credentials) and walks you through installing the optional Clauge Sync browser extension. Walk through:
 
 1. **Welcome** — what Clauge does
 2. **macOS Keychain Access** — sets expectations for the system prompt that's about to fire
 3. **Other Permissions** — Notifications, Launch at Login, optional claude.ai sign-in
-4. **Ready to Connect** — click **Connect ✓** (or **Skip for now**)
+4. **Install Clauge Sync** (v0.8.1+) — one-click open to the Chrome Web Store; the wizard auto-advances when the extension's first heartbeat arrives
+5. **Ready to Connect** — click **Connect ✓** (or **Skip for now**)
 
 On Connect, macOS shows its standard Keychain prompt:
 
@@ -68,7 +69,7 @@ You'll click through two "unknown publisher" warnings on the first install — t
 Clauge is open-source and reproducible from each tagged release on GitHub — you can audit the source or rebuild from the tag yourself if you'd rather not trust the published binary.
 
 The NSIS installer runs as **per-user, no UAC** (no admin prompt). When it finishes, you'll have:
-- Install location: `%LOCALAPPDATA%\Programs\Clauge`
+- Install location: `%LOCALAPPDATA%\Clauge`
 - A **Clauge** entry in your Start Menu (and an optional desktop shortcut, your choice during install)
 - An auto-launched dashboard window at 1100×800
 
