@@ -15,22 +15,12 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
-    // Read the bound port from AppState; fall back to 3456 if absent or poisoned.
-    // (Plan used `.lock().unwrap()` which panics on poison; `.ok().and_then(...)`
-    // gracefully degrades to the default.)
-    //
-    // TODO(spec §6.1 race): If the user opens the dashboard before the
-    // discover/spawn task has set AppState.server_port, this falls back to
-    // 3456. That's correct for the common case (sidecar binds 3456), but
-    // silently wrong if another app squatted on 3456 and the sidecar bound
-    // 3457+. Spec §6.1 line 300 makes this recoverable via the dashboard's
-    // 10s poll loop. Future mitigation: show a "Starting server…" splash
-    // while port=None, or block dashboard creation until set_port fires.
-    let port = app
-        .try_state::<crate::ipc::AppState>()
-        .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
-        .unwrap_or(3456);
-    let url = format!("http://127.0.0.1:{}/", port);
+    // v0.8.1: initial URL is the bundled splash. The splash JS listens for
+    // the `sidecar-ready` Tauri event (emitted from sidecar.rs once the
+    // sidecar binds + responds 200 to /api/health) and navigates the
+    // webview to http://127.0.0.1:<port>/ — eliminating the cold-launch
+    // "page not loaded" flash users saw on Windows in v0.8.0.
+    let url = "splash.html";
 
     // Defensive `on_navigation` handler (v0.3.1, Bug #3 follow-up).
     //
@@ -65,7 +55,7 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     let mut builder = WebviewWindowBuilder::new(
         app,
         "main",
-        WebviewUrl::External(url.parse().unwrap()),
+        WebviewUrl::App(url.into()),
     )
     .title("Clauge")
     .inner_size(1100.0, 800.0)
@@ -82,10 +72,17 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     let win = builder
         .on_navigation(move |u| {
-            // Allow our own SEA server (host MUST be 127.0.0.1 OR localhost,
-            // port MUST match the bound port AT NAVIGATION TIME — read live
-            // from AppState so crash-respawned sidecars on fallback ports
-            // don't lock the dashboard out).
+            // v0.8.1: two allowed navigation classes:
+            //   1. tauri://localhost/<file> — the bundled splash + any other
+            //      Tauri-internal asset (splash → dashboard transition fires
+            //      this once on initial load).
+            //   2. http://127.0.0.1:<port>/* or http://localhost:<port>/* —
+            //      the sidecar's dashboard, with port read live from AppState
+            //      so crash-respawned sidecars on fallback ports don't lock
+            //      the dashboard out.
+            if u.scheme() == "tauri" && matches!(u.host_str(), Some("localhost")) {
+                return true;
+            }
             let live_port = app_for_handler
                 .try_state::<crate::ipc::AppState>()
                 .and_then(|s| s.server_port.lock().ok().and_then(|g| *g))
