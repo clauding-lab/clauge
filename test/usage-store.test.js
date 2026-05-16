@@ -70,4 +70,46 @@ describe('normalizeUsage', () => {
     const out = normalizeUsage({ five_hour: { utilization: 10, resets_at: null } });
     assert.equal(out.extraUsage, null);
   });
+
+  it('propagates disabled_reason when extra_usage is disabled', () => {
+    const out = normalizeUsage({
+      five_hour: null,
+      extra_usage: {
+        is_enabled: false,
+        monthly_limit: null,
+        used_credits: null,
+        utilization: null,
+        currency: null,
+        disabled_reason: 'org_level_disabled_until',
+      },
+    });
+    assert.equal(out.extraUsage.enabled, false);
+    assert.equal(out.extraUsage.disabledReason, 'org_level_disabled_until');
+  });
+
+  it('omits disabledReason when extra_usage is enabled', () => {
+    const out = normalizeUsage({
+      five_hour: null,
+      extra_usage: {
+        is_enabled: true,
+        monthly_limit: 2000,
+        used_credits: 1826,
+        utilization: 91.3,
+        currency: 'USD',
+      },
+    });
+    assert.equal(out.extraUsage.enabled, true);
+    assert.equal(out.extraUsage.disabledReason, null);
+  });
+
+  it('treats missing disabled_reason as null when extra_usage is disabled', () => {
+    const out = normalizeUsage({
+      five_hour: null,
+      extra_usage: {
+        is_enabled: false,
+      },
+    });
+    assert.equal(out.extraUsage.enabled, false);
+    assert.equal(out.extraUsage.disabledReason, null);
+  });
 });
