@@ -46,6 +46,8 @@ const ASSETS = [
   'public/clauge-icon-512.svg',
   'public/clauge-icon-fallback.png',
   'public/clauge-menubar-18px.svg',
+  'public/fonts/inter-latin-variable.woff2',
+  'public/fonts/jetbrains-mono-latin-variable.woff2',
   'public/popover/index.html',
   'public/popover/popover.js',
   'public/popover/popover.css',
