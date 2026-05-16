@@ -18,7 +18,66 @@ const STORAGE_KEYS = {
   port: 'cl_port',
   intervalMin: 'cl_interval_min',
   lastResult: 'cl_last_result',
+  // v0.1.9: last-good cache for balance fetches that fail transiently.
+  lastGoodClaudeBalance: 'cl_last_good_claude_balance',
+  lastGoodApiBalance: 'cl_last_good_api_balance',
 };
+// v0.1.9: a last-good balance is considered usable for this long after the
+// fetch that produced it. Past this, a continuing fetch failure means the
+// stored value is too stale to be trusted, and we let the server overwrite
+// with null. 6h covers normal day-of-use windows + overnight outages.
+const LAST_GOOD_TTL_MS = 6 * 60 * 60 * 1000;
+// v0.1.9: retry-once on non-2xx with a short backoff. Most transient
+// Cloudflare/Anthropic blips clear in under 1s — a single retry catches
+// the common case without slowing successful syncs.
+const RETRY_BACKOFF_MS = 500;
+
+async function fetchWithRetry(url, init, probeLog, label) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await fetch(url, init);
+      probeLog.push(`${label} → ${r.status} ${r.statusText}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      if (r.ok) return { ok: true, response: r };
+      if (attempt === 1 && r.status >= 500) {
+        // Server-side transient — back off briefly and retry once.
+        await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS));
+        continue;
+      }
+      return { ok: false, response: r };
+    } catch (e) {
+      probeLog.push(`${label} threw: ${String(e?.message ?? e)}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      if (attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS));
+        continue;
+      }
+      return { ok: false, error: e };
+    }
+  }
+  return { ok: false };
+}
+
+async function readLastGood(storageKey) {
+  try {
+    const stored = await chrome.storage.local.get(storageKey);
+    const cached = stored?.[storageKey];
+    if (!cached || !cached.data || !cached.fetchedAt) return null;
+    const age = Date.now() - new Date(cached.fetchedAt).getTime();
+    if (age > LAST_GOOD_TTL_MS) return null;
+    return { data: cached.data, fetchedAt: cached.fetchedAt };
+  } catch {
+    return null;
+  }
+}
+
+async function writeLastGood(storageKey, data) {
+  try {
+    await chrome.storage.local.set({
+      [storageKey]: { data, fetchedAt: new Date().toISOString() },
+    });
+  } catch {
+    /* ignore — best-effort cache */
+  }
+}
 
 async function getSettings() {
   const all = await chrome.storage.local.get([
@@ -71,40 +130,54 @@ async function syncOnce() {
     //   GET /api/organizations/{uuid}/prepaid/credits
     //   { amount, currency, auto_reload_settings, ... }
     //
-    // v0.1.8: instrument with the same probe-logging pattern the platform
-    // balance fetch uses. Without it, every failure mode collapses to
-    // `claudeBalance = null` with no diagnostic — the dashboard's
-    // CLAUDE.AI BALANCE card just shows empty and we can't tell why.
+    // v0.1.9: retry-once on non-2xx, fall back to last-good cache within
+    // 6h on persistent failure. Eliminates the transient-null-overwrite
+    // problem that left the dashboard's CLAUDE.AI BALANCE card empty
+    // between successful syncs in v0.1.7.
     const ouuid = encodeURIComponent(org.uuid);
     let claudeBalance = null;
+    let claudeBalanceStale = false;
     const prepaidProbeLog = [];
-    try {
-      const prepaidUrl = `https://claude.ai/api/organizations/${ouuid}/prepaid/credits`;
-      prepaidProbeLog.push(`prepaid GET ${prepaidUrl}`);
-      const r = await fetch(prepaidUrl, {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      prepaidProbeLog.push(`prepaid → ${r.status} ${r.statusText}`);
-      if (r.ok) {
-        try {
-          claudeBalance = await r.json();
-          prepaidProbeLog.push(
-            `prepaid amount: ${claudeBalance?.amount ?? 'missing'} ${claudeBalance?.currency ?? ''}`
-          );
-        } catch (parseErr) {
-          prepaidProbeLog.push(`prepaid JSON parse error: ${String(parseErr?.message ?? parseErr)}`);
+    const prepaidUrl = `https://claude.ai/api/organizations/${ouuid}/prepaid/credits`;
+    prepaidProbeLog.push(`prepaid GET ${prepaidUrl}`);
+    const prepaidResult = await fetchWithRetry(
+      prepaidUrl,
+      { credentials: 'include', cache: 'no-store' },
+      prepaidProbeLog,
+      'prepaid'
+    );
+    if (prepaidResult.ok) {
+      try {
+        claudeBalance = await prepaidResult.response.json();
+        prepaidProbeLog.push(
+          `prepaid amount: ${claudeBalance?.amount ?? 'missing'} ${claudeBalance?.currency ?? ''}`
+        );
+        if (claudeBalance && claudeBalance.amount != null) {
+          await writeLastGood(STORAGE_KEYS.lastGoodClaudeBalance, claudeBalance);
         }
-      } else {
-        try {
-          const bodySnippet = (await r.text()).slice(0, 300);
-          prepaidProbeLog.push(`prepaid body (first 300): ${bodySnippet}`);
-        } catch (readErr) {
-          prepaidProbeLog.push(`prepaid body read error: ${String(readErr?.message ?? readErr)}`);
-        }
+      } catch (parseErr) {
+        prepaidProbeLog.push(`prepaid JSON parse error: ${String(parseErr?.message ?? parseErr)}`);
       }
-    } catch (e) {
-      prepaidProbeLog.push(`prepaid fetch threw: ${String(e?.message ?? e)}`);
+    } else if (prepaidResult.response) {
+      try {
+        const bodySnippet = (await prepaidResult.response.text()).slice(0, 300);
+        prepaidProbeLog.push(`prepaid body (first 300): ${bodySnippet}`);
+      } catch {
+        /* ignore */
+      }
+    }
+    // Fall back to last-good if fetch didn't yield a balance this sync.
+    if (!claudeBalance) {
+      const cached = await readLastGood(STORAGE_KEYS.lastGoodClaudeBalance);
+      if (cached) {
+        claudeBalance = cached.data;
+        claudeBalanceStale = true;
+        prepaidProbeLog.push(
+          `prepaid using last-good from ${cached.fetchedAt} (age ${Math.round((Date.now() - new Date(cached.fetchedAt).getTime()) / 1000)}s)`
+        );
+      } else {
+        prepaidProbeLog.push('prepaid no last-good available (no cache or older than 6h)');
+      }
     }
 
     // API console balance — confirmed endpoint shape:
