@@ -36,6 +36,18 @@ const PERIOD_LABELS = {
   all: 'All',
 };
 
+// v0.8.2: claude.ai's /usage endpoint can return extra_usage.is_enabled: false
+// with a disabled_reason explaining WHY it's currently gated (e.g. recent
+// subscription, billing event, plan tier change). Map known enum values to
+// user-friendly text; unknown values fall through to a generic message so
+// the card never shows raw API jargon.
+const DISABLED_REASON_TEXT = {
+  org_level_disabled_until: 'Temporarily gated by Anthropic',
+};
+function disabledReasonText(reason) {
+  return DISABLED_REASON_TEXT[reason] || 'Disabled by Anthropic';
+}
+
 // ─── Formatters ───────────────────────────────────────────
 const fmtUSD = (n) =>
   n == null || !Number.isFinite(n)
@@ -305,10 +317,21 @@ function renderFinanceSide() {
     barEl.style.width = `${pct.toFixed(1)}%`;
     pctEl.textContent = `${pct.toFixed(1)}% of cap`;
     currEl.textContent = extra.currency || 'USD';
+    barEl.classList.remove('bar-fill--gated');
+  } else if (extra && !extra.enabled && extra.disabledReason) {
+    // v0.8.2: gated state — Anthropic disabled the feature at the org level.
+    // Show the reason instead of misleading "not configured" copy.
+    usedEl.textContent = '—';
+    capEl.textContent = '';
+    barEl.style.width = '100%';
+    barEl.classList.add('bar-fill--gated');
+    pctEl.textContent = disabledReasonText(extra.disabledReason);
+    currEl.textContent = extra.currency || 'USD';
   } else {
     usedEl.textContent = '0.00';
     capEl.textContent = '';
     barEl.style.width = '0%';
+    barEl.classList.remove('bar-fill--gated');
     pctEl.textContent = 'not configured';
     currEl.textContent = 'USD';
   }
