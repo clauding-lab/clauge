@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-has-claude-dir-bookmark"
+description = "Enables the has_claude_dir_bookmark command without any pre-configured scope."
+commands.allow = ["has_claude_dir_bookmark"]
+
+[[permission]]
+identifier = "deny-has-claude-dir-bookmark"
+description = "Denies the has_claude_dir_bookmark command without any pre-configured scope."
+commands.deny = ["has_claude_dir_bookmark"]

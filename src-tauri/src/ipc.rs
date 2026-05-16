@@ -592,6 +592,60 @@ fn mark_onboarding_completed(app: &tauri::AppHandle) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+/// Returns true if this build was compiled with the `mas` Cargo feature.
+/// Used by frontend JS to gate flavor-specific UI (wizard step 2 + step 5
+/// markup, Settings → Updates button copy, 4th Connections row visibility).
+///
+/// Both flavors register the IPC; it just returns `false` on DMG/NSIS.
+#[tauri::command]
+pub fn is_mas_flavor() -> bool {
+    cfg!(feature = "mas")
+}
+
+/// Prompt the user via NSOpenPanel to grant access to ~/.claude/. Persists
+/// the resulting security-scoped bookmark to the Tauri store. Returns
+/// Ok(()) on grant, Err(string) on cancel / failure.
+///
+/// MAS-only — DMG/NSIS no-op returns Ok(()) (frontend shouldn't be calling
+/// it but graceful degradation if it does).
+///
+/// NSOpenPanel is modal and blocking — wrap the bookmark call in
+/// `spawn_blocking` to avoid stalling the Tauri main thread.
+#[tauri::command]
+pub async fn grant_claude_dir_access(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(feature = "mas")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::security_scoped_bookmark::prompt_for_folder_grant(&app)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking join failed: {}", e))?
+    }
+    #[cfg(not(feature = "mas"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+/// Returns true if a security-scoped bookmark blob is persisted in the
+/// Tauri store. Cheap — one store read, no Foundation FFI.
+///
+/// DMG/NSIS always returns true (no bookmark needed — full FS access).
+#[tauri::command]
+pub fn has_claude_dir_bookmark(app: tauri::AppHandle) -> bool {
+    #[cfg(feature = "mas")]
+    {
+        crate::security_scoped_bookmark::has_bookmark(&app)
+    }
+    #[cfg(not(feature = "mas"))]
+    {
+        let _ = app;
+        true
+    }
+}
+
 /// v0.8.1: dashboard's app.js calls this on load to check whether the wizard
 /// just completed via Connect (and thus the user should land on Settings →
 /// Connections). Read + clear in one call so we don't loop on the flag.

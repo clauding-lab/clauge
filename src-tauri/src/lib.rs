@@ -277,6 +277,9 @@ pub fn run() {
             ipc::wizard_skip,
             ipc::restart_app,
             ipc::take_pending_focus_connections,
+            ipc::is_mas_flavor,
+            ipc::grant_claude_dir_access,
+            ipc::has_claude_dir_bookmark,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
