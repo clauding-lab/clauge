@@ -800,6 +800,21 @@ function bindSegments() {
     b.addEventListener('click', () => switchTab(b.dataset.jump));
   });
 
+  // v0.8.1: When the first-launch wizard completes via the Connect button,
+  // the dashboard should land on Settings → Connections so the user sees
+  // their freshly-read credentials. Rust emits this event from the
+  // wizard_complete IPC handler.
+  if (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) {
+    window.__TAURI__.event.listen('navigate-to-connections', function () {
+      switchTab('settings');
+      // Click the Settings sub-nav button for the Connections panel.
+      // Note: the attribute is data-set="sync" (legacy name from v0.5.x
+      // extension-autodetect era); the user-facing label is "Connections".
+      var btn = document.querySelector('.set-side button[data-set="sync"]');
+      if (btn) btn.click();
+    });
+  }
+
   // Settings sub-nav
   document.querySelectorAll('.set-side button').forEach((b) => {
     b.addEventListener('click', () => {

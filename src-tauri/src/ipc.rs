@@ -537,6 +537,18 @@ pub async fn wizard_complete(
         }
     }
 
+    // v0.8.1: tell the dashboard to switch to Settings → Connections so the
+    // user immediately sees their freshly-read credentials reflected in the
+    // connection state. Emitted unconditionally — even if the credential
+    // read above failed, the user clicked Connect and should see the
+    // Connections panel (which will surface the failure state).
+    {
+        use tauri::Emitter;
+        if let Err(e) = app.emit("navigate-to-connections", ()) {
+            log::warn!("wizard_complete: failed to emit navigate-to-connections: {}", e);
+        }
+    }
+
     // Close the wizard window last, after the prompt has been handled.
     if let Some(w) = app.get_webview_window("onboarding") {
         let _ = w.close();
