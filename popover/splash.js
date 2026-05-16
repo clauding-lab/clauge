@@ -46,6 +46,8 @@
     window.__TAURI__.event.listen('sidecar-ready', function (event) {
       const port = event && event.payload && event.payload.port;
       if (typeof port === 'number') navigateToDashboard(port);
+    }).catch(function (err) {
+      console.warn('[splash] sidecar-ready subscribe failed:', err);
     });
   }
 
@@ -81,6 +83,9 @@
         }
       } catch (err) {
         console.error('[splash] restart_app failed:', err);
+        if (errorDetailEl) {
+          errorDetailEl.textContent = 'Could not restart automatically. Quit and relaunch Clauge from your menubar / Start menu.';
+        }
         retryBtn.disabled = false;
       }
     });
