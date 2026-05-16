@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Starting Clauge…</title>
+  <link rel="stylesheet" href="splash.css" />
+</head>
+<body>
+  <main class="splash" id="splash">
+    <img src="clauge-icon-512.svg" alt="" class="splash-logo" />
+    <h1 class="splash-title">Clauge</h1>
+    <p class="splash-status" id="splash-status">Starting Clauge…</p>
+    <div class="splash-spinner" aria-hidden="true"></div>
+
+    <!-- Error state: hidden by default, revealed on 30s timeout -->
+    <div class="splash-error" id="splash-error" hidden>
+      <p class="splash-error-title">Failed to start Clauge</p>
+      <p class="splash-error-detail" id="splash-error-detail">
+        The local server didn't respond within 30 seconds.
+      </p>
+      <button class="splash-retry-btn" id="splash-retry-btn">Restart Clauge</button>
+    </div>
+  </main>
+  <script src="splash.js"></script>
+</body>
+</html>

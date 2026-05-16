@@ -1,0 +1,120 @@
+/* Splash screen for cold-launch — bridges the WebView open time and the
+   sidecar's HTTP server first-listen. Loads instantly from Tauri's bundled
+   assets while the Node SEA sidecar finishes booting (especially slow on
+   Windows where SEA extraction takes 2-4s).
+
+   Uses oklch design tokens consistent with the dashboard (public/styles.css).
+   Dark/light aware via prefers-color-scheme. */
+
+:root {
+  --splash-bg: oklch(98% 0 0);
+  --splash-text: oklch(18% 0 0);
+  --splash-muted: oklch(50% 0 0);
+  --splash-accent: oklch(68% 0.21 250);
+  --splash-error: oklch(60% 0.21 25);
+  --splash-spinner-track: oklch(90% 0 0);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --splash-bg: oklch(15% 0 0);
+    --splash-text: oklch(96% 0 0);
+    --splash-muted: oklch(65% 0 0);
+    --splash-spinner-track: oklch(25% 0 0);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: var(--splash-bg);
+  color: var(--splash-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.splash {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px;
+}
+
+.splash-logo {
+  width: 96px;
+  height: 96px;
+  opacity: 0.95;
+}
+
+.splash-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.splash-status {
+  color: var(--splash-muted);
+  font-size: 14px;
+  min-height: 1.2em;
+}
+
+.splash-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--splash-spinner-track);
+  border-top-color: var(--splash-accent);
+  animation: spin 700ms linear infinite;
+  margin-top: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.splash-error {
+  margin-top: 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.splash-error-title {
+  color: var(--splash-error);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.splash-error-detail {
+  color: var(--splash-muted);
+  font-size: 13px;
+  max-width: 280px;
+}
+
+.splash-retry-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--splash-accent);
+  background: var(--splash-accent);
+  color: var(--splash-bg);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.splash-retry-btn:hover {
+  filter: brightness(1.05);
+}
+
+.splash-retry-btn:active {
+  filter: brightness(0.95);
+}
