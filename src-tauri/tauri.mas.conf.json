@@ -1,0 +1,15 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "targets": ["app"],
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "entitlements": "entitlements.mas.plist",
+      "providerShortName": "TEAMID_PLACEHOLDER",
+      "signingIdentity": "3rd Party Mac Developer Application: PLACEHOLDER"
+    }
+  },
+  "plugins": {
+    "updater": null
+  }
+}
