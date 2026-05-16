@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.2] — 2026-05-16
+
+### Changed
+
+- **EXTRA USAGE card now surfaces Anthropic's gating reason instead of "not configured".** When claude.ai's `/usage` API returns `extra_usage.is_enabled: false` with a `disabled_reason` (e.g. `org_level_disabled_until`), the dashboard now shows "Temporarily gated by Anthropic" with a neutral gray bar and `—` value, instead of the misleading `$0.00 / not configured`. Helps users distinguish "I haven't set this up" from "Anthropic is currently blocking the feature for my org." Unknown `disabled_reason` enum values fall back to a generic "Disabled by Anthropic" message.
+
+### Internal
+
+- Parser at `lib/usage-store.js::normalizeUsage` propagates `extra_usage.disabled_reason` as `extraUsage.disabledReason` (camelCased) for the renderer.
+- Three new unit tests in `test/usage-store.test.js` cover the new field's propagation.
+
 ## [0.8.1] — 2026-05-16
 
 ### Added
