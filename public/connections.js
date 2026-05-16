@@ -6,6 +6,10 @@
 // than Keychain Services, so the "Authenticated via" tagline differs.
 const IS_WINDOWS = /windows/i.test(navigator.userAgent || '');
 
+// v0.8.1: Clauge Sync Web Store URL — same value as wizard step 4.
+const CLAUGE_SYNC_WEB_STORE =
+  'https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga';
+
 const STATE_LABELS = {
   claude_code: {
     authenticated: IS_WINDOWS
@@ -19,6 +23,7 @@ const STATE_LABELS = {
     not_connected: IS_WINDOWS
       ? 'Not yet supported on Windows — install Clauge Sync below for plan-ring data.'
       : 'Sign in to see plan-ring data even without Claude Code.',
+    optional: 'Optional — plan data is flowing via Clauge Sync',
     expired: 'Sign-in expired. Click to re-authenticate.',
   },
   extension: {
@@ -34,6 +39,7 @@ const A11Y_DOT_LABEL = {
   signed_in: 'connected',
   active: 'connected',
   expired: 'expired',
+  optional: 'optional',
   not_installed: 'not connected',
   not_connected: 'not connected',
   not_detected: 'not connected',
@@ -53,22 +59,40 @@ async function refreshConnections() {
 
 function applyStatus(status) {
   applyRow('conn-claude-code', status.claude_code, STATE_LABELS.claude_code);
-  applyRow('conn-claude-ai', status.claude_ai, STATE_LABELS.claude_ai);
+
+  // v0.8.1: claude.ai row visibility + state override when extension is active.
+  // Windows: hide the row entirely (sign-in is deferred there; row has no useful
+  //   controls when the extension is providing data).
+  // Mac:    when extension active AND user not signed in to claude.ai, render
+  //   with neutral gray dot + "Optional — plan data is flowing via Clauge Sync"
+  //   instead of the alarm-colored not_connected state. Preserves sign-in/out
+  //   buttons for users who DO want to sign in.
+  var claudeAiRow = document.getElementById('conn-claude-ai');
+  var extActive = status.extension === 'active';
+  var hideOnWindows = IS_WINDOWS && extActive;
+  if (claudeAiRow) claudeAiRow.hidden = hideOnWindows;
+  if (!hideOnWindows) {
+    var claudeAiState = status.claude_ai;
+    if (!IS_WINDOWS && extActive && claudeAiState === 'not_connected') {
+      claudeAiState = 'optional';
+    }
+    applyRow('conn-claude-ai', claudeAiState, STATE_LABELS.claude_ai);
+  }
+
   applyRow('conn-extension', status.extension, STATE_LABELS.extension);
 
   // claude.ai sign-in / sign-out button visibility.
   // On Windows the Architecture A path is deferred to a future release —
   // hide both buttons entirely; the row's state text explains the situation.
-  const signinBtn = document.getElementById('signin-claude-ai');
-  const signoutBtn = document.getElementById('signout-claude-ai');
+  var signinBtn = document.getElementById('signin-claude-ai');
+  var signoutBtn = document.getElementById('signout-claude-ai');
   if (signinBtn) signinBtn.hidden = IS_WINDOWS || status.claude_ai === 'signed_in';
   if (signoutBtn) signoutBtn.hidden = IS_WINDOWS || status.claude_ai !== 'signed_in';
 
   // Extension "Install Clauge Sync" CTA visibility — hide when active.
-  // (Task 11 reviewer's Important #2 fix.)
-  const extRow = document.getElementById('conn-extension');
+  var extRow = document.getElementById('conn-extension');
   if (extRow) {
-    const installCta = extRow.querySelector('.conn-cta');
+    var installCta = extRow.querySelector('.conn-cta');
     if (installCta) installCta.hidden = status.extension === 'active';
   }
 }
@@ -125,6 +149,21 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.classList.remove('spinning');
+      }
+    });
+  }
+
+  // v0.8.1: Wire the existing "Install Clauge Sync" CTA in the extension row
+  // to actually open the Web Store. Web Store URL works for Chrome and Edge.
+  var extRow = document.getElementById('conn-extension');
+  var installCta = extRow ? extRow.querySelector('.conn-cta') : null;
+  if (installCta) {
+    installCta.addEventListener('click', async function () {
+      if (!window.__TAURI__?.core?.invoke) return;
+      try {
+        await window.__TAURI__.core.invoke('plugin:shell|open', { path: CLAUGE_SYNC_WEB_STORE });
+      } catch (err) {
+        console.warn('[connections] failed to open Web Store:', err);
       }
     });
   }

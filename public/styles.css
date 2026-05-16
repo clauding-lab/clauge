@@ -1176,6 +1176,20 @@ body.loading { cursor: progress; }
 .connection-row[data-state="not_detected"] .conn-dot,
 .connection-row[data-state="not_granted"] .conn-dot { color: #ef4444; }
 
+/* v0.8.1: optional state — neutral gray dot for claude.ai row when the
+   Clauge Sync extension is providing plan data (Mac, not signed in to
+   claude.ai). De-alarms the row without lying about the actual signed-in
+   state. */
+.connection-row[data-state="optional"] .conn-dot {
+  color: oklch(60% 0 0);
+}
+
+@media (prefers-color-scheme: dark) {
+  .connection-row[data-state="optional"] .conn-dot {
+    color: oklch(50% 0 0);
+  }
+}
+
 .conn-body { flex: 1 1 auto; }
 .conn-title { font-weight: 500; font-size: 13px; }
 .conn-status { color: var(--fg-secondary, rgba(255,255,255,0.6)); font-size: 12px; margin-top: 2px; }
