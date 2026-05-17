@@ -5,7 +5,7 @@
     "createUpdaterArtifacts": false,
     "macOS": {
       "entitlements": "entitlements.mas.plist",
-      "providerShortName": "TEAMID_PLACEHOLDER",
+      "providerShortName": "CY4FK9S7X9",
       "signingIdentity": "3rd Party Mac Developer Application: PLACEHOLDER"
     }
   },
