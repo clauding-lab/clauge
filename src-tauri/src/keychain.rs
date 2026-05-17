@@ -15,9 +15,18 @@
 //!                      "subscriptionType": "...", "rateLimitTier": "..." } }
 //! ```
 //!
-//! macOS: first read on a fresh install triggers a Keychain access prompt.
-//! User clicks "Always Allow" to silence subsequent reads. Cached via
-//! `keychain_cache.rs` so we only hit Keychain Services once per launch.
+//! macOS DMG: Keychain Services only. First read on a fresh install triggers
+//! a Keychain access prompt; user clicks "Always Allow" to silence subsequent
+//! reads. Cached via `keychain_cache.rs` so we only hit Keychain Services
+//! once per launch.
+//!
+//! macOS MAS (v0.9.0+): tries `~/.claude/.credentials.json` first (via the
+//! user-granted security-scoped bookmark), falls back to Keychain Services.
+//! Amended 2026-05-17 after Task 12 smoke discovered the Mac CLI does not
+//! write the filesystem mirror — Mac uses Keychain exclusively, so the
+//! filesystem-first attempt almost always falls through to Keychain on Mac
+//! MAS. No `keychain-access-groups` entitlement requested; macOS prompts on
+//! first read and the user clicks "Always Allow".
 //!
 //! Windows: file-backed; no prompt, no cache strictly required, but
 //! `keychain_cache.rs` still reduces filesystem reads on rapid polling.
@@ -108,9 +117,11 @@ pub enum KeychainError {
 /// - errSecAuthFailed (-25293)   → AccessDenied (user denied or auth flow failed)
 /// Anything else falls through to Framework { code, message }.
 ///
-/// Only compiled for the DMG flavor — MAS Mac uses a filesystem read path
-/// (no Keychain Services) so the OSStatus mapping is irrelevant there.
-#[cfg(all(target_os = "macos", not(feature = "mas")))]
+/// Shared by BOTH macOS flavors (DMG + MAS) — MAS reuses Keychain Services
+/// as a fallback when `~/.claude/.credentials.json` is absent (the typical
+/// case on Mac, where Claude Code CLI is Keychain-only and never mirrors
+/// the blob to disk).
+#[cfg(target_os = "macos")]
 fn map_osstatus_to_error(code: i32, msg: &str) -> KeychainError {
     match code {
         -25300 => KeychainError::NotFound,
@@ -122,19 +133,21 @@ fn map_osstatus_to_error(code: i32, msg: &str) -> KeychainError {
     }
 }
 
-/// DMG-flavor Mac: read Claude Code OAuth credentials via Keychain Services.
-/// Triggers a per-user macOS Keychain prompt on first access; user clicks
-/// "Always Allow" to silence subsequent reads.
+/// macOS: read Claude Code OAuth credentials directly from Keychain Services
+/// (service name "Claude Code-credentials"). Shared by BOTH flavors:
 ///
-/// MAS-flavor Mac uses the alternate branch below (see `feature = "mas"`)
-/// because the sandbox profile of an App Store app does NOT include the
-/// keychain-access-groups entitlement Claude Code's blob requires for
-/// silent cross-app read — App Store guidelines effectively forbid that
-/// entitlement for non-Apple bundles. The MAS branch reads the same blob
-/// from `~/.claude/.credentials.json` via the user-granted security-scoped
-/// bookmark instead.
-#[cfg(all(target_os = "macos", not(feature = "mas")))]
-pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
+/// - **DMG flavor:** sole credential source; user clicks "Always Allow" once
+///   on first prompt, subsequent reads are silent for that signed bundle.
+/// - **MAS flavor:** fallback when `~/.claude/.credentials.json` is absent.
+///   The macOS Claude Code CLI is Keychain-only and never writes the
+///   filesystem mirror (verified Task 12 smoke 2026-05-17), so MAS users
+///   land here on every read. macOS prompts on first read because the
+///   MAS-flavor sandbox identity doesn't auto-inherit the ACL the
+///   non-sandboxed Claude Code CLI wrote — user clicks "Always Allow" once,
+///   subsequent reads are silent. No `keychain-access-groups` entitlement
+///   requested; the runtime prompt IS the user opt-in.
+#[cfg(target_os = "macos")]
+fn read_from_keychain_services() -> Result<ClaudeCodeCreds, KeychainError> {
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
 
     // Claude Code CLI writes its OAuth entry with account = <macOS short username>
@@ -179,26 +192,47 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
     Ok(creds)
 }
 
-/// MAS Mac: read `~/.claude/.credentials.json` via the security-scoped
-/// bookmark path populated by `sidecar::spawn_and_supervise` on supervisor
-/// start (Task 6 of v0.9.0).
+/// DMG-flavor Mac: read Claude Code OAuth credentials via Keychain Services
+/// only. macOS Claude Code CLI is Keychain-only on this platform (no
+/// `.credentials.json` filesystem mirror), so there's no filesystem path to
+/// try first.
+#[cfg(all(target_os = "macos", not(feature = "mas")))]
+pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
+    read_from_keychain_services()
+}
+
+/// MAS-flavor Mac: try `~/.claude/.credentials.json` first via the
+/// user-granted security-scoped bookmark, then fall back to Keychain Services.
+///
+/// Why the fallback (amended 2026-05-17 after Task 12 smoke):
+/// macOS Claude Code CLI does NOT write a filesystem `.credentials.json` —
+/// it stores credentials exclusively in Keychain Services
+/// (`Claude Code-credentials` service). The filesystem mirror is a Windows-port
+/// artifact (`%USERPROFILE%\.claude\.credentials.json`). So for the typical
+/// Mac user, the filesystem path doesn't exist and we MUST fall back to
+/// Keychain. The Keychain read triggers a one-time macOS user prompt on
+/// first access (user clicks "Always Allow"); subsequent reads are silent.
+/// **No `keychain-access-groups` entitlement requested** — the runtime
+/// prompt IS the user opt-in. Apple Review surface stays clean.
 ///
 /// Zero-arg signature (Option B from v0.9.0 spec § Credential reading):
 /// preserves the `keychain_cache::ReaderFn` zero-arg closure type intact —
 /// no cache rewrite, no `&AppHandle` plumbing, no test-injection churn.
-///
-/// If the supervisor hasn't yet populated `MAS_CLAUDE_DIR` (e.g. the user
-/// hasn't completed the wizard's grant step, or the persisted bookmark
-/// failed to resolve), this returns `NotFound` — same surface the cache's
-/// "not yet authenticated" UI already handles. The wizard's grant step
-/// then drives the supervisor restart that populates the OnceLock.
 #[cfg(all(target_os = "macos", feature = "mas"))]
 pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> {
-    let claude_dir = crate::security_scoped_bookmark::MAS_CLAUDE_DIR
-        .get()
-        .ok_or(KeychainError::NotFound)?;
-    let path = claude_dir.join(".credentials.json");
-    read_from_path_unix(&path)
+    // 1) Try the filesystem first (covers the rare user who has
+    //    .credentials.json — e.g., from a manual `security` export, or a
+    //    future Mac CLI version that writes the file).
+    if let Some(claude_dir) = crate::security_scoped_bookmark::MAS_CLAUDE_DIR.get() {
+        let path = claude_dir.join(".credentials.json");
+        if path.exists() {
+            return read_from_path_unix(&path);
+        }
+    }
+    // 2) Fall back to Keychain Services. The typical Mac MAS path.
+    //    macOS prompts on first read; subsequent reads are silent after
+    //    "Always Allow".
+    read_from_keychain_services()
 }
 
 /// Internal: read + parse credentials file at a given Unix path. Mirrors
@@ -265,7 +299,7 @@ pub fn is_expired(creds: &ClaudeCodeCreds) -> bool {
 }
 
 #[cfg(test)]
-#[cfg(all(target_os = "macos", not(feature = "mas")))]
+#[cfg(target_os = "macos")]
 mod tests {
     use super::*;
 
