@@ -198,15 +198,16 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
     // frontend keys off the returned `OpenedStorefront` variant to render
     // the "Updates ship through Apple" message.
     //
-    // idXXXXXXXXX is a placeholder — replaced in Task 14 with the real
-    // numeric App ID issued by App Store Connect during listing creation.
+    // App Store ID 6770303247 issued 2026-05-17 when the App Store Connect
+    // listing was created for `com.clauding.clauge`. URL opens the Mac App
+    // Store storefront for Clauge directly.
     #[cfg(feature = "mas")]
     {
         use tauri_plugin_shell::ShellExt;
         // TODO(deprecation): migrate to tauri-plugin-opener when bumping Tauri.
         // shell.open is #[deprecated(since = "2.1.0")]; see lib.rs same pattern.
         app.shell()
-            .open("macappstore://apps.apple.com/app/clauge/idXXXXXXXXX", None)
+            .open("macappstore://apps.apple.com/app/clauge/id6770303247", None)
             .map_err(|e| format!("failed to open App Store: {}", e))?;
         return Ok(UpdateStatus::OpenedStorefront);
     }
