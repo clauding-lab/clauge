@@ -94,7 +94,12 @@ fn version_matches_self(health_response: &str) -> bool {
 /// tolerate races where the process exited on its own.
 ///
 /// Sleeps 300 ms after the kill attempts to let the OS release the port.
-async fn kill_pid_on_port(port: u16) -> Result<(), String> {
+///
+/// `pub(crate)` so v0.9.0 MAS's `sidecar::kill_current_sidecar_for_respawn`
+/// can reuse this primitive to kill the live sidecar PID after first-launch
+/// folder grant (the supervisor's loop then auto-respawns the sidecar with
+/// the now-populated `MAS_CLAUDE_DIR` / `CLAUDE_DIR` env).
+pub(crate) async fn kill_pid_on_port(port: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
         kill_pid_on_port_unix(port).await

@@ -84,6 +84,47 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
 const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
 
+/// v0.9.0 MAS (Task 12b): kill the current sidecar PID so the supervisor's
+/// loop respawns it with the now-populated `MAS_CLAUDE_DIR` (`CLAUDE_DIR`
+/// env). Called from `grant_claude_dir_access` IPC after first-launch
+/// bookmark grant.
+///
+/// **Why this is the right primitive:** the supervisor loop already
+/// auto-respawns on sidecar death (that's the whole `CrashBreaker` machinery
+/// above), so we just need to terminate the OS process to trigger the loop.
+/// We reuse the existing `port_discovery::kill_pid_on_port(3456)` shell-out
+/// (`lsof -i :3456 -t` + `kill -9`) rather than introducing a second kill
+/// path — same primitive, well-tested via the orphan-eviction flow.
+///
+/// **MAS sandbox caveat:** `lsof` and `kill` are system binaries
+/// (`/usr/bin/lsof` + `/bin/kill`). Apple's App Sandbox sometimes blocks
+/// system-binary spawns without a `temporary-exception.spawn` entitlement.
+/// If this turns out to fail on the App Store build, fallback is to track
+/// the sidecar's `CommandChild` handle in `AppState::children` and call
+/// `kill()` on it directly. The current implementation favors the simpler
+/// path because `kill_pid_on_port` is already used by the orphan-eviction
+/// flow on every cold start (verified working pre-Task 12); if the sandbox
+/// blocks it, that flow would have already failed.
+#[cfg(feature = "mas")]
+pub async fn kill_current_sidecar_for_respawn() {
+    // Reuse the existing port-eviction primitive — kills whatever is on
+    // 3456. The supervisor's loop will detect the death and respawn within
+    // a couple of seconds; the respawn uses the fresh MAS_CLAUDE_DIR /
+    // CLAUDE_DIR env that grant_claude_dir_access just populated.
+    if let Err(e) = crate::port_discovery::kill_pid_on_port(3456).await {
+        log::warn!(
+            "kill_current_sidecar_for_respawn: kill_pid_on_port failed: {}. \
+             Sidecar may need manual restart for CLAUDE_DIR to take effect.",
+            e
+        );
+    } else {
+        log::info!(
+            "kill_current_sidecar_for_respawn: killed sidecar on port 3456; \
+             supervisor loop will respawn with the fresh CLAUDE_DIR env."
+        );
+    }
+}
+
 /// Continuously runs the sidecar process, restarting on crash with exponential backoff.
 /// On 3rd crash within 60s, emits a one-shot user notification.
 ///

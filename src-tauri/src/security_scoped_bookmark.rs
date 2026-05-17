@@ -49,6 +49,33 @@ use objc2_foundation::{
 /// read access after the supervisor has resolved it.
 pub static MAS_CLAUDE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// Process-wide holder for the `ScopedHandle` when the IPC layer acquires the
+/// scope (vs the supervisor at startup).
+///
+/// **Why this exists (Task 12b — first-launch UX fix):** the supervisor
+/// (Task 6) acquires the scope ONCE at startup via a function-local guard
+/// binding. On first launch (fresh sandbox container, no bookmark yet),
+/// `acquire_scoped_path` fails, `MAS_CLAUDE_DIR` stays None, and the sidecar
+/// spawns with no `CLAUDE_DIR` env. When the user later clicks Grant Access
+/// in the wizard, `grant_claude_dir_access` IPC persists the bookmark AND
+/// re-acquires the scope to populate `MAS_CLAUDE_DIR` immediately — without
+/// requiring an app restart. But the IPC handler's stack frame ends before
+/// the user's session does, so we can't hold the `ScopedHandle` in a local;
+/// we MUST store it in something with `'static` lifetime, or the Drop impl
+/// would fire and revoke filesystem access mid-session.
+///
+/// `MAS_SCOPE_HOLDER` is that `'static` slot. On first-launch grant, the
+/// IPC populates it. On subsequent launches (bookmark already in store),
+/// the supervisor's own `_mas_scope_guard` local holds the scope and this
+/// slot stays None this run — no conflict because both bindings would
+/// resolve to the same NSURL.
+///
+/// `Mutex::new(None)` is `const` in stable Rust since 1.63 (Cargo.toml's
+/// `rust-version = "1.77.2"` is comfortably above), so this works as a
+/// `static` initializer without needing `OnceLock` or `lazy_static`.
+pub static MAS_SCOPE_HOLDER: std::sync::Mutex<Option<ScopedHandle>> =
+    std::sync::Mutex::new(None);
+
 /// Tauri store key for the persisted bookmark blob.
 ///
 /// Stored as a JSON array of bytes (8x bloat vs base64, but avoids pulling

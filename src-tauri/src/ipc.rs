@@ -684,16 +684,81 @@ pub fn is_mas_flavor() -> bool {
 ///
 /// NSOpenPanel is modal and blocking — wrap the bookmark call in
 /// `spawn_blocking` to avoid stalling the Tauri main thread.
+///
+/// **Task 12b — first-launch UX fix:** after prompt success, this IPC now
+/// also (a) acquires the scoped path immediately to populate
+/// `MAS_CLAUDE_DIR` for `read_claude_code_credentials`, (b) holds the
+/// resulting `ScopedHandle` in the process-wide `MAS_SCOPE_HOLDER` so the
+/// scope outlives this IPC handler's stack frame, and (c) signals the
+/// sidecar to respawn so its `CLAUDE_DIR` env picks up the fresh value.
+/// Without these steps, first-launch users had to restart the app for the
+/// dashboard to leave the empty state (smoke surfaced this 2026-05-17).
+///
+/// On subsequent launches (bookmark already persisted), the supervisor in
+/// `sidecar::spawn_and_supervise` calls `acquire_scoped_path` at startup
+/// and populates `MAS_CLAUDE_DIR` itself — so the IPC's re-acquire here
+/// is a no-op (we guard on `MAS_CLAUDE_DIR.get().is_none()` before the
+/// acquire call to avoid double-acquiring the same scope).
 #[tauri::command]
 pub async fn grant_claude_dir_access(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(feature = "mas")]
     {
+        // Step 1: prompt user via NSOpenPanel, persist bookmark blob to store.
+        let app_for_prompt = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            crate::security_scoped_bookmark::prompt_for_folder_grant(&app)
+            crate::security_scoped_bookmark::prompt_for_folder_grant(&app_for_prompt)
                 .map_err(|e| e.to_string())
         })
         .await
-        .map_err(|e| format!("spawn_blocking join failed: {}", e))?
+        .map_err(|e| format!("spawn_blocking join failed: {}", e))??;
+
+        // Step 2: acquire scope + populate MAS_CLAUDE_DIR if not already.
+        // On first launch, the supervisor's acquire failed (no bookmark yet),
+        // so MAS_CLAUDE_DIR is None and we must populate it here. On re-select
+        // (subsequent launches with bookmark already present), supervisor
+        // already populated it and we don't need to re-acquire.
+        if crate::security_scoped_bookmark::MAS_CLAUDE_DIR.get().is_none() {
+            let app_for_acquire = app.clone();
+            let acquire_result = tauri::async_runtime::spawn_blocking(move || {
+                crate::security_scoped_bookmark::acquire_scoped_path(&app_for_acquire)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking acquire join failed: {}", e))?;
+
+            match acquire_result {
+                Ok((path, guard)) => {
+                    let _ = crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+                        .set(std::path::PathBuf::from(&path));
+                    // Hold the ScopedHandle in the static so the scope stays
+                    // active beyond this IPC handler's stack. Without this,
+                    // the guard's Drop impl would fire on this function's
+                    // return and revoke filesystem access immediately —
+                    // making the whole exercise pointless.
+                    if let Ok(mut holder) =
+                        crate::security_scoped_bookmark::MAS_SCOPE_HOLDER.lock()
+                    {
+                        *holder = Some(guard);
+                    }
+                    log::info!(
+                        "grant_claude_dir_access: MAS_CLAUDE_DIR populated to {} and scope held in MAS_SCOPE_HOLDER",
+                        path
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "grant_claude_dir_access: bookmark persisted but acquire_scoped_path failed: {}. Credentials/JSONL reads may fail until app restart.",
+                        e
+                    );
+                }
+            }
+        }
+
+        // Step 3: signal sidecar respawn so its CLAUDE_DIR env updates.
+        // The supervisor's loop auto-respawns on sidecar death. We just need
+        // to kill the current sidecar PID to trigger the loop.
+        crate::sidecar::kill_current_sidecar_for_respawn().await;
+
+        Ok(())
     }
     #[cfg(not(feature = "mas"))]
     {
