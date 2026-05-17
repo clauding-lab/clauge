@@ -8,6 +8,15 @@ mod windows;
 mod keychain;
 mod keychain_cache;
 pub mod anthropic_oauth;
+// v0.9.0 MAS (Task 12b): cfg-gate the entire claude_ai_session module on MAS.
+// The module reads/writes com.clauding.clauge.claude-ai-session in macOS
+// Keychain Services — a Keychain entry the non-sandboxed DMG build wrote.
+// The MAS sandbox identity doesn't auto-grant access, so the IPC polling
+// path (connections.rs:157, ~30s cadence) triggers a Keychain prompt every
+// single time. The Clauge Sync browser extension is the recommended path
+// on MAS (per wizard step 4 — "Optional but recommended on Mac"); the
+// direct webview-cookie flow is exclusive to DMG/NSIS.
+#[cfg(not(feature = "mas"))]
 mod claude_ai_session;
 pub mod connections;
 // v0.9.0 MAS flavor only: NSURL security-scoped bookmark wrapper for the

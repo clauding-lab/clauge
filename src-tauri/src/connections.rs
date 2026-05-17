@@ -154,7 +154,23 @@ pub fn detect(cache: &crate::keychain_cache::KeychainCache) -> ConnectionStatus 
         }
     };
 
-    let claude_ai = crate::claude_ai_session::read_stored_cookie().is_ok();
+    // v0.9.0 MAS (Task 12b): the claude_ai_session module is cfg-gated to
+    // not(feature = "mas") because it reads/writes a Keychain entry the
+    // non-sandboxed DMG version wrote. The sandboxed MAS identity doesn't
+    // auto-grant access — every poll (~30s) triggered a fresh prompt.
+    // On MAS, claude.ai authentication routes through Clauge Sync (browser
+    // extension) instead, so the direct cookie path returns false and the
+    // UI surfaces the extension-based explanation.
+    let claude_ai = {
+        #[cfg(not(feature = "mas"))]
+        {
+            crate::claude_ai_session::read_stored_cookie().is_ok()
+        }
+        #[cfg(feature = "mas")]
+        {
+            false
+        }
+    };
 
     compose_status(cc_version, claude_ai, None)
 }

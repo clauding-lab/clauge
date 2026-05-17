@@ -10,6 +10,17 @@ const IS_WINDOWS = /windows/i.test(navigator.userAgent || '');
 const CLAUGE_SYNC_WEB_STORE =
   'https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga';
 
+// v0.9.0 MAS (Task 12b): cached flavor flag for the claude.ai row 2 branch.
+// `app.js::initFlavorGate` fires the `is_mas_flavor` IPC at module load and
+// adds `body.is-flavor-mas` if true. We mirror that signal here by reading
+// the class instead of re-firing the IPC — keeps the two modules' flavor
+// state in lockstep without a second IPC round-trip. The class is set
+// before DOMContentLoaded (initFlavorGate runs at module-load), so reading
+// it inside refreshConnections/applyStatus is reliable.
+function isMasFlavor() {
+  return document.body && document.body.classList.contains('is-flavor-mas');
+}
+
 const STATE_LABELS = {
   claude_code: {
     authenticated: IS_WINDOWS
@@ -75,9 +86,15 @@ function applyStatus(status) {
   //   with neutral gray dot + "Optional — plan data is flowing via Clauge Sync"
   //   instead of the alarm-colored not_connected state. Preserves sign-in/out
   //   buttons for users who DO want to sign in.
+  // v0.9.0 MAS (Task 12b): the direct webview-cookie flow (claude_ai_session
+  //   module) is cfg-gated out on MAS to stop the ~30s keychain-prompt loop.
+  //   Backend always reports `claude_ai: "not_connected"` on MAS, so we override
+  //   the row's status text + hide the Sign in button — the user routes through
+  //   the Clauge Sync browser extension instead (covered by row 3).
   var claudeAiRow = document.getElementById('conn-claude-ai');
   var extActive = status.extension === 'active';
   var hideOnWindows = IS_WINDOWS && extActive;
+  var isMas = isMasFlavor();
   if (claudeAiRow) claudeAiRow.hidden = hideOnWindows;
   if (!hideOnWindows) {
     var claudeAiState = status.claude_ai;
@@ -85,6 +102,15 @@ function applyStatus(status) {
       claudeAiState = 'optional';
     }
     applyRow('conn-claude-ai', claudeAiState, STATE_LABELS.claude_ai);
+    // MAS-flavor override: replace the "Sign in to see plan-ring data" copy
+    // with the Clauge Sync explanation when the user isn't already covered
+    // by the extension's optional state above.
+    if (isMas && claudeAiState !== 'signed_in' && claudeAiState !== 'optional' && claudeAiRow) {
+      var statusEl = claudeAiRow.querySelector('.conn-status');
+      if (statusEl) {
+        statusEl.textContent = 'Use the Clauge Sync browser extension (see below) for plan-ring data on Mac App Store.';
+      }
+    }
   }
 
   applyRow('conn-extension', status.extension, STATE_LABELS.extension);
@@ -98,12 +124,17 @@ function applyStatus(status) {
   applyClaudeCodeLogsRow(status.claude_code_logs);
 
   // claude.ai sign-in / sign-out button visibility.
-  // On Windows the Architecture A path is deferred to a future release —
-  // hide both buttons entirely; the row's state text explains the situation.
+  // - Windows: hide both buttons entirely; Architecture A path deferred there.
+  // - MAS: hide both buttons; backend's open_claude_ai_login IPC returns an
+  //   error pointing at Clauge Sync, so showing the button would surface a
+  //   meaningless dialog. The row's status text (set above) directs the user
+  //   to the extension.
+  // - DMG: show Sign in when not signed_in; show Sign out when signed_in.
   var signinBtn = document.getElementById('signin-claude-ai');
   var signoutBtn = document.getElementById('signout-claude-ai');
-  if (signinBtn) signinBtn.hidden = IS_WINDOWS || status.claude_ai === 'signed_in';
-  if (signoutBtn) signoutBtn.hidden = IS_WINDOWS || status.claude_ai !== 'signed_in';
+  var hideClaudeAiButtons = IS_WINDOWS || isMas;
+  if (signinBtn) signinBtn.hidden = hideClaudeAiButtons || status.claude_ai === 'signed_in';
+  if (signoutBtn) signoutBtn.hidden = hideClaudeAiButtons || status.claude_ai !== 'signed_in';
 
   // Extension "Install Clauge Sync" CTA visibility — hide when active.
   var extRow = document.getElementById('conn-extension');

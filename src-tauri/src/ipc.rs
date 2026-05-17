@@ -450,21 +450,56 @@ fn check_body_cap(bytes: &[u8]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(bytes).map_err(|e| e.to_string())
 }
 
+/// Open the in-app WKWebView for claude.ai sign-in (Architecture A — DMG/NSIS
+/// only). On MAS this is a no-op error — the Clauge Sync browser extension is
+/// the recommended path (per wizard step 4). The frontend should never call
+/// this on MAS (connections.js gates the button by flavor), but we return a
+/// helpful error message so a misrouted call surfaces clearly in logs.
 #[tauri::command]
 pub async fn open_claude_ai_login(app: tauri::AppHandle) -> Result<(), String> {
-    crate::claude_ai_session::open_login_modal(&app)
-        .await
-        .map_err(|e| e.to_string())
+    #[cfg(not(feature = "mas"))]
+    {
+        crate::claude_ai_session::open_login_modal(&app)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(feature = "mas")]
+    {
+        let _ = app;
+        Err(
+            "Direct sign-in unavailable on Mac App Store. Use the Clauge Sync browser extension via Settings → Connections.".to_string(),
+        )
+    }
 }
 
+/// Clear the stored claude.ai sessionKey cookie from Keychain (sign-out —
+/// DMG/NSIS only). MAS no-op returns Ok(()) because the cookie is never
+/// stored there (claude_ai_session module is cfg-gated out on MAS).
 #[tauri::command]
 pub fn signout_claude_ai() -> Result<(), String> {
-    crate::claude_ai_session::clear_stored_cookie().map_err(|e| e.to_string())
+    #[cfg(not(feature = "mas"))]
+    {
+        crate::claude_ai_session::clear_stored_cookie().map_err(|e| e.to_string())
+    }
+    #[cfg(feature = "mas")]
+    {
+        Ok(())
+    }
 }
 
+/// Returns true if a claude.ai sessionKey cookie is stored in Keychain
+/// (DMG/NSIS only). On MAS this always returns false — the claude_ai_session
+/// module is cfg-gated out, so there's never a cookie to read.
 #[tauri::command]
 pub fn has_claude_ai_session() -> bool {
-    crate::claude_ai_session::read_stored_cookie().is_ok()
+    #[cfg(not(feature = "mas"))]
+    {
+        crate::claude_ai_session::read_stored_cookie().is_ok()
+    }
+    #[cfg(feature = "mas")]
+    {
+        false
+    }
 }
 
 #[tauri::command]
