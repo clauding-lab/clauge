@@ -17,13 +17,13 @@
   },
   "bundle": {
     "active": true,
+    "category": "DeveloperTool",
     "createUpdaterArtifacts": true,
     "targets": ["app", "dmg", "nsis"],
     "externalBin": ["binaries/clauge-server"],
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "entitlements": "entitlements.dmg.plist",
-      "category": "DeveloperTool"
+      "entitlements": "entitlements.dmg.plist"
     },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
