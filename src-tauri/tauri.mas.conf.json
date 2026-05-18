@@ -6,7 +6,7 @@
     "macOS": {
       "entitlements": "entitlements.mas.plist",
       "providerShortName": "CY4FK9S7X9",
-      "signingIdentity": "D97BF58DF4B4CA6436F0BD779BBC257E3430E0B4"
+      "signingIdentity": "5F1A689C31E1E0B26D98D405EAA2464028996B93"
     }
   },
   "plugins": {
