@@ -189,6 +189,10 @@ fn find_app_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
         .find(|p| p.extension().is_some_and(|e| e == "app"))
 }
 
+/// Apple App Store numeric ID for Clauge. Issued 2026-05-17 when the
+/// App Store Connect listing was created for `com.clauding.clauge`.
+const APP_STORE_ID: &str = "6770303247";
+
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
     // v0.9.0 MAS: Apple App Store policy forbids in-app self-updates. Instead
@@ -207,7 +211,10 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
         // TODO(deprecation): migrate to tauri-plugin-opener when bumping Tauri.
         // shell.open is #[deprecated(since = "2.1.0")]; see lib.rs same pattern.
         app.shell()
-            .open("macappstore://apps.apple.com/app/clauge/id6770303247", None)
+            .open(
+                format!("macappstore://apps.apple.com/app/clauge/id{}", APP_STORE_ID),
+                None,
+            )
             .map_err(|e| format!("failed to open App Store: {}", e))?;
         return Ok(UpdateStatus::OpenedStorefront);
     }
