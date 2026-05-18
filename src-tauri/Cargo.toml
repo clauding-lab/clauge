@@ -71,6 +71,17 @@ objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSVie
 objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
 objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL", "NSURLRequest", "NSValue", "NSData", "NSDictionary", "NSError", "NSArray"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKUserContentController", "WKScriptMessage", "WKScriptMessageHandler", "WKNavigation", "WKNavigationDelegate"] }
+# v0.9.0: libproc + libc replace the lsof + kill shell-out in
+# port_discovery::kill_pid_on_port_unix on macOS. Apple's App Sandbox
+# blocks /usr/sbin/lsof (it needs proc_info/sysctl calls the sandbox
+# denies), so the previous shell-out silently no-op'd inside the MAS
+# build and orphan sidecars on port 3456 survived launch, hijacking
+# /api/health and /api/usage/ingest. libproc walks user-owned PIDs and
+# their FDs in-process via proc_listpids + proc_pidfdinfo (no subprocess
+# spawn, no entitlement change), and libc::kill issues SIGKILL directly.
+# DMG (non-MAS) on macOS also benefits — faster, no Command spawn cost.
+libproc = "0.14"
+libc = "0.2"
 
 [dev-dependencies]
 tokio-test = "0.4"
