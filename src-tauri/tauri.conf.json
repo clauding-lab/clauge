@@ -22,7 +22,8 @@
     "externalBin": ["binaries/clauge-server"],
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "entitlements": "entitlements.dmg.plist"
+      "entitlements": "entitlements.dmg.plist",
+      "category": "DeveloperTool"
     },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
