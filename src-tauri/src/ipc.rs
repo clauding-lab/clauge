@@ -799,7 +799,7 @@ pub async fn grant_claude_dir_access(app: tauri::AppHandle) -> Result<(), String
         // Step 3: signal sidecar respawn so its CLAUDE_DIR env updates.
         // The supervisor's loop auto-respawns on sidecar death. We just need
         // to kill the current sidecar PID to trigger the loop.
-        crate::sidecar::kill_current_sidecar_for_respawn().await;
+        crate::sidecar::kill_current_sidecar_for_respawn(&app).await;
 
         Ok(())
     }

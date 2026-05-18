@@ -106,22 +106,41 @@ const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
 /// flow on every cold start (verified working pre-Task 12); if the sandbox
 /// blocks it, that flow would have already failed.
 #[cfg(feature = "mas")]
-pub async fn kill_current_sidecar_for_respawn() {
-    // Reuse the existing port-eviction primitive — kills whatever is on
-    // 3456. The supervisor's loop will detect the death and respawn within
-    // a couple of seconds; the respawn uses the fresh MAS_CLAUDE_DIR /
-    // CLAUDE_DIR env that grant_claude_dir_access just populated.
-    if let Err(e) = crate::port_discovery::kill_pid_on_port(3456).await {
-        log::warn!(
-            "kill_current_sidecar_for_respawn: kill_pid_on_port failed: {}. \
-             Sidecar may need manual restart for CLAUDE_DIR to take effect.",
-            e
-        );
-    } else {
-        log::info!(
-            "kill_current_sidecar_for_respawn: killed sidecar on port 3456; \
-             supervisor loop will respawn with the fresh CLAUDE_DIR env."
-        );
+pub async fn kill_current_sidecar_for_respawn(app: &tauri::AppHandle) {
+    // Sandbox-safe kill: route through AppState::take_all_children() +
+    // CommandChild::kill() (same primitive ipc::restart_app uses). The
+    // earlier port_discovery::kill_pid_on_port path shelled out to
+    // /usr/sbin/lsof + /bin/kill — the App Sandbox blocks lsof (it needs
+    // proc_info/sysctl calls the sandbox denies), making the kill a silent
+    // no-op. CommandChild::kill() → SharedChild::kill() → libc::kill(), with
+    // no external binary spawn and no entitlement change needed.
+    //
+    // Supervisor (spawn_and_supervise below) observes the child's
+    // Terminated event, loops back to spawn_one, and the new sidecar
+    // inherits CLAUDE_DIR from the now-populated MAS_CLAUDE_DIR.
+    let Some(state) = app.try_state::<crate::ipc::AppState>() else {
+        log::warn!("kill_current_sidecar_for_respawn: AppState missing");
+        return;
+    };
+    let children = state.take_all_children();
+    if children.is_empty() {
+        log::warn!("kill_current_sidecar_for_respawn: no registered sidecar children");
+        return;
+    }
+    for child in children {
+        let pid = child.pid();
+        if let Err(e) = child.kill() {
+            log::warn!(
+                "kill_current_sidecar_for_respawn: kill pid={} failed: {}",
+                pid,
+                e
+            );
+        } else {
+            log::info!(
+                "kill_current_sidecar_for_respawn: killed pid={}; supervisor will respawn with fresh CLAUDE_DIR",
+                pid
+            );
+        }
     }
 }
 
