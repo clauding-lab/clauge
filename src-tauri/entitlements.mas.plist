@@ -27,5 +27,15 @@
     <!-- cs.allow-jit: Tauri 2.x WebKit JIT. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
+    <!-- application-identifier: must match the embedded provisioning profile's
+         entitlement of the same name. Apple injects this when minting MAS
+         profiles; codesign must embed it too or Transporter raises 90886
+         (TestFlight signature/profile mismatch). -->
+    <key>com.apple.application-identifier</key>
+    <string>CY4FK9S7X9.com.clauding.clauge</string>
+    <!-- developer.team-identifier: belt-and-suspenders match to the profile's
+         team-identifier entitlement. -->
+    <key>com.apple.developer.team-identifier</key>
+    <string>CY4FK9S7X9</string>
 </dict>
 </plist>
