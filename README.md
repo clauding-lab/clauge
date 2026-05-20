@@ -6,7 +6,7 @@
 
 <p align="center">
   Token analytics and subscription value dashboard for <strong>Claude Code</strong> + <strong>claude.ai</strong>.<br/>
-  Local Node.js + HTML, <code>npx</code>-installable. Browser extension auto-syncs claude.ai plan usage.
+  Native menu-bar app for macOS and Windows desktop app. Browser extension auto-syncs claude.ai plan usage.
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
   <img src="docs/screenshots/v0.5.0/popover-v2.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater) plus the existing `npx clauge` browser dashboard. v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side.
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side.
 
 ## Install
 
@@ -84,13 +84,13 @@ The 4-step Welcome wizard (described above) applies to Windows too — same wind
 > - The SmartScreen "publisher unknown" warning fires until Authenticode signing lands. Reputation accrues over time even on an unsigned cert, but the cleanest fix is a paid EV/OV code-signing certificate (v0.8.x).
 > - **No claude.ai sign-in yet on Windows.** Architecture A (the native claude.ai OAuth pop-up planned for v0.8.x) is deferred — Windows v0.8.0 is Claude Code CLI integration only. The claude.ai connection row in the dashboard will read "Not Connected" with no Sign-in button. To still see plan-ring data, install the [Clauge Sync browser extension](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) (Step 2 below) — it works on Edge / Chrome / Brave on Windows just like on macOS.
 
-**Option C — Browser dashboard via npx (Linux, headless servers, or no-desktop-app preference):**
+**Option C — Legacy browser dashboard via npx (Linux, headless servers):**
 
 ```bash
 npx clauge
 ```
 
-Launches a Hono server at **http://localhost:3456**. Same data model as the native app — pick whichever surface fits your workflow.
+Launches a Hono server at **http://localhost:3456**. **Note:** the npm package is frozen at the V2-era release (v0.2.2) and lacks the V3+ features of the native apps — no menu-bar surface, no native popover, no claude.ai sign-in, no first-launch wizard, no auto-updater, no Clauge Sync extension integration. Suitable for headless/Linux installs where the native app isn't available; otherwise prefer Option A (macOS) or Option B (Windows).
 
 Either path reads from `~/.claude/projects/` (where Claude Code writes its session logs). **No sign-in needed for Claude Code data — it's already on your disk.** If you've ever used Claude Code on this machine, your dashboard populates immediately on first open.
 
