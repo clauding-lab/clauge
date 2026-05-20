@@ -10,7 +10,6 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/clauge"><img src="https://img.shields.io/npm/v/clauge.svg" alt="npm version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/clauge.svg" alt="license" /></a>
 </p>
 
