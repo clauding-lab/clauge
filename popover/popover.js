@@ -100,6 +100,26 @@ function timeElapsedPct(resetsAtIso, windowMs, nowMs = Date.now()) {
 }
 
 /**
+ * Compact form for the paired hero gauges (each column ~150px wide).
+ * Session: "3h 12m of 5h" / Weekly: "Day 5 of 7".
+ */
+function formatElapsedCompact(resetsAtIso, windowMs, mode, nowMs = Date.now()) {
+  if (!resetsAtIso) return mode === 'weekly' ? 'Day — of 7' : '— of 5h';
+  const resetsAt = Date.parse(resetsAtIso);
+  if (!Number.isFinite(resetsAt)) return '—';
+  const startedAt = resetsAt - windowMs;
+  const elapsedMs = Math.max(0, Math.min(windowMs, nowMs - startedAt));
+  if (mode === 'weekly') {
+    const day = Math.floor(elapsedMs / (24 * 60 * 60 * 1000)) + 1;
+    return `Day ${day} of 7`;
+  }
+  const h = Math.floor(elapsedMs / 3600000);
+  const m = Math.floor((elapsedMs % 3600000) / 60000);
+  if (h > 0) return `${h}h ${m}m of 5h`;
+  return `${m}m of 5h`;
+}
+
+/**
  * Format the "X of Y elapsed" label for the Session/Weekly gauges.
  * Returns "Xh Ym of 5h elapsed" for sessions, "Day X of 7 elapsed" for weekly.
  */
@@ -143,10 +163,10 @@ async function fetchJson(path) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Render: circle gauge (Session — hero)
+// Render: circle gauge (used for both Session and Weekly hero panes)
 // ────────────────────────────────────────────────────────────
-function renderSessionGauge(usagePct, timeElapsedPctValue) {
-  const el = document.getElementById('session-gauge');
+function renderCircleGauge({ elId, usagePct, timeElapsedPctValue, label }) {
+  const el = document.getElementById(elId);
   if (!el) return;
   const usage = Math.max(0, Math.min(100, usagePct ?? 0));
   const elapsed = Math.max(0, Math.min(100, timeElapsedPctValue ?? 0));
@@ -159,7 +179,7 @@ function renderSessionGauge(usagePct, timeElapsedPctValue) {
   const usageOffset = c - usageArc;
 
   // Needle position (time-elapsed): on the outer rim at elapsed% around from
-  // 12 o'clock clockwise. Angle in radians from +Y axis going clockwise.
+  // 12 o'clock clockwise.
   const angleRad = (elapsed / 100) * 2 * Math.PI - Math.PI / 2;
   const needleX = 55 + r * Math.cos(angleRad);
   const needleY = 55 + r * Math.sin(angleRad);
@@ -167,28 +187,21 @@ function renderSessionGauge(usagePct, timeElapsedPctValue) {
   // Over-burn segment: arc from the needle position to the usage end (only
   // visible when usage > elapsed). Tints the over-burn portion red.
   const overflowVisible = burn === 'burning_fast';
-  const overflowStartPct = elapsed;
-  const overflowArc = Math.max(0, (usage - overflowStartPct) / 100) * c;
+  const overflowArc = Math.max(0, (usage - elapsed) / 100) * c;
   const overflowOffset = c - overflowArc;
-  // Rotate the overflow stroke so it starts where the needle sits (rather
-  // than 12 o'clock).
   const overflowRotation = (elapsed / 100) * 360;
 
   el.innerHTML = `
     <svg viewBox="0 0 110 110" aria-hidden="true">
-      <!-- Track -->
       <circle cx="55" cy="55" r="${r}" fill="none" stroke="rgba(244, 236, 228, 0.10)" stroke-width="8"/>
-      <!-- Usage arc (orange, sweeping from 12 clockwise) -->
       <circle cx="55" cy="55" r="${r}" fill="none"
-        stroke="${overflowVisible ? '#d97757' : '#d97757'}"
+        stroke="#d97757"
         stroke-width="8"
         stroke-linecap="round"
         stroke-dasharray="${c.toFixed(2)}"
         stroke-dashoffset="${usageOffset.toFixed(2)}"
-        transform="rotate(-90 55 55)"
-        opacity="${overflowVisible ? '1' : '1'}"/>
+        transform="rotate(-90 55 55)"/>
       ${overflowVisible ? `
-        <!-- Over-burn red segment (past the needle) -->
         <circle cx="55" cy="55" r="${r}" fill="none"
           stroke="#c97a7a"
           stroke-width="8"
@@ -197,7 +210,6 @@ function renderSessionGauge(usagePct, timeElapsedPctValue) {
           stroke-dashoffset="${overflowOffset.toFixed(2)}"
           transform="rotate(${(-90 + overflowRotation).toFixed(2)} 55 55)"/>
       ` : ''}
-      <!-- Needle dot at time-elapsed position on the outer rim -->
       <circle cx="${needleX.toFixed(2)}" cy="${needleY.toFixed(2)}" r="3.5"
         fill="rgba(244, 236, 228, 0.92)"
         stroke="rgba(0, 0, 0, 0.4)"
@@ -207,7 +219,7 @@ function renderSessionGauge(usagePct, timeElapsedPctValue) {
       <div>
         <span class="gauge-pct">${Math.round(usage)}</span><span class="gauge-pct-suffix">%</span>
       </div>
-      <div class="gauge-sub-label">Session</div>
+      <div class="gauge-sub-label">${escapeHtml(label)}</div>
     </div>
   `;
 }
@@ -283,8 +295,14 @@ function renderSession(plan, nowMs) {
   const usagePct = fiveHour?.pct ?? 0;
   const resetsAt = fiveHour?.resetsAt;
   const elapsed = timeElapsedPct(resetsAt, FIVE_HOURS_MS, nowMs);
-  renderSessionGauge(usagePct, elapsed);
-  document.getElementById('session-elapsed').textContent = formatElapsed(resetsAt, FIVE_HOURS_MS, 'session', nowMs);
+  renderCircleGauge({
+    elId: 'session-gauge',
+    usagePct,
+    timeElapsedPctValue: elapsed,
+    label: 'Session',
+  });
+  // Compact meta for the paired hero gauges: "Xh Ym of 5h" + "resets in Yh Zm".
+  document.getElementById('session-elapsed').textContent = formatElapsedCompact(resetsAt, FIVE_HOURS_MS, 'session', nowMs);
   document.getElementById('session-reset').textContent = `resets in ${fmtRelative(resetsAt, nowMs)}`;
 }
 
@@ -293,15 +311,13 @@ function renderWeekly(plan, nowMs) {
   const usagePct = sevenDay?.pct ?? 0;
   const resetsAt = sevenDay?.resetsAt;
   const elapsed = timeElapsedPct(resetsAt, SEVEN_DAYS_MS, nowMs);
-  renderNeedleBar({
-    needleId: 'weekly-needle',
-    fillId: 'weekly-fill',
-    overflowId: 'weekly-overflow',
+  renderCircleGauge({
+    elId: 'weekly-gauge',
     usagePct,
     timeElapsedPctValue: elapsed,
+    label: 'Weekly',
   });
-  document.getElementById('weekly-pct').textContent = `${Math.round(usagePct)}% used`;
-  document.getElementById('weekly-elapsed').textContent = formatElapsed(resetsAt, SEVEN_DAYS_MS, 'weekly', nowMs);
+  document.getElementById('weekly-elapsed').textContent = formatElapsedCompact(resetsAt, SEVEN_DAYS_MS, 'weekly', nowMs);
   document.getElementById('weekly-reset').textContent = `resets in ${fmtRelative(resetsAt, nowMs)}`;
 }
 

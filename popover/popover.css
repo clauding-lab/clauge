@@ -176,14 +176,38 @@ html, body {
   margin-bottom: 12px;
 }
 
-/* ── SESSION circle gauge (hero) ───────────────────────────── */
-.sect-hero { padding: 18px 16px 18px; }
+/* ── SESSION + WEEKLY hero pair (side-by-side circle gauges) ─ */
+.sect-hero-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 18px 8px 18px;
+}
+.hero-gauge-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.hero-gauge-col .sect-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  text-align: center;
+}
 .gauge-circle-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 4px 0 12px;
+  margin: 0 0 10px;
 }
+/* Circle gauges stay 110px even when paired side-by-side — Adnan's spec
+ * call: prominence over packing. With 340px popover width and 8px side
+ * padding, two 110px circles fit with ~16px between (110+16+110 = 236
+ * inside 340 - 16 = 324 px). */
 .gauge-circle {
   width: 110px;
   height: 110px;
@@ -229,6 +253,23 @@ html, body {
   padding: 0 4px;
   color: var(--text-2);
   font-size: 11px;
+}
+
+/* Stacked two-line meta for the paired hero gauges. Tighter than the
+ * single-column .gauge-meta because each column is ~150px wide. */
+.gauge-meta-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: var(--text-2);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: center;
+}
+.gauge-meta-stack .gauge-meta-sub {
+  color: var(--text-3);
+  font-size: 10px;
 }
 
 /* ── Needle bar (Weekly) ───────────────────────────────────── */
@@ -406,6 +447,7 @@ html, body {
 }
 
 /* ── Preferences panel (preserved from v0.8) ───────────────── */
+.prefs-panel[hidden] { display: none; }
 .prefs-panel {
   position: absolute;
   inset: 0;

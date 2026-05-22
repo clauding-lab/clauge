@@ -36,34 +36,27 @@
       <span class="po-plan-badge mono" id="po-plan-badge">—</span>
     </header>
 
-    <!-- ── SESSION (hero circle gauge) ────────────────────────── -->
-    <section class="sect sect-hero">
-      <h2 class="sect-label">Session</h2>
-      <div class="gauge-circle-wrap">
-        <div id="session-gauge" class="gauge-circle"><!-- SVG injected --></div>
-      </div>
-      <div class="gauge-meta">
-        <span class="gauge-meta-left mono" id="session-elapsed">— of 5h elapsed</span>
-        <span class="gauge-meta-right mono" id="session-reset">resets in —</span>
-      </div>
-    </section>
-
-    <!-- ── All models (weekly) — dual-indicator bar ───────────── -->
-    <section class="sect">
-      <h2 class="sect-label">All models (weekly)</h2>
-      <div class="needle-bar" id="weekly-bar" data-needle="0" data-fill="0">
-        <div class="needle-bar-needle" id="weekly-needle"></div>
-        <div class="needle-bar-track">
-          <div class="needle-bar-fill" id="weekly-fill"></div>
-          <div class="needle-bar-overflow" id="weekly-overflow"></div>
+    <!-- ── SESSION + WEEKLY (side-by-side circle gauges) ──────── -->
+    <section class="sect sect-hero-pair">
+      <div class="hero-gauge-col">
+        <h2 class="sect-label">Session</h2>
+        <div class="gauge-circle-wrap">
+          <div id="session-gauge" class="gauge-circle"><!-- SVG injected --></div>
+        </div>
+        <div class="gauge-meta-stack">
+          <span class="mono" id="session-elapsed">— of 5h</span>
+          <span class="mono gauge-meta-sub" id="session-reset">resets in —</span>
         </div>
       </div>
-      <div class="bar-meta">
-        <span class="bar-meta-pct mono" id="weekly-pct">— used</span>
-      </div>
-      <div class="bar-meta bar-meta-sub">
-        <span class="mono" id="weekly-elapsed">Day — of 7 elapsed</span>
-        <span class="mono" id="weekly-reset">resets in —</span>
+      <div class="hero-gauge-col">
+        <h2 class="sect-label">Weekly</h2>
+        <div class="gauge-circle-wrap">
+          <div id="weekly-gauge" class="gauge-circle"><!-- SVG injected --></div>
+        </div>
+        <div class="gauge-meta-stack">
+          <span class="mono" id="weekly-elapsed">Day — of 7</span>
+          <span class="mono gauge-meta-sub" id="weekly-reset">resets in —</span>
+        </div>
       </div>
     </section>
 
