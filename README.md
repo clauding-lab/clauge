@@ -29,7 +29,13 @@ Three steps to a working setup: install the app, install the browser extension (
 
 **Option A — Native macOS app (recommended for the v3 menu-bar experience):**
 
-Download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag `Clauge.app` to Applications, and launch.
+Via Homebrew (one line):
+
+```bash
+brew install --cask clauding-lab/tap/clauge
+```
+
+Or download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag `Clauge.app` to Applications, and launch.
 
 The app sits in your menu bar:
 - **Left-click** the menu-bar icon → glanceable popover (Plan Capacity rings + Finance + Today)
