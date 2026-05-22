@@ -44,14 +44,17 @@ docs/                       # RELEASE_CHECKLIST.md, PRIVACY.md, CWS_LISTING.md, 
 
 | Goal | Command |
 |---|---|
+| **Pre-commit / pre-push quality gate** | `npm run check` — runs fmt + clippy strict + cargo test + npm test |
 | Run server only (dev) | `npm run dev` |
 | Run native app (dev) | `npm run tauri:dev` |
 | Build sidecar (Node SEA) | `npm run build:sidecar` |
 | Build native app (release) | `npm run tauri:build` |
-| Unit tests | `npm run test` |
+| Unit tests (JS only) | `npm run test` |
 | SEA smoke test | `npm run test:sea` |
 | E2E (Linux/Windows only) | `npm run test:e2e` — **does not work on macOS**, tauri-driver lacks macOS support |
 | macOS pre-tag smoke | Manual; see `docs/RELEASE_CHECKLIST.md` |
+
+`npm run check` is the **canonical gate** — same command CI runs on every push/PR via `.github/workflows/check.yml`. Run it locally before any commit you intend to push; failures there will fail CI the same way.
 
 `cargo tauri dev` runs Tauri's own dev loop but **does NOT run npm's prebuild scripts** — so changes to the sidecar (`scripts/build-sidecar.mjs`) won't be picked up. Always run `npm run build:sidecar` before `cargo tauri dev` after sidecar changes.
 
@@ -59,12 +62,21 @@ docs/                       # RELEASE_CHECKLIST.md, PRIVACY.md, CWS_LISTING.md, 
 
 Tag-driven. `git tag v0.X.Y && git push origin v0.X.Y` triggers `.github/workflows/release.yml` which:
 
-1. Runs `npm run test` gate.
-2. Builds Universal (arm64 + x86_64) DMG with Tauri-keypair-signed updater payload.
-3. Publishes a non-draft GitHub Release with the .dmg + .app.tar.gz + .app.tar.gz.sig.
-4. Mirrors `latest.json` to the `gh-pages` branch — updater endpoint reads from `https://clauding-lab.github.io/clauge/latest.json`.
+1. Runs JS unit tests + Rust unit tests gate (across matrix: macOS + Windows).
+2. **Extracts the release notes** from `CHANGELOG.md`'s `## [X.Y.Z]` section (added v0.9.2). If the section is missing, the build still ships but logs a CI warning + the GitHub Release body is empty.
+3. Builds Universal (arm64 + x86_64) DMG + Windows NSIS with Tauri-keypair-signed updater payloads.
+4. Publishes a non-draft GitHub Release with .dmg + .exe + .app.tar.gz + .sig files + body from step 2.
+5. Mirrors merged `latest.json` to the `gh-pages` branch — updater endpoint reads from `https://clauding-lab.github.io/clauge/latest.json`.
 
-**Before tagging:** complete the macOS smoke + Windows smoke in `docs/RELEASE_CHECKLIST.md`. Pre-fill `CHANGELOG.md`.
+**Before tagging:** complete the macOS smoke + Windows smoke in `docs/RELEASE_CHECKLIST.md`. **Pre-fill `CHANGELOG.md` with a `## [X.Y.Z] — YYYY-MM-DD` section** — release.yml auto-extracts it for the GitHub Release body. Missing section = empty release page.
+
+**Homebrew tap** (`clauding-lab/homebrew-tap`) does **not** auto-bump on `v*` tag pushes — the release.yml currently doesn't dispatch to it. After every release ships, manually trigger:
+
+```bash
+gh workflow run auto-update.yml --repo clauding-lab/homebrew-tap -f version=X.Y.Z
+```
+
+The tap workflow downloads the new DMG, hashes it, and updates `Casks/clauge.rb`.
 
 **MAS build:** uses a separate `tauri.mas.conf.json` (lives on the `mas-implement-session` branch, not main). Don't merge or rebase that branch into main without explicit sign-off — it contains signing IDs and provisioning profile paths that are environment-specific.
 
@@ -148,6 +160,23 @@ macOS `tauri-driver` is unsupported (see `docs/RELEASE_CHECKLIST.md` "E2E manual
 ### 10. Sibling async tasks where one is required and another optional
 
 When running two async tasks in parallel (`tokio::join!`, `try_join!`, `JoinSet`) and one is required-to-succeed while the other is best-effort, ensure the optional one's failure cannot silently consume or cancel the required one's error. Prefer sequential awaits, or a drained `JoinSet` that surfaces required failures and explicitly contains optional failures. If you see stack traces mentioning premature cancellation in a parallel task block, audit nearby parallel-task usage.
+
+### 11. Native popover — three deliberate decisions (don't revert without thinking)
+
+In `src-tauri/src/native_popover.rs`:
+
+- **`NSPopoverBehavior::Transient`** (v0.9.2+). Pre-v0.9.2 was `.ApplicationDefined` (sticky — popover never auto-dismissed). Switched to `.Transient` to match macOS menu-bar convention (clicking outside dismisses, like CodexBar / system Wi-Fi / Battery popovers). A future agent might "fix" this back to `.ApplicationDefined` thinking it's more useful — don't.
+- **`webview.setUnderPageBackgroundColor: NSColor.clearColor`** (v0.9.1+). Required for the popover's CSS-side `backdrop-filter` translucency to actually show the OS vibrancy layer underneath. Without this, WKWebView paints a system-appropriate opaque color behind the page and the wallpaper-through-popover effect dies.
+- **`POPOVER_WIDTH: f64 = 340.0`** + **`MAX_POPOVER_HEIGHT: f64 = 1200.0`** (v0.9.1+). Mirrored in `popover/popover.js::resizeToContent` height clamp (`200..1200`). If you change one bound you MUST change both — otherwise the JS posts a height the Rust handler refuses.
+
+### 12. Consumer overage data has TWO sources — keep them separate
+
+`plan.extraUsage` (OAuth `/api/oauth/usage::extra_usage`) and `plan.consumerOverage` (claude.ai `/api/organizations/{uuid}/overage_spend_limit` via Clauge Sync v0.2.0+) report **different things**:
+
+- `extraUsage` — per-org OAuth-API spend on overage credits. Disabled by default; many users have `enabled: false`.
+- `consumerOverage` — claude.ai consumer "Usage credits" (the `$X spent / $Y limit` visible at claude.ai/settings/usage). The one users actually see and care about.
+
+The popover prefers `consumerOverage` when present and falls back to `extraUsage`. Don't merge them — the semantics differ. claude.ai returns values in **cents** (1000 = $10); OAuth returns in **cents** for `monthly_limit` but `pct` is already 0..100.
 
 ## Communication & timezone
 
