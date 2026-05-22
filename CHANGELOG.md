@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.2] — 2026-05-23
+
+### Changed
+
+- **Popover now dismisses on outside click**, matching the macOS menu-bar convention every other menu-bar app uses (system Wi-Fi / Battery popovers, CodexBar, etc.). `NSPopover` behavior swapped from `.ApplicationDefined` (sticky — only the tray icon dismissed) to `.Transient`. v0.7.x through v0.9.1 used the sticky behavior; reverted now that the v3 foundation has stabilised and users coming from other menu-bar apps were finding the sticky popover surprising.
+
+### Distribution
+
+- **Homebrew install path now stable** (shipped in v0.9.1, called out here for visibility):
+  ```bash
+  brew install --cask clauding-lab/tap/clauge
+  ```
+  Tap repo: [clauding-lab/homebrew-tap](https://github.com/clauding-lab/homebrew-tap). The cask auto-bumps on every `v*` tag release — no manual updates needed once installed (`brew upgrade clauge` pulls the latest).
+
 ## [0.9.1] — 2026-05-22
 
 ### Added

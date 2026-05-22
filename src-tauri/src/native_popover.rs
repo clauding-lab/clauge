@@ -490,12 +490,18 @@ fn create_popover(
     let vc = NSViewController::new(mtm);
     vc.setView(&webview);
 
-    // applicationDefined behavior is the load-bearing decision — the popover
-    // ignores app deactivation and outside clicks. Animations stay off so
-    // size changes (Task 10) don't flicker.
+    // v0.9.2: switched from ApplicationDefined → Transient to match the
+    // macOS menu-bar convention every other menu-bar app uses (system
+    // Wi-Fi/Battery popovers, CodexBar, etc.) — popover dismisses on
+    // outside click or app deactivation. v0.7.x..v0.9.1 used
+    // ApplicationDefined ("sticky" — only the tray icon dismissed it),
+    // which was a deliberate but surprising choice for users coming from
+    // other menu-bar apps. Reverting to convention now that the v3
+    // foundation has stabilised. Animations stay off so size changes
+    // (Task 10) don't flicker.
     let popover = NSPopover::new(mtm);
     popover.setContentViewController(Some(&vc));
-    popover.setBehavior(NSPopoverBehavior::ApplicationDefined);
+    popover.setBehavior(NSPopoverBehavior::Transient);
     popover.setAnimates(false);
     popover.setContentSize(NSSize {
         width: POPOVER_WIDTH,
