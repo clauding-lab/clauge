@@ -64,11 +64,15 @@ html, body {
 }
 
 /* ── Root popover surface ──────────────────────────────────── */
+/* v0.9.1 redesign matches CodexBar's translucent cool-slate background
+ * (single color, no gradient; heavier blur). The brand-orange specular
+ * sheen below keeps Clauge's identity touch despite the cooler base.
+ */
 #root {
   width: 340px;
-  background: linear-gradient(180deg, rgba(28, 20, 16, 0.55), rgba(20, 14, 10, 0.72));
-  -webkit-backdrop-filter: blur(60px) saturate(180%);
-          backdrop-filter: blur(60px) saturate(180%);
+  background: rgba(26, 24, 32, 0.45);
+  -webkit-backdrop-filter: blur(80px) saturate(180%);
+          backdrop-filter: blur(80px) saturate(180%);
   border-radius: 14px;
   box-shadow:
     inset 0 1px 0 rgba(244, 236, 228, 0.10),
@@ -79,7 +83,8 @@ html, body {
   position: relative;
 }
 
-/* Brand-orange specular sheen, top-left. */
+/* Brand-orange specular sheen, top-left — kept as Clauge's identity
+ * accent over the cooler, more neutral base. */
 #root::before {
   content: "";
   position: absolute;
@@ -93,7 +98,7 @@ html, body {
 .po-loading-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(28, 20, 16, 0.86), rgba(20, 14, 10, 0.94));
+  background: rgba(20, 18, 26, 0.85);
   -webkit-backdrop-filter: blur(20px);
           backdrop-filter: blur(20px);
   display: flex;
@@ -458,9 +463,9 @@ html, body {
 .prefs-panel {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(28, 20, 16, 0.78), rgba(20, 14, 10, 0.85));
-  -webkit-backdrop-filter: blur(60px) saturate(180%);
-          backdrop-filter: blur(60px) saturate(180%);
+  background: rgba(22, 20, 28, 0.78);
+  -webkit-backdrop-filter: blur(80px) saturate(180%);
+          backdrop-filter: blur(80px) saturate(180%);
   border-radius: inherit;
   z-index: 5;
   display: flex;
