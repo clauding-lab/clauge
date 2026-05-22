@@ -1,13 +1,26 @@
 # Chrome Web Store listing — copy & paste
 
-Everything you need to fill in the CWS dev console for **Clauge Sync** v0.1.2.
+Everything you need to fill in the CWS dev console for **Clauge Sync** v0.2.0.
+
+## What's new in v0.2.0
+
+Adds claude.ai consumer "Usage credits" scraping — the `$X spent / $Y monthly limit` data visible at claude.ai/settings/usage. Endpoint: `GET /api/organizations/{uuid}/overage_spend_limit`. Fetched in the same poll cycle as the existing `/usage` + `/prepaid/credits` endpoints; included in the POST body to `/api/usage/ingest` as `overageSpendLimit`. Requires Clauge v0.9.1+ on the desktop side to consume the new field.
+
+## To package and submit
+
+```bash
+cd ~/Projects/clauge
+zip -r clauge-sync-0.2.0.zip extension -x '*.DS_Store' -x 'extension/.*'
+```
+
+Then upload `clauge-sync-0.2.0.zip` at https://chrome.google.com/webstore/devconsole → Clauge Sync → "Package" → "Upload new package".
 
 ---
 
 ## Item
 
 - **Item type:** Extension
-- **ZIP file:** `clauge-sync-0.1.2.zip` (in `~/Projects/clauge/`)
+- **ZIP file:** `clauge-sync-0.2.0.zip` (in `~/Projects/clauge/`)
 
 ## Store listing
 
