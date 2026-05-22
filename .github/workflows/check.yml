@@ -42,5 +42,12 @@ jobs:
       - name: Install Node deps
         run: npm ci
 
+      - name: Build SEA sidecar
+        # tauri-build's externalBin validation requires the sidecar binary
+        # to exist at src-tauri/binaries/ before cargo clippy / cargo test
+        # can compile the build.rs. The sidecar is gitignored, so CI must
+        # build it before the lint/test gates run.
+        run: npm run build:sidecar
+
       - name: Run check (fmt + clippy strict + cargo test + npm test)
         run: npm run check
