@@ -22,6 +22,14 @@ pub(crate) static OAUTH_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 /// Percentages are 0..100 (NOT 0..1). Resets_at is ISO 8601 with timezone offset,
 /// can be null (e.g. for fields without a fixed reset cadence). Unknown fields
 /// land in `extra` via serde-flatten so future API additions don't break parsing.
+///
+/// Anthropic uses internal codenames for new features that are later renamed
+/// once they ship publicly (omelette → Claude Design, cowork → Daily Routines).
+/// To survive these renames, the struct accepts BOTH codename and public-name
+/// variants for the same metric. The `claude_design()` and `daily_routines()`
+/// resolver methods walk a candidate list in CodexBar's preferred order and
+/// return the first non-None match. Pattern adopted from
+/// steipete/CodexBar's `ClaudeOAuthUsageFetcher.swift`.
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct PlanUsage {
@@ -35,22 +43,90 @@ pub struct PlanUsage {
     pub seven_day_opus: Option<UtilizationWindow>,
     /// 7-day rolling Sonnet-model utilization.
     pub seven_day_sonnet: Option<UtilizationWindow>,
-    /// 7-day rolling cowork (Claude internal experimental) utilization.
-    pub seven_day_cowork: Option<UtilizationWindow>,
-    /// 7-day rolling omelette (Claude internal experimental) utilization.
+
+    // ── Claude Design candidate fields (see claude_design() resolver) ─────────
+    /// Claude Design — public name, 7-day-prefixed.
+    pub seven_day_design: Option<UtilizationWindow>,
+    /// Claude Design — public name with claude_ prefix, 7-day-prefixed.
+    pub seven_day_claude_design: Option<UtilizationWindow>,
+    /// Claude Design — public name with claude_ prefix.
+    pub claude_design: Option<UtilizationWindow>,
+    /// Claude Design — bare public name.
+    pub design: Option<UtilizationWindow>,
+    /// Claude Design — Anthropic internal codename, 7-day-prefixed (currently observed).
     pub seven_day_omelette: Option<UtilizationWindow>,
+    /// Claude Design — Anthropic internal codename, bare.
+    pub omelette: Option<UtilizationWindow>,
+    /// Claude Design — Anthropic internal codename for the promotional variant.
+    pub omelette_promotional: Option<UtilizationWindow>,
+
+    // ── Daily Routines candidate fields (see daily_routines() resolver) ──────
+    /// Daily Routines — public name, 7-day-prefixed.
+    pub seven_day_routines: Option<UtilizationWindow>,
+    /// Daily Routines — public name with claude_ prefix, 7-day-prefixed.
+    pub seven_day_claude_routines: Option<UtilizationWindow>,
+    /// Daily Routines — public name with claude_ prefix.
+    pub claude_routines: Option<UtilizationWindow>,
+    /// Daily Routines — bare public name (plural).
+    pub routines: Option<UtilizationWindow>,
+    /// Daily Routines — bare public name (singular).
+    pub routine: Option<UtilizationWindow>,
+    /// Daily Routines — Anthropic internal codename, 7-day-prefixed (currently observed).
+    pub seven_day_cowork: Option<UtilizationWindow>,
+    /// Daily Routines — Anthropic internal codename, bare.
+    pub cowork: Option<UtilizationWindow>,
+
     /// Tangelo (internal Anthropic codename) utilization, when applicable.
     pub tangelo: Option<UtilizationWindow>,
     /// Iguana-necktie (internal Anthropic codename) utilization, when applicable.
     pub iguana_necktie: Option<UtilizationWindow>,
-    /// Omelette promotional (internal Anthropic codename) utilization.
-    pub omelette_promotional: Option<UtilizationWindow>,
     /// Prepaid extra-usage credit balance + cap.
     pub extra_usage: Option<ExtraUsage>,
     /// Catch-all for unknown fields — preserves forward compatibility as the
     /// Anthropic OAuth response shape evolves.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl PlanUsage {
+    /// Resolves the Claude Design weekly window across all known field-name
+    /// variants. Returns the first non-None in CodexBar's preferred order
+    /// (public names first, then codenames).
+    pub fn claude_design(&self) -> Option<&UtilizationWindow> {
+        self.seven_day_design
+            .as_ref()
+            .or(self.seven_day_claude_design.as_ref())
+            .or(self.claude_design.as_ref())
+            .or(self.design.as_ref())
+            .or(self.seven_day_omelette.as_ref())
+            .or(self.omelette.as_ref())
+            .or(self.omelette_promotional.as_ref())
+    }
+
+    /// Resolves the Daily Routines weekly window across all known field-name
+    /// variants. Returns the first non-None in CodexBar's preferred order
+    /// (public names first, then codenames).
+    pub fn daily_routines(&self) -> Option<&UtilizationWindow> {
+        self.seven_day_routines
+            .as_ref()
+            .or(self.seven_day_claude_routines.as_ref())
+            .or(self.claude_routines.as_ref())
+            .or(self.routines.as_ref())
+            .or(self.routine.as_ref())
+            .or(self.seven_day_cowork.as_ref())
+            .or(self.cowork.as_ref())
+    }
+
+    /// Returns any `seven_day_*` keys in the catch-all that aren't recognized
+    /// as named fields. Non-empty result = Anthropic added a new usage window
+    /// that Clauge doesn't surface yet. Log a warning so we know to add it.
+    pub fn unknown_seven_day_keys(&self) -> Vec<&str> {
+        self.extra
+            .keys()
+            .filter(|k| k.starts_with("seven_day_"))
+            .map(String::as_str)
+            .collect()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

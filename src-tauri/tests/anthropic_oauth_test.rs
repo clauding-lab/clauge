@@ -83,6 +83,180 @@ async fn test_fetch_oauth_usage_returns_parsed_response() {
 
 #[tokio::test]
 #[serial]
+async fn test_claude_design_prefers_public_name_over_codename() {
+    // When BOTH seven_day_design (public) and seven_day_omelette (codename)
+    // are present, the resolver picks the public name.
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "five_hour": null,
+            "seven_day": null,
+            "seven_day_design": {"utilization": 42.0, "resets_at": "2026-05-28T04:59:00+00:00"},
+            "seven_day_omelette": {"utilization": 99.0, "resets_at": "2026-05-28T04:59:00+00:00"}
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
+    let usage = fetch_oauth_usage("t").await.unwrap();
+
+    let design = usage.claude_design().expect("design should resolve");
+    assert_eq!(
+        design.utilization, 42.0,
+        "public name should win over codename"
+    );
+
+    mock.assert_async().await;
+    std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_claude_design_falls_back_to_codename() {
+    // When ONLY seven_day_omelette is present, the resolver returns it.
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "seven_day_omelette": {"utilization": 12.5, "resets_at": null}
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
+    let usage = fetch_oauth_usage("t").await.unwrap();
+
+    let design = usage
+        .claude_design()
+        .expect("design should resolve via codename");
+    assert_eq!(design.utilization, 12.5);
+
+    mock.assert_async().await;
+    std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_daily_routines_prefers_public_name_over_codename() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "seven_day_routines": {"utilization": 33.0, "resets_at": null},
+            "seven_day_cowork": {"utilization": 77.0, "resets_at": null}
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
+    let usage = fetch_oauth_usage("t").await.unwrap();
+
+    let routines = usage.daily_routines().expect("routines should resolve");
+    assert_eq!(
+        routines.utilization, 33.0,
+        "public name should win over codename"
+    );
+
+    mock.assert_async().await;
+    std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_daily_routines_falls_back_to_codename() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "seven_day_cowork": {"utilization": 5.0, "resets_at": null}
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
+    let usage = fetch_oauth_usage("t").await.unwrap();
+
+    let routines = usage
+        .daily_routines()
+        .expect("routines should resolve via codename");
+    assert_eq!(routines.utilization, 5.0);
+
+    mock.assert_async().await;
+    std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_resolvers_return_none_when_no_candidate_present() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"five_hour": null}"#)
+        .create_async()
+        .await;
+
+    std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
+    let usage = fetch_oauth_usage("t").await.unwrap();
+
+    assert!(usage.claude_design().is_none());
+    assert!(usage.daily_routines().is_none());
+
+    mock.assert_async().await;
+    std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_unknown_seven_day_keys_catches_schema_drift() {
+    // If Anthropic ships a new "seven_day_FOO" field tomorrow, it lands in
+    // the catch-all and unknown_seven_day_keys() surfaces it for logging.
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            r#"{
+            "five_hour": null,
+            "seven_day_aubergine": {"utilization": 8.0, "resets_at": null},
+            "seven_day_quokka": {"utilization": 1.0, "resets_at": null}
+        }"#,
+        )
+        .create_async()
+        .await;
+
+    std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
+    let usage = fetch_oauth_usage("t").await.unwrap();
+
+    let mut unknown = usage.unknown_seven_day_keys();
+    unknown.sort();
+    assert_eq!(unknown, vec!["seven_day_aubergine", "seven_day_quokka"]);
+
+    mock.assert_async().await;
+    std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");
+}
+
+#[tokio::test]
+#[serial]
 async fn test_fetch_oauth_usage_returns_token_expired_on_401() {
     let mut server = mockito::Server::new_async().await;
     let mock = server
