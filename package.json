@@ -21,7 +21,11 @@
     "test:e2e": "tsx --test test/e2e/v3.test.ts",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "tauri:dev": "cd src-tauri && cargo tauri dev",
-    "tauri:build": "cd src-tauri && cargo tauri build"
+    "tauri:build": "cd src-tauri && cargo tauri build",
+    "check:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+    "check:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
+    "check:rust-test": "cargo test --manifest-path src-tauri/Cargo.toml --quiet",
+    "check": "npm run check:fmt && npm run check:lint && npm run check:rust-test && npm test"
   },
   "engines": {
     "node": ">=22.0.0"
