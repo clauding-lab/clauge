@@ -401,24 +401,21 @@ function renderExtra(plan, nowMs) {
 }
 
 function renderStats({ summary, cache, period30d }) {
+  // Two-column layout: today + last 30 days. Each column stacks cost (big)
+  // over tokens (smaller). tokens shape has no precomputed .total so we
+  // sum input + output + cacheRead + cacheCreate5m + cacheCreate1h.
   document.getElementById('stat-today-cost').textContent =
     summary?.cost != null ? `$${fmtUSD(summary.cost)}` : '—';
-
   document.getElementById('stat-30d-cost').textContent =
     period30d?.cost != null ? `$${fmtUSD(period30d.cost)}` : '—';
 
-  // tokens shape is { inputTokens, outputTokens, cacheRead, cacheCreate5m,
-  // cacheCreate1h, ... } — there's no .total field, so we sum the relevant
-  // fields ourselves via sumTokens().
+  const tokToday = sumTokens(summary?.tokens);
+  document.getElementById('stat-today-tokens').textContent =
+    tokToday != null ? `${fmtCompact(tokToday)} Tokens` : '— Tokens';
+
   const tok30d = sumTokens(period30d?.tokens);
   document.getElementById('stat-30d-tokens').textContent =
-    tok30d != null ? fmtCompact(tok30d) : '—';
-
-  // Latest tokens = today's summary tokens (best-effort proxy for "most
-  // recent session"). When /api/summary?period=latest exists it can swap in.
-  const tokToday = sumTokens(summary?.tokens);
-  document.getElementById('stat-latest-tokens').textContent =
-    tokToday != null ? fmtCompact(tokToday) : '—';
+    tok30d != null ? `${fmtCompact(tok30d)} Tokens` : '— Tokens';
 }
 
 /**
