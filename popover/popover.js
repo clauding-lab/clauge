@@ -295,19 +295,24 @@ function renderSimpleBar({ fillId, overflowId, usagePct, capPct = 100 }) {
   const fill = document.getElementById(fillId);
   const overflow = document.getElementById(overflowId);
 
-  // Normal portion (up to capPct, e.g. 100). Overflow is anything past capPct.
-  const fillPct = Math.min(capPct, usage);
-  if (fill) fill.style.width = `${fillPct.toFixed(1)}%`;
-
-  if (overflow) {
-    if (usage > capPct) {
-      // Show overflow segment to the right of the cap, clamped to visible bar.
-      overflow.style.left = `${capPct.toFixed(1)}%`;
-      const visibleOverflow = Math.min(100 - capPct, usage - capPct);
-      overflow.style.width = `${visibleOverflow.toFixed(1)}%`;
-    } else {
+  if (usage <= capPct) {
+    // Normal: orange fill at usage%, no red overflow.
+    if (fill) fill.style.width = `${usage.toFixed(1)}%`;
+    if (overflow) {
+      overflow.style.left = `${usage.toFixed(1)}%`;
       overflow.style.width = '0%';
     }
+    return;
+  }
+
+  // Over the cap: REPROPORTION the bar so the visible 100% represents 0..usage.
+  // Orange covers capPct/usage of the bar (the cap), red covers the rest (the
+  // overage). For 196% on a 100% cap: orange 51%, red 49%.
+  const orangePct = (capPct / usage) * 100;
+  if (fill) fill.style.width = `${orangePct.toFixed(1)}%`;
+  if (overflow) {
+    overflow.style.left = `${orangePct.toFixed(1)}%`;
+    overflow.style.width = `${(100 - orangePct).toFixed(1)}%`;
   }
 }
 
