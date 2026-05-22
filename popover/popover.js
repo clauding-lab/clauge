@@ -358,11 +358,16 @@ function renderExtra(plan, nowMs) {
   const extra = plan?.extraUsage;
   const balance = plan?.claudeBalance;
 
-  if (extra && extra.enabled) {
-    const used = extra.usedDollars ?? 0;
-    const limit = extra.limitDollars ?? 0;
-    let pctNum = extra.pct;
-    if ((pctNum == null || !Number.isFinite(pctNum)) && limit > 0) {
+  // Render the bar whenever ANY spend/limit data is present — don't gate on
+  // extra.enabled. The OAuth `is_enabled` flag can be false even when the
+  // user has claude.ai consumer credits configured (different settings).
+  const used = Number.isFinite(extra?.usedDollars) ? extra.usedDollars : null;
+  const limit = Number.isFinite(extra?.limitDollars) ? extra.limitDollars : null;
+  const hasSpendData = used != null || (limit != null && limit > 0);
+
+  if (hasSpendData) {
+    let pctNum = extra?.pct;
+    if ((pctNum == null || !Number.isFinite(pctNum)) && limit && limit > 0 && used != null) {
       pctNum = (used / limit) * 100;
     }
     const pct = pctNum ?? 0;
@@ -372,11 +377,16 @@ function renderExtra(plan, nowMs) {
       usagePct: pct,
       capPct: 100,
     });
-    document.getElementById('extra-pct').textContent = `$${fmtUSD(used)} / $${limit.toFixed(0)} limit`;
-    document.getElementById('extra-pct-used').textContent = `${Math.round(pct)}% used`;
+    const usedStr = used != null ? `$${fmtUSD(used)}` : '—';
+    const limitStr = limit && limit > 0 ? `$${limit.toFixed(0)} limit` : 'no limit';
+    document.getElementById('extra-pct').textContent = `${usedStr} / ${limitStr}`;
+    document.getElementById('extra-pct-used').textContent = pct > 0 ? `${Math.round(pct)}% used` : '';
   } else {
+    // No spend data captured in Clauge's data pipeline yet (claude.ai
+    // consumer credits aren't scraped — TODO follow-up). Balance line below
+    // still renders, so the user knows credits ARE configured.
     renderSimpleBar({ fillId: 'extra-fill', overflowId: 'extra-overflow', usagePct: 0 });
-    document.getElementById('extra-pct').textContent = 'not configured';
+    document.getElementById('extra-pct').textContent = balance ? '—' : 'no data';
     document.getElementById('extra-pct-used').textContent = '';
   }
 
