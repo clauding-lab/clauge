@@ -480,9 +480,11 @@ app.post('/api/usage/ingest', async (c) => {
   const normalized = normalizePlanUsage(body.usage);
   const claudeBalance = normalizeBalance(body.claudeBalance, null);
   const apiBalance = normalizeBalance(body.balance, null);
+  const consumerOverage = normalizeOverageSpendLimit(body.overageSpendLimit);
   if (normalized) {
     if (claudeBalance) normalized.claudeBalance = claudeBalance;
     if (apiBalance) normalized.balance = apiBalance;
+    if (consumerOverage) normalized.consumerOverage = consumerOverage;
   }
   const record = await usageStore.save({
     org: body.org ? { uuid: body.org.uuid, name: body.org.name } : null,
