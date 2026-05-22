@@ -141,6 +141,14 @@ Every `Agent` tool call in this repo uses `model: "opus"` — no exceptions, reg
 - MAS bundle ID: `com.clauding.clauge`
 - Provider short name lives in `tauri.mas.conf.json::providerShortName` (mas-implement-session branch only)
 
+### 9. Prefer focused unit tests over WebView/Tauri E2E for trial, entitlement, and paywall logic
+
+macOS `tauri-driver` is unsupported (see `docs/RELEASE_CHECKLIST.md` "E2E manual gaps" — tauri-driver v2.0.6 supports Linux and Windows only). Live AppKit/menu/popover E2E tests on macOS therefore can't run. For trial accounting (v0.10.0), entitlement state, and paywall logic, write pure-state Rust unit tests against the underlying functions — they cover the same behavior without the flake. Extract pure functions from Tauri commands when needed.
+
+### 10. Sibling async tasks where one is required and another optional
+
+When running two async tasks in parallel (`tokio::join!`, `try_join!`, `JoinSet`) and one is required-to-succeed while the other is best-effort, ensure the optional one's failure cannot silently consume or cancel the required one's error. Prefer sequential awaits, or a drained `JoinSet` that surfaces required failures and explicitly contains optional failures. If you see stack traces mentioning premature cancellation in a parallel task block, audit nearby parallel-task usage.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
