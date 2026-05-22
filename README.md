@@ -16,10 +16,10 @@
 ![Clauge dashboard](docs/screenshots/v0.5.0/dashboard-v2.png)
 
 <p align="center">
-  <img src="docs/screenshots/v0.5.0/popover-v2.png" alt="Clauge menu-bar popover" width="380" />
+  <img src="docs/screenshots/v0.9.1/popover.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side.
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover in CodexBar style: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`.
 
 ## Install
 
@@ -38,7 +38,7 @@ brew install --cask clauding-lab/tap/clauge
 Or download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag `Clauge.app` to Applications, and launch.
 
 The app sits in your menu bar:
-- **Left-click** the menu-bar icon → glanceable popover (Plan Capacity rings + Finance + Today)
+- **Left-click** the menu-bar icon → glanceable popover. v0.9.1 layout: paired **Session** + **Weekly** circle gauges (each with a time-elapsed needle marker on the rim — orange fill past the needle = burning faster than the clock), weekly bars for **Sonnet only** / **Claude Design** / **Daily Routines**, an **Extra usage (MTD)** bar with real claude.ai consumer overage data + balance + auto-reload state, a 2-column **today / last 30 days** stats grid, a 30-day spend mini-chart, and action items (Add Account / Usage Dashboard / Status).
 - **Right-click** → Open Dashboard / Preferences / Check for Updates / Quit
 - **Auto-updates** from gh-pages on every launch. When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** in Settings → Updates (or wait for the macOS notification). v0.7.3+ also self-heals across updates: if the previous version's sidecar is still running, the new launch detects the version mismatch and evicts it before adopting a fresh one.
 
@@ -64,7 +64,7 @@ If you click **Skip for now** instead, the dashboard appears immediately with Cl
 
 **Option B — Native Windows app (v0.8.0+):**
 
-Download `Clauge_0.8.0_x64-setup.exe` from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
+Download `Clauge_<version>_x64-setup.exe` (latest is v0.9.1) from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
 
 You'll click through two "unknown publisher" warnings on the first install — this is normal for unsigned indie apps. Authenticode code-signing is on the v0.8.x roadmap; until then:
 
