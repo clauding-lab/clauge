@@ -144,8 +144,12 @@ async fn kill_pid_on_port_windows(port: u16) -> Result<(), String> {
     let port_pat = format!(":{} ", port);
     let mut pids = std::collections::HashSet::new();
     for line in stdout.lines() {
-        if !line.contains(&port_pat) { continue; }
-        if !line.contains("LISTENING") { continue; }
+        if !line.contains(&port_pat) {
+            continue;
+        }
+        if !line.contains("LISTENING") {
+            continue;
+        }
         if let Some(pid) = line.split_whitespace().last() {
             pids.insert(pid.to_string());
         }
@@ -154,7 +158,11 @@ async fn kill_pid_on_port_windows(port: u16) -> Result<(), String> {
         return Ok(());
     }
     for pid in pids {
-        log::info!("kill_pid_on_port: taskkill /F /PID {} on port={}", pid, port);
+        log::info!(
+            "kill_pid_on_port: taskkill /F /PID {} on port={}",
+            pid,
+            port
+        );
         let _ = Command::new("taskkill")
             .args(["/F", "/PID", &pid])
             .status()
@@ -188,7 +196,10 @@ async fn discover_with_retry(allow_orphan_kill: bool) -> DiscoveryResult {
         );
         if allow_orphan_kill {
             if let Err(e) = kill_pid_on_port(3456).await {
-                log::warn!("kill_pid_on_port failed: {} — falling through to SpawnAt", e);
+                log::warn!(
+                    "kill_pid_on_port failed: {} — falling through to SpawnAt",
+                    e
+                );
             }
             return Box::pin(discover_with_retry(false)).await;
         }
@@ -239,7 +250,10 @@ mod tests {
 
     #[test]
     fn version_matches_self_true_when_version_field_matches_self() {
-        let body = format!(r#"{{"service":"clauge","version":"{}"}}"#, env!("CARGO_PKG_VERSION"));
+        let body = format!(
+            r#"{{"service":"clauge","version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
         assert!(version_matches_self(&body));
     }
 
@@ -310,7 +324,10 @@ mod tests {
         // since version_matches_self is exercised directly by the dedicated
         // unit tests above. discover_with_retry's port=3456 hardcode is
         // verified by the manual smoke gate (Task 8).
-        let body = format!(r#"{{"service":"clauge","version":"{}"}}"#, env!("CARGO_PKG_VERSION"));
+        let body = format!(
+            r#"{{"service":"clauge","version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
         assert!(version_matches_self(&body));
     }
 }

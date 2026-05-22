@@ -256,7 +256,9 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
                 log::warn!("Failed to dispatch update notification: {}", e);
             }
 
-            Ok(UpdateStatus::Installed { version: new_version })
+            Ok(UpdateStatus::Installed {
+                version: new_version,
+            })
         }
         Ok(None) => Ok(UpdateStatus::UpToDate),
         Err(e) => Err(e.to_string()),
@@ -449,7 +451,10 @@ pub async fn get_connection_status(
                     // Re-compose with the heartbeat; preserves other fields.
                     status = crate::connections::compose_status(
                         status.claude_code_version.as_deref(),
-                        matches!(status.claude_ai, crate::connections::ConnectionState::SignedIn),
+                        matches!(
+                            status.claude_ai,
+                            crate::connections::ConnectionState::SignedIn
+                        ),
                         Some(ts.to_string()),
                     );
                 } else {
@@ -548,7 +553,10 @@ pub async fn wizard_complete(
         if let Ok(store) = app.store("settings.json") {
             store.set("pending_focus_connections", serde_json::Value::Bool(true));
             if let Err(e) = store.save() {
-                log::warn!("wizard_complete: failed to persist pending_focus_connections: {}", e);
+                log::warn!(
+                    "wizard_complete: failed to persist pending_focus_connections: {}",
+                    e
+                );
             }
         }
     }
@@ -564,10 +572,7 @@ pub async fn wizard_complete(
 /// Wizard "Skip for now" — mark onboarding complete, close wizard window,
 /// DO NOT trigger keychain read. User can click ↻ later from the Connections panel.
 #[tauri::command]
-pub async fn wizard_skip(
-    _state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn wizard_skip(_state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
     if let Err(e) = mark_onboarding_completed(&app) {
@@ -627,10 +632,7 @@ pub fn take_pending_focus_connections(app: tauri::AppHandle) -> Result<bool, Str
 /// the new process loads the new binary AND the new sidecar binary
 /// (because port_discovery's SpawnAt path will spawn a fresh child).
 #[tauri::command]
-pub async fn restart_app(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn restart_app(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), String> {
     state.signal_shutdown();
     for child in state.take_all_children() {
         let pid = child.pid();

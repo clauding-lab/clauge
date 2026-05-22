@@ -114,7 +114,11 @@ mod tests {
     fn cache_miss_reads_and_caches() {
         let (cache, count) = counting_reader();
         let creds = cache.get_or_load().expect("read should succeed");
-        assert_eq!(count.load(Ordering::SeqCst), 1, "reader called once on miss");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "reader called once on miss"
+        );
         assert_eq!(creds.claude_ai_oauth.access_token, "sample-access-token");
     }
 
@@ -124,7 +128,11 @@ mod tests {
         let _ = cache.get_or_load().unwrap();
         let _ = cache.get_or_load().unwrap();
         let _ = cache.get_or_load().unwrap();
-        assert_eq!(count.load(Ordering::SeqCst), 1, "subsequent calls hit cache");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "subsequent calls hit cache"
+        );
     }
 
     #[test]
@@ -142,7 +150,11 @@ mod tests {
         let _ = cache.get_or_load().unwrap();
         cache.invalidate();
         let _ = cache.get_or_load().unwrap();
-        assert_eq!(count.load(Ordering::SeqCst), 2, "post-invalidate triggers read");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "post-invalidate triggers read"
+        );
     }
 
     #[test]

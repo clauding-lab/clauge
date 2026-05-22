@@ -156,7 +156,10 @@ pub fn read_claude_code_credentials() -> Result<ClaudeCodeCreds, KeychainError> 
             // Use code=0 (errSecSuccess) as a sentinel since there's no real status.
             return Err(KeychainError::Framework {
                 code: 0,
-                message: format!("unexpected SearchResult variant (expected Data): {:?}", other),
+                message: format!(
+                    "unexpected SearchResult variant (expected Data): {:?}",
+                    other
+                ),
             });
         }
     };
@@ -264,7 +267,8 @@ mod windows_tests {
 
     #[test]
     fn read_from_path_returns_not_found_for_missing_file() {
-        let path = std::env::temp_dir().join(format!("clauge-test-missing-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("clauge-test-missing-{}.json", std::process::id()));
         // Ensure it doesn't exist
         let _ = std::fs::remove_file(&path);
         let err = read_from_path(&path).expect_err("expected NotFound");
@@ -273,23 +277,31 @@ mod windows_tests {
 
     #[test]
     fn read_from_path_parses_valid_json() {
-        let path = std::env::temp_dir().join(format!("clauge-test-valid-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("clauge-test-valid-{}.json", std::process::id()));
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(sample_creds_json().as_bytes()).unwrap();
         drop(f);
 
         let creds = read_from_path(&path).expect("read should succeed");
         assert_eq!(creds.claude_ai_oauth.access_token, "a-token");
-        assert_eq!(creds.claude_ai_oauth.refresh_token.as_deref(), Some("r-token"));
+        assert_eq!(
+            creds.claude_ai_oauth.refresh_token.as_deref(),
+            Some("r-token")
+        );
         assert_eq!(creds.claude_ai_oauth.expires_at, Some(1_900_000_000_000));
-        assert_eq!(creds.claude_ai_oauth.subscription_type.as_deref(), Some("max"));
+        assert_eq!(
+            creds.claude_ai_oauth.subscription_type.as_deref(),
+            Some("max")
+        );
 
         let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn read_from_path_returns_parse_error_for_garbage() {
-        let path = std::env::temp_dir().join(format!("clauge-test-garbage-{}.json", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("clauge-test-garbage-{}.json", std::process::id()));
         std::fs::write(&path, b"not valid json at all").unwrap();
 
         let err = read_from_path(&path).expect_err("expected Parse error");

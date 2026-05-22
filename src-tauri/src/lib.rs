@@ -1,15 +1,15 @@
+pub mod anthropic_oauth;
+mod claude_ai_session;
+pub mod connections;
 mod ipc;
+mod keychain;
+mod keychain_cache;
 mod menu;
 mod native_popover;
 mod port_discovery;
 mod sidecar;
 mod tray;
 mod windows;
-mod keychain;
-mod keychain_cache;
-pub mod anthropic_oauth;
-mod claude_ai_session;
-pub mod connections;
 
 use tauri::Manager;
 
@@ -136,25 +136,19 @@ pub fn run() {
                                 .parse()
                                 .unwrap(),
                         );
-                        let result = tauri::WebviewWindowBuilder::new(
-                            &app_handle,
-                            "onboarding",
-                            url,
-                        )
-                        .title("Welcome to Clauge")
-                        .inner_size(560.0, 640.0)
-                        .resizable(false)
-                        .center()
-                        .visible(true)
-                        .build();
+                        let result =
+                            tauri::WebviewWindowBuilder::new(&app_handle, "onboarding", url)
+                                .title("Welcome to Clauge")
+                                .inner_size(560.0, 640.0)
+                                .resizable(false)
+                                .center()
+                                .visible(true)
+                                .build();
                         if let Err(e) = result {
                             log::error!("Failed to spawn onboarding wizard window: {}", e);
                             // Mark the flag so we don't loop on a broken wizard.
                             if let Ok(store) = app_handle.store("settings.json") {
-                                store.set(
-                                    "onboarding_completed",
-                                    serde_json::Value::Bool(true),
-                                );
+                                store.set("onboarding_completed", serde_json::Value::Bool(true));
                                 let _ = store.save();
                             }
                         }

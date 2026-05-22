@@ -1,4 +1,4 @@
-use clauge_lib::connections::{ConnectionState, compose_status};
+use clauge_lib::connections::{compose_status, ConnectionState};
 
 #[test]
 fn test_compose_status_keychain_only() {
@@ -16,11 +16,7 @@ fn test_compose_status_keychain_only() {
 #[test]
 fn test_compose_status_all_three() {
     let now = chrono::Utc::now().to_rfc3339();
-    let status = compose_status(
-        Some("0.1.8-cli"),
-        true,
-        Some(now),
-    );
+    let status = compose_status(Some("0.1.8-cli"), true, Some(now));
     assert_eq!(status.claude_code, ConnectionState::Authenticated);
     assert_eq!(status.claude_ai, ConnectionState::SignedIn);
     assert_eq!(status.extension, ConnectionState::Active);

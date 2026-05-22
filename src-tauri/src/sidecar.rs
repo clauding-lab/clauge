@@ -77,10 +77,10 @@ pub enum CrashAction {
     BackoffRespawn(Duration),
 }
 
-use tauri::{AppHandle, Manager};
 use tauri::async_runtime::Receiver;
-use tauri_plugin_shell::ShellExt;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
 
@@ -132,7 +132,10 @@ pub async fn spawn_and_supervise(app: AppHandle) {
     /// Inline helper: did the user click Quit? Shared by the spawn-loop guard
     /// AND the backoff race below so the two checks stay in sync.
     fn quit_requested(state: &Option<tauri::State<crate::ipc::AppState>>) -> bool {
-        state.as_ref().map(|s| s.is_shutting_down()).unwrap_or(false)
+        state
+            .as_ref()
+            .map(|s| s.is_shutting_down())
+            .unwrap_or(false)
     }
 
     loop {
@@ -175,10 +178,7 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                 // the event it falls back to polling get_server_port IPC.
                 {
                     use tauri::Emitter;
-                    if let Err(e) = app.emit(
-                        "sidecar-ready",
-                        serde_json::json!({ "port": port }),
-                    ) {
+                    if let Err(e) = app.emit("sidecar-ready", serde_json::json!({ "port": port })) {
                         log::warn!("Failed to emit sidecar-ready event: {}", e);
                     }
                 }
@@ -395,7 +395,9 @@ fn handle_event(
             payload.code, payload.signal
         ))),
         Some(_) => None, // ignore stdout / error noise
-        None => Some(Err("sidecar event stream closed before port marker".to_string())),
+        None => Some(Err(
+            "sidecar event stream closed before port marker".to_string()
+        )),
     }
 }
 
@@ -477,7 +479,7 @@ mod tests {
         b.record(t(0));
         b.record(t(10));
         b.record(t(20)); // notify
-        // 4th crash → backoff, NOT a second notification
+                         // 4th crash → backoff, NOT a second notification
         let r = b.record(t(30));
         assert!(matches!(r, CrashAction::BackoffRespawn(_)));
         assert!(b.was_notified());
@@ -506,9 +508,9 @@ mod tests {
         let mut b = CrashBreaker::new();
         b.record(t(0)); // len=1
         b.record(t(30)); // len=2 → silent
-        // 3rd crash exactly 60s after the FIRST one
-        // t(0) is at the strict-> boundary — should still be retained
-        // → 3rd crash → notify (proves the first entry wasn't pruned)
+                         // 3rd crash exactly 60s after the FIRST one
+                         // t(0) is at the strict-> boundary — should still be retained
+                         // → 3rd crash → notify (proves the first entry wasn't pruned)
         assert_eq!(b.record(t(60)), CrashAction::NotifyAndRespawn);
     }
 }

@@ -42,14 +42,19 @@ async fn test_fetch_oauth_usage_returns_parsed_response() {
     // 5-hour window
     let five_hour = usage.five_hour.expect("five_hour should be present");
     assert_eq!(five_hour.utilization, 13.0);
-    assert_eq!(five_hour.resets_at.as_deref(), Some("2026-05-14T10:30:00.872898+00:00"));
+    assert_eq!(
+        five_hour.resets_at.as_deref(),
+        Some("2026-05-14T10:30:00.872898+00:00")
+    );
 
     // 7-day window
     let seven_day = usage.seven_day.expect("seven_day should be present");
     assert_eq!(seven_day.utilization, 4.0);
 
     // 7-day Sonnet model breakdown
-    let sonnet = usage.seven_day_sonnet.expect("seven_day_sonnet should be present");
+    let sonnet = usage
+        .seven_day_sonnet
+        .expect("seven_day_sonnet should be present");
     assert_eq!(sonnet.utilization, 0.0);
 
     // Null fields parse cleanly to None
@@ -57,7 +62,9 @@ async fn test_fetch_oauth_usage_returns_parsed_response() {
     assert!(usage.tangelo.is_none());
 
     // Field with null resets_at (omelette)
-    let omelette = usage.seven_day_omelette.expect("seven_day_omelette should be present");
+    let omelette = usage
+        .seven_day_omelette
+        .expect("seven_day_omelette should be present");
     assert_eq!(omelette.utilization, 0.0);
     assert!(omelette.resets_at.is_none());
 
@@ -78,15 +85,20 @@ async fn test_fetch_oauth_usage_returns_parsed_response() {
 #[serial]
 async fn test_fetch_oauth_usage_returns_token_expired_on_401() {
     let mut server = mockito::Server::new_async().await;
-    let mock = server.mock("GET", "/api/oauth/usage")
+    let mock = server
+        .mock("GET", "/api/oauth/usage")
         .with_status(401)
         .with_body(r#"{"error":"invalid_token"}"#)
-        .create_async().await;
+        .create_async()
+        .await;
 
     std::env::set_var("CLAUGE_ANTHROPIC_BASE_URL", server.url());
 
     let result = fetch_oauth_usage("expired-token").await;
-    assert!(matches!(result, Err(clauge_lib::anthropic_oauth::OAuthError::TokenExpired)));
+    assert!(matches!(
+        result,
+        Err(clauge_lib::anthropic_oauth::OAuthError::TokenExpired)
+    ));
 
     mock.assert_async().await;
     std::env::remove_var("CLAUGE_ANTHROPIC_BASE_URL");

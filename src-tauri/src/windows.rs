@@ -52,16 +52,12 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // the new port and lock itself out of its own server.
     let app_for_handler = app.clone();
     let app_for_open = app.clone();
-    let mut builder = WebviewWindowBuilder::new(
-        app,
-        "main",
-        WebviewUrl::App(url.into()),
-    )
-    .title("Clauge")
-    .inner_size(1100.0, 800.0)
-    .min_inner_size(900.0, 600.0)
-    .resizable(true)
-    .visible(true);
+    let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()))
+        .title("Clauge")
+        .inner_size(1100.0, 800.0)
+        .min_inner_size(900.0, 600.0)
+        .resizable(true)
+        .visible(true);
 
     #[cfg(target_os = "macos")]
     {
@@ -87,9 +83,7 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
             if u.scheme() == "tauri" && matches!(host, Some("localhost")) {
                 return true;
             }
-            if matches!(host, Some("tauri.localhost"))
-                && matches!(u.scheme(), "http" | "https")
-            {
+            if matches!(host, Some("tauri.localhost")) && matches!(u.scheme(), "http" | "https") {
                 return true;
             }
             let live_port = app_for_handler
@@ -140,8 +134,8 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
                 if let Err(e) = win_handle.hide() {
                     log::warn!("Failed to hide dashboard window on close: {}", e);
                 }
-                if let Err(e) = app_handle_for_close
-                    .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                if let Err(e) =
+                    app_handle_for_close.set_activation_policy(tauri::ActivationPolicy::Accessory)
                 {
                     log::warn!(
                         "Failed to set activation policy to Accessory on close: {}",

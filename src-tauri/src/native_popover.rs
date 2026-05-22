@@ -78,8 +78,9 @@ static POPOVER_REF: OnceLock<Mutex<Option<MainThreadCell<NSPopover>>>> = OnceLoc
 static WEBVIEW_REF: OnceLock<Mutex<Option<MainThreadCell<WKWebView>>>> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
-static VIEW_CONTROLLER_REF: OnceLock<Mutex<Option<MainThreadCell<objc2_app_kit::NSViewController>>>> =
-    OnceLock::new();
+static VIEW_CONTROLLER_REF: OnceLock<
+    Mutex<Option<MainThreadCell<objc2_app_kit::NSViewController>>>,
+> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 static SCRIPT_HANDLER_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeScriptHandler>>>> =
@@ -94,8 +95,7 @@ static APP_HANDLE_REF: OnceLock<tauri::AppHandle> = OnceLock::new();
 static MENU_REF: OnceLock<Mutex<Option<MainThreadCell<NSMenu>>>> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
-static MENU_TARGET_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeMenuTarget>>>> =
-    OnceLock::new();
+static MENU_TARGET_REF: OnceLock<Mutex<Option<MainThreadCell<ClaugeMenuTarget>>>> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 define_class!(
@@ -218,9 +218,7 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
             // Bounds match popover.js's resizeToContent clamp; an out-of-range
             // value usually means a measurement bug on the JS side, so log
             // and refuse instead of forcing an absurd popover size.
-            if !height.is_finite()
-                || !(MIN_POPOVER_HEIGHT..=MAX_POPOVER_HEIGHT).contains(&height)
-            {
+            if !height.is_finite() || !(MIN_POPOVER_HEIGHT..=MAX_POPOVER_HEIGHT).contains(&height) {
                 log::warn!("native_popover: resize height {} out of bounds", height);
                 return;
             }
@@ -367,9 +365,10 @@ fn toggle_popover(sender: &objc2_app_kit::NSStatusBarButton) {
     use objc2_app_kit::NSView;
     use objc2_foundation::NSRectEdge;
 
-    let popover = match POPOVER_REF.get().and_then(|m| {
-        m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get()))
-    }) {
+    let popover = match POPOVER_REF
+        .get()
+        .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+    {
         Some(p) => p,
         None => {
             log::warn!("native_popover: toggle_popover but POPOVER_REF unset");
@@ -390,9 +389,10 @@ fn toggle_popover(sender: &objc2_app_kit::NSStatusBarButton) {
         // boot — by the user's first click the spinner has long since faded
         // and they only see the static shell while data fetches. The popover
         // JS show-loading listener un-hides the overlay then refresh()es.
-        if let Some(webview) = WEBVIEW_REF.get().and_then(|m| {
-            m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get()))
-        }) {
+        if let Some(webview) = WEBVIEW_REF
+            .get()
+            .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+        {
             use objc2_foundation::NSString;
             let js = NSString::from_str("window.dispatchEvent(new CustomEvent('show-loading'))");
             unsafe {
@@ -414,7 +414,7 @@ fn create_popover(
 ) {
     use objc2::runtime::ProtocolObject;
     use objc2_app_kit::{NSPopoverBehavior, NSViewController};
-    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURL, NSURLRequest};
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURLRequest, NSURL};
     use objc2_web_kit::WKWebViewConfiguration;
 
     let frame = NSRect {
@@ -440,9 +440,8 @@ fn create_popover(
     let proto = ProtocolObject::from_ref(&*handler);
     unsafe { ucc.addScriptMessageHandler_name(proto, &name) };
 
-    let webview: Retained<WKWebView> = unsafe {
-        WKWebView::initWithFrame_configuration(mtm.alloc::<WKWebView>(), frame, &config)
-    };
+    let webview: Retained<WKWebView> =
+        unsafe { WKWebView::initWithFrame_configuration(mtm.alloc::<WKWebView>(), frame, &config) };
 
     // Enable WebInspector for the popover (macOS 13.3+). Defaults to false on
     // newer macOS — without this, right-click → Inspect Element is unavailable
@@ -531,8 +530,8 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
             // Add rightMouseUp so the menu shortcut goes through the same
             // selector — handle_click then differentiates by inspecting
             // NSApp.currentEvent().type.
-            let mask = objc2_app_kit::NSEventMask::LeftMouseUp
-                | objc2_app_kit::NSEventMask::RightMouseUp;
+            let mask =
+                objc2_app_kit::NSEventMask::LeftMouseUp | objc2_app_kit::NSEventMask::RightMouseUp;
             button.sendActionOn(mask);
         }
     } else {
@@ -563,7 +562,10 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
     let _ = MENU_REF.set(Mutex::new(Some(MainThreadCell(menu))));
     let _ = MENU_TARGET_REF.set(Mutex::new(Some(MainThreadCell(menu_target))));
 
-    log::info!("native_popover: NSStatusItem + NSPopover created (port={})", port);
+    log::info!(
+        "native_popover: NSStatusItem + NSPopover created (port={})",
+        port
+    );
 
     spawn_tray_title_poller(app.clone());
 
@@ -633,7 +635,9 @@ fn update_tray_title(app: &tauri::AppHandle, title: String) {
             Some(s) => s,
             None => return,
         };
-        let Some(button) = status_item.button(mtm) else { return };
+        let Some(button) = status_item.button(mtm) else {
+            return;
+        };
         let ns_title = NSString::from_str(&title);
         button.setTitle(&ns_title);
     });
@@ -649,11 +653,12 @@ fn update_tray_title(app: &tauri::AppHandle, title: String) {
 #[cfg(target_os = "macos")]
 pub fn reload_for_port(app: &tauri::AppHandle, port: u16) {
     let _ = app.run_on_main_thread(move || {
-        use objc2_foundation::{NSString, NSURL, NSURLRequest};
+        use objc2_foundation::{NSString, NSURLRequest, NSURL};
 
-        let webview = match WEBVIEW_REF.get().and_then(|m| {
-            m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get()))
-        }) {
+        let webview = match WEBVIEW_REF
+            .get()
+            .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+        {
             Some(w) => w,
             None => return,
         };
