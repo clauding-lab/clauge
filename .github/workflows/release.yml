@@ -140,6 +140,33 @@ jobs:
           fi
           echo "Signing secrets present."
 
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strip leading "v" from the tag to match CHANGELOG headers,
+          # which use "## [0.9.2]" not "## [v0.9.2]".
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk -v ver="$VERSION" '
+            BEGIN { found = 0 }
+            $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+            /^## \[/ { if (found) exit }
+            found { print }
+          ' CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            echo "::warning::No CHANGELOG section found for [$VERSION] — release body will be empty"
+          fi
+          # Multi-line GitHub Actions output: heredoc delimiter pattern.
+          {
+            echo 'notes<<CHANGELOG_NOTES_EOF'
+            echo "$NOTES"
+            echo "CHANGELOG_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "::group::Extracted notes for $VERSION"
+          echo "$NOTES"
+          echo "::endgroup::"
+
       - name: Build, sign, and publish artifacts
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
@@ -150,6 +177,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Clauge ${{ github.ref_name }}'
+          releaseBody: ${{ steps.changelog.outputs.notes }}
           releaseDraft: false
           prerelease: false
           args: '--target ${{ matrix.target }} --bundles ${{ matrix.bundles }}'
