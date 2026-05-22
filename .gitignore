@@ -1,5 +1,6 @@
 node_modules/
 .env
+.mac-release.env
 .DS_Store
 *.log
 .cache/

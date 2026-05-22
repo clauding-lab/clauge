@@ -12,6 +12,25 @@ Since v0.8.0, V3 ships on **both macOS and Windows** from the same Tauri codebas
 
 > **TBD** — see plan Task 19. Once the keypair is generated locally via `cargo tauri signer generate`, this section will document the storage location, the GitHub Actions secret names (private key + password), and the rotation procedure.
 
+## Release identifier locations (rotation cheat sheet)
+
+A single source of truth for "where does each release-time identifier or secret live, and how do I rotate it" — adopted from steipete/CodexBar's pattern. The full template lives in `.mac-release.env.example` at the repo root.
+
+| Identifier | Lives in | Rotate via |
+|---|---|---|
+| `APPLE_TEAM_ID` (`CY4FK9S7X9`) | Apple Developer membership; surfaces in `tauri.mas.conf.json::providerShortName` (on `mas-implement-session` branch) | App Store Connect → Membership |
+| `APPLE_ID` (`adnan_du@yahoo.com`) | Apple ID; surfaces in `xcrun notarytool` invocations | Apple ID account settings |
+| `APPLE_APP_SPECIFIC_PASSWORD` | GitHub Secret `APPLE_APP_SPECIFIC_PASSWORD` + local `.mac-release.env` | https://appleid.apple.com → App-Specific Passwords |
+| `BUNDLE_ID` (`com.clauding.clauge`) | `src-tauri/tauri.conf.json::bundle.identifier`; also load-bearing in keychain item names (see AGENTS.md landmine #4) | DO NOT rotate without coordinated migration of keychain items + ASC record |
+| `ASC_APP_ID` (`6770303247`) | App Store Connect app page URL; surfaces in CI/release scripts when MAS work lands | Assigned by Apple on first MAS submission; not user-rotatable |
+| `UPDATER_ENDPOINT` (gh-pages `latest.json`) | `src-tauri/tauri.conf.json::plugins.updater.endpoints` | Edit tauri.conf.json + tag a release that re-publishes |
+| `TAURI_SIGNING_PRIVATE_KEY` | GitHub Secret + local `.mac-release.env` | `cargo tauri signer generate`, then re-publish all platforms (breaks existing installs' update path) — see plan Task 19 |
+| `APPLE_DEV_ACCOUNT_EXPIRES` (`2027-05-17`) | Apple Developer membership renewal date | Renew at App Store Connect → Membership before expiry |
+
+**Local release flow:** copy `.mac-release.env.example` → `.mac-release.env` (gitignored), fill in real values, `source .mac-release.env` before running notarization/signing scripts.
+
+**CI release flow:** GitHub Secrets are authoritative; `.mac-release.env` is for local-machine rotation/manual signing only.
+
 ## macOS manual smoke (pre-tag)
 
 ```
