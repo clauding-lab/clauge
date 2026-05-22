@@ -112,4 +112,69 @@ describe('normalizeUsage', () => {
     assert.equal(out.extraUsage.enabled, false);
     assert.equal(out.extraUsage.disabledReason, null);
   });
+
+  // claudeDesign + dailyRoutines: multi-key resolver covering Anthropic's
+  // codename → public-name renames (omelette → Claude Design, cowork →
+  // Daily Routines). Mirrors src-tauri/src/anthropic_oauth.rs resolver tests.
+
+  it('claudeDesign prefers public name over codename', () => {
+    const out = normalizeUsage({
+      seven_day_design: { utilization: 42, resets_at: null },
+      seven_day_omelette: { utilization: 99, resets_at: null },
+    });
+    assert.equal(out.claudeDesign.pct, 42, 'public name should win');
+  });
+
+  it('claudeDesign falls back to codename when public name absent', () => {
+    const out = normalizeUsage({
+      seven_day_omelette: { utilization: 12.5, resets_at: null },
+    });
+    assert.equal(out.claudeDesign.pct, 12.5);
+  });
+
+  it('claudeDesign returns null when no candidate is present', () => {
+    const out = normalizeUsage({ five_hour: null });
+    assert.equal(out.claudeDesign, null);
+  });
+
+  it('dailyRoutines prefers public name over codename', () => {
+    const out = normalizeUsage({
+      seven_day_routines: { utilization: 33, resets_at: null },
+      seven_day_cowork: { utilization: 77, resets_at: null },
+    });
+    assert.equal(out.dailyRoutines.pct, 33, 'public name should win');
+  });
+
+  it('dailyRoutines falls back to codename when public name absent', () => {
+    const out = normalizeUsage({
+      seven_day_cowork: { utilization: 5, resets_at: null },
+    });
+    assert.equal(out.dailyRoutines.pct, 5);
+  });
+
+  it('dailyRoutines returns null when no candidate is present', () => {
+    const out = normalizeUsage({ five_hour: null });
+    assert.equal(out.dailyRoutines, null);
+  });
+
+  it('unknownSevenDayKeys catches schema drift', () => {
+    const out = normalizeUsage({
+      five_hour: null,
+      seven_day_aubergine: { utilization: 8, resets_at: null },
+      seven_day_quokka: { utilization: 1, resets_at: null },
+    });
+    const sorted = [...out.unknownSevenDayKeys].sort();
+    assert.deepEqual(sorted, ['seven_day_aubergine', 'seven_day_quokka']);
+  });
+
+  it('unknownSevenDayKeys is empty when only known keys are present', () => {
+    const out = normalizeUsage({
+      five_hour: null,
+      seven_day: null,
+      seven_day_sonnet: null,
+      seven_day_omelette: null,
+      seven_day_cowork: null,
+    });
+    assert.deepEqual(out.unknownSevenDayKeys, []);
+  });
 });
