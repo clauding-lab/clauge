@@ -204,13 +204,14 @@ html, body {
   justify-content: center;
   margin: 0 0 10px;
 }
-/* Circle gauges stay 110px even when paired side-by-side — Adnan's spec
- * call: prominence over packing. With 340px popover width and 8px side
- * padding, two 110px circles fit with ~16px between (110+16+110 = 236
- * inside 340 - 16 = 324 px). */
+/* Circle gauges stay paired side-by-side. SVG is 120x120 (was 110x110) to
+ * make room outside the ring for the time-elapsed triangle marker — but the
+ * ring itself is still drawn at r=46 in the viewBox, so the visual size of
+ * the ring is unchanged; the extra 10 units just give the needle a place to
+ * live outside the rim. */
 .gauge-circle {
-  width: 110px;
-  height: 110px;
+  width: 120px;
+  height: 120px;
   position: relative;
 }
 .gauge-circle svg { width: 100%; height: 100%; }

@@ -188,48 +188,68 @@ function renderCircleGauge({ elId, usagePct, timeElapsedPctValue, label }) {
   const elapsed = Math.max(0, Math.min(100, timeElapsedPctValue ?? 0));
   const burn = burnState(usage, elapsed);
 
-  // Geometry: SVG 110x110, ring centered, stroke 8px, r=46 → circumference 289.03.
+  // Geometry: SVG viewBox 120x120 (room for outer marker), ring r=46 stroke
+  // 8px → ring outer edge at radius 50. Marker triangle lives in the 50–58
+  // band, pointing inward from outside.
+  const cx = 60;
+  const cy = 60;
   const r = 46;
   const c = 2 * Math.PI * r;
   const usageArc = (usage / 100) * c;
   const usageOffset = c - usageArc;
 
-  // Needle position (time-elapsed): on the outer rim at elapsed% around from
-  // 12 o'clock clockwise.
+  // Time-elapsed angle: 0% = 12 o'clock, clockwise.
   const angleRad = (elapsed / 100) * 2 * Math.PI - Math.PI / 2;
-  const needleX = 55 + r * Math.cos(angleRad);
-  const needleY = 55 + r * Math.sin(angleRad);
 
-  // Over-burn segment: arc from the needle position to the usage end (only
-  // visible when usage > elapsed). Tints the over-burn portion red.
+  // Triangle marker pointing inward, sitting just outside the ring stroke.
+  // Tip at radius 51, base at radius 57, base half-width 3 — gives a 6-unit
+  // deep × 6-unit wide marker that reads as a clear external needle.
+  const tipR = 51;
+  const baseR = 57;
+  const baseHalf = 3;
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+  const tipX = cx + tipR * cosA;
+  const tipY = cy + tipR * sinA;
+  // Base center then ±perpendicular for the two base corners.
+  const baseCX = cx + baseR * cosA;
+  const baseCY = cy + baseR * sinA;
+  const base1X = baseCX - baseHalf * sinA;
+  const base1Y = baseCY + baseHalf * cosA;
+  const base2X = baseCX + baseHalf * sinA;
+  const base2Y = baseCY - baseHalf * cosA;
+  const markerPoints = `${tipX.toFixed(2)},${tipY.toFixed(2)} ${base1X.toFixed(2)},${base1Y.toFixed(2)} ${base2X.toFixed(2)},${base2Y.toFixed(2)}`;
+
+  // Over-burn segment: red arc from the needle position past the rim.
   const overflowVisible = burn === 'burning_fast';
   const overflowArc = Math.max(0, (usage - elapsed) / 100) * c;
   const overflowOffset = c - overflowArc;
   const overflowRotation = (elapsed / 100) * 360;
 
   el.innerHTML = `
-    <svg viewBox="0 0 110 110" aria-hidden="true">
-      <circle cx="55" cy="55" r="${r}" fill="none" stroke="rgba(244, 236, 228, 0.10)" stroke-width="8"/>
-      <circle cx="55" cy="55" r="${r}" fill="none"
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(244, 236, 228, 0.10)" stroke-width="8"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
         stroke="#d97757"
         stroke-width="8"
         stroke-linecap="round"
         stroke-dasharray="${c.toFixed(2)}"
         stroke-dashoffset="${usageOffset.toFixed(2)}"
-        transform="rotate(-90 55 55)"/>
+        transform="rotate(-90 ${cx} ${cy})"/>
       ${overflowVisible ? `
-        <circle cx="55" cy="55" r="${r}" fill="none"
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
           stroke="#c97a7a"
           stroke-width="8"
           stroke-linecap="round"
           stroke-dasharray="${c.toFixed(2)}"
           stroke-dashoffset="${overflowOffset.toFixed(2)}"
-          transform="rotate(${(-90 + overflowRotation).toFixed(2)} 55 55)"/>
+          transform="rotate(${(-90 + overflowRotation).toFixed(2)} ${cx} ${cy})"/>
       ` : ''}
-      <circle cx="${needleX.toFixed(2)}" cy="${needleY.toFixed(2)}" r="3.5"
+      <polygon points="${markerPoints}"
         fill="rgba(244, 236, 228, 0.92)"
-        stroke="rgba(0, 0, 0, 0.4)"
-        stroke-width="0.5"/>
+        stroke="rgba(0, 0, 0, 0.45)"
+        stroke-width="0.5"
+        stroke-linejoin="round"/>
     </svg>
     <div class="gauge-center">
       <div>
