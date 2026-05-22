@@ -457,6 +457,22 @@ fn create_popover(
     // constructed directly and needs the explicit setter.
     unsafe { webview.setInspectable(true) };
 
+    // Make the WKWebView's under-page background transparent so the CSS
+    // `background: transparent` on html/body + the translucent `#root` tint
+    // actually let the OS NSPopover's vibrancy layer (and ultimately the
+    // wallpaper behind it) show through. Without this, WKWebView paints a
+    // system-appropriate opaque color BEHIND the page in any area not
+    // explicitly painted by the page itself — which defeats the popover's
+    // CodexBar-style translucent feel.
+    unsafe {
+        use objc2_app_kit::NSColor;
+        let clear = NSColor::clearColor();
+        let _: () = objc2::msg_send![&*webview, setUnderPageBackgroundColor: &*clear];
+        // Also nuke the layer's background so any default layer fill from
+        // the WKWebView's NSView itself doesn't bleed through.
+        let _: () = objc2::msg_send![&*webview, setWantsLayer: true];
+    }
+
     // Load popover content from the SEA sidecar (same-origin to /api). At
     // boot time the sidecar may not yet be bound; reload_for_port re-loads
     // once sidecar.rs reports its real port.
