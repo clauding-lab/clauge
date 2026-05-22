@@ -48,6 +48,26 @@ function fmtCompact(n) {
   return String(Math.round(n));
 }
 
+/**
+ * Sum all token fields into a single number. summary.tokens has the shape
+ * { inputTokens, outputTokens, cacheRead, cacheCreate5m, cacheCreate1h,
+ *   webSearches, webFetches } — there's no precomputed `.total`.
+ */
+function sumTokens(t) {
+  if (!t || typeof t !== 'object') return null;
+  const fields = ['inputTokens', 'outputTokens', 'cacheRead', 'cacheCreate5m', 'cacheCreate1h'];
+  let sum = 0;
+  let any = false;
+  for (const k of fields) {
+    const v = t[k];
+    if (Number.isFinite(v)) {
+      sum += v;
+      any = true;
+    }
+  }
+  return any ? sum : null;
+}
+
 function fmtRelative(iso, nowMs = Date.now()) {
   if (!iso) return '—';
   const ms = Date.parse(iso) - nowMs;
@@ -344,11 +364,13 @@ function renderExtra(plan, nowMs) {
     document.getElementById('extra-pct-used').textContent = '';
   }
 
-  // Balance + auto-reload status line.
+  // Balance + auto-reload status line. normalizeBalance() emits the field as
+  // `autoReloadEnabled` (boolean) — not `autoReload`. Read both for safety
+  // since claude.ai sometimes returns auto_reload_settings.enabled.
   const balEl = document.getElementById('extra-balance');
   if (balance && Number.isFinite(balance.currentBalance)) {
-    const auto = balance.autoReload === true ? 'on' : 'off';
-    balEl.textContent = `Balance: $${fmtUSD(balance.currentBalance)} · Auto-reload ${auto}`;
+    const autoOn = balance.autoReloadEnabled === true || balance.autoReload === true;
+    balEl.textContent = `Balance: $${fmtUSD(balance.currentBalance)} · Auto-reload ${autoOn ? 'on' : 'off'}`;
   } else {
     balEl.textContent = 'Balance: — · Auto-reload —';
   }
@@ -369,12 +391,18 @@ function renderStats({ summary, cache, period30d }) {
   document.getElementById('stat-30d-cost').textContent =
     period30d?.cost != null ? `$${fmtUSD(period30d.cost)}` : '—';
 
+  // tokens shape is { inputTokens, outputTokens, cacheRead, cacheCreate5m,
+  // cacheCreate1h, ... } — there's no .total field, so we sum the relevant
+  // fields ourselves via sumTokens().
+  const tok30d = sumTokens(period30d?.tokens);
   document.getElementById('stat-30d-tokens').textContent =
-    period30d?.tokens?.total != null ? fmtCompact(period30d.tokens.total) : '—';
+    tok30d != null ? fmtCompact(tok30d) : '—';
 
-  // Latest tokens = most recent session's tokens, best-effort
+  // Latest tokens = today's summary tokens (best-effort proxy for "most
+  // recent session"). When /api/summary?period=latest exists it can swap in.
+  const tokToday = sumTokens(summary?.tokens);
   document.getElementById('stat-latest-tokens').textContent =
-    summary?.tokens?.total != null ? fmtCompact(summary.tokens.total) : '—';
+    tokToday != null ? fmtCompact(tokToday) : '—';
 }
 
 function renderSpendChart(period30d) {
