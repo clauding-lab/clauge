@@ -25,7 +25,7 @@ jobs:
 
       - name: Set up Rust
         run: |
-          rustup toolchain install stable --component rustfmt clippy
+          rustup toolchain install stable --component rustfmt --component clippy
           rustup default stable
 
       - name: Cache Cargo
