@@ -49,6 +49,22 @@ function fmtCompact(n) {
 }
 
 /**
+ * Translate Anthropic's machine-readable `extra_usage.disabled_reason` enum
+ * into a short human-readable label for the popover.
+ */
+function humanizeDisabledReason(reason) {
+  if (!reason) return '';
+  const map = {
+    org_level_disabled_until: 'org policy',
+    plan_limit_reached: 'plan limit',
+    payment_required: 'payment required',
+    not_enrolled: 'not enrolled',
+    suspended: 'suspended',
+  };
+  return map[reason] ?? reason.replace(/_/g, ' ');
+}
+
+/**
  * Sum all token fields into a single number. summary.tokens has the shape
  * { inputTokens, outputTokens, cacheRead, cacheCreate5m, cacheCreate1h,
  *   webSearches, webFetches } — there's no precomputed `.total`.
@@ -382,11 +398,22 @@ function renderExtra(plan, nowMs) {
     document.getElementById('extra-pct').textContent = `${usedStr} / ${limitStr}`;
     document.getElementById('extra-pct-used').textContent = pct > 0 ? `${Math.round(pct)}% used` : '';
   } else {
-    // No spend data captured in Clauge's data pipeline yet (claude.ai
-    // consumer credits aren't scraped — TODO follow-up). Balance line below
-    // still renders, so the user knows credits ARE configured.
+    // No OAuth-API extra-usage spend data. The disabledReason field tells
+    // us *why* — surface it so the user isn't confused by an empty bar.
+    // Common values from Anthropic:
+    //   org_level_disabled_until → org admin disabled the OAuth-API
+    //     extra-usage feature
+    //   <other> → server-side gate, plan upgrade required, etc.
+    // Note: claude.ai consumer "Usage credits" (the $X.XX spent / $Y limit
+    // visible at claude.ai/settings/usage) is a SEPARATE feature not yet
+    // captured by Clauge Sync.
     renderSimpleBar({ fillId: 'extra-fill', overflowId: 'extra-overflow', usagePct: 0 });
-    document.getElementById('extra-pct').textContent = balance ? '—' : 'no data';
+    const reason = extra?.disabledReason;
+    if (reason) {
+      document.getElementById('extra-pct').textContent = `Disabled · ${humanizeDisabledReason(reason)}`;
+    } else {
+      document.getElementById('extra-pct').textContent = balance ? '—' : 'no data';
+    }
     document.getElementById('extra-pct-used').textContent = '';
   }
 
