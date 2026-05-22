@@ -2,7 +2,8 @@
 
 **Created:** 2026-05-22 (BDT)
 **Source of inspiration:** [steipete/CodexBar](https://github.com/steipete/CodexBar) — free MIT Swift menu bar app, 13K stars, ~10 commits/day.
-**Branch homes:** Phase A → `main` · Phase B → `clauding-lab/iap-paywall` (when cut) · Phase C → `main` post-v0.10.0.
+**Release target:** All three phases ship bundled in **v0.9.1**. See "v0.9.1 release strategy" below.
+**Branch home:** All phases land on `main` for the v0.9.1 train. The v0.10.0 IAP work stays on its own branch and ships on top of v0.9.1's UI.
 **Cross-references:** project memory `project_codexbar_competitor.md` · `docs/superpowers/plans/2026-05-19-clauge-iap-paywall-plan.md` (vienna branch — v0.10.0 IAP work).
 
 ---
@@ -108,9 +109,9 @@ Add two new rules:
 
 ---
 
-## Phase B — Popover redesign + new field fetching (folded into v0.10.0)
+## Phase B — Popover redesign + new field fetching (v0.9.1)
 
-Ships on the `clauding-lab/iap-paywall` branch alongside the IAP implementation. Reviewed end-to-end with the paywall work. Starts after v0.9.0 is approved and the IAP branch is cut (Task A0 of the v0.10.0 plan).
+Ships on `main` as part of the v0.9.1 release train. Starts immediately after Phase A is merged. The redesigned popover renders in its "live" (non-paywalled) state for all users — the paywall-state variant (blurred lower section + Unlock CTA) is added on top in v0.10.0, not here.
 
 ### B1. New OAuth field fetching with multi-key fallback
 
@@ -207,43 +208,142 @@ Compare Tauri updater's user-facing flow (changelog screen, progress bar, restar
 
 ---
 
-## Phase C — Companion CLI (post-v0.10.0)
+## Phase C — Companion CLI (v0.9.1)
 
 ### C1. `clauge config` subcommand
 
-**Files:** `lib/cli-config.js` (new), `server.js` (CLI entry detection)
+**Files:**
+- `lib/cli/index.js` (new — dispatcher)
+- `lib/cli/config-get.js`, `config-enable.js`, `config-disable.js`, `config-providers.js`, `config-set-api-key.js`, `config-reset-trial.js` (one per subcommand)
+- `lib/config-paths.js` (new — single source of truth for state locations)
+- `server.js` (argv detection at entry)
+- `README.md` (new CLI section)
+- `test/cli/*.test.js` (new — one per subcommand)
+
 **Effort:** ~4-6h
-**Target version:** v0.10.1 or v0.11.0 (post-v0.10.0 ship).
+**Target:** v0.9.1.
 
-Add a CLI subcommand path: `clauge config <subcommand>`.
+#### Entrypoint detection
 
-Initial subcommands:
+In `server.js`, at the very top before any server setup:
 
-- `clauge config get` — print the current Clauge config (Keychain references, sidecar port, plan state).
-- `clauge config providers` — list connected providers (for parity with CodexBar's CLI).
-- `clauge config enable --provider <name>` / `disable --provider <name>` — toggle data sources (e.g., disable claude.ai cookie scraping).
-- `clauge config reset-trial` (dev-mode only — gated by a debug flag) — wipe Keychain trial counter for v0.10.0 sandbox testing.
-- `clauge config set-api-key --provider anthropic-admin --stdin` — store an Anthropic Admin API key (for the v0.10.0 / v0.11.0 spend-detail feature).
+```js
+import { runCli } from './lib/cli/index.js';
 
-**Acceptance:** Each subcommand works on a freshly installed Clauge with the SEA sidecar. Documented in README's "CLI" section. CLI mode is invoked when the binary is launched with `clauge config <args>` instead of `clauge` alone.
+const cliVerbs = new Set(['config', '--help', '-h', '--version', '-v']);
+if (cliVerbs.has(process.argv[2])) {
+  process.exit(await runCli(process.argv.slice(2)));
+}
+// otherwise fall through to existing Hono server startup
+```
+
+#### Subcommand inventory
+
+| Command | Purpose | Side effects |
+|---|---|---|
+| `clauge config get` | Print current Clauge config as pretty JSON | Read-only |
+| `clauge config providers` | List connected providers and connection status | Read-only |
+| `clauge config enable --provider <name>` | Toggle a provider ON | Writes `config.json` |
+| `clauge config disable --provider <name>` | Toggle a provider OFF | Writes `config.json` |
+| `clauge config set-api-key --provider <name> --stdin` | Store an API key from stdin (e.g., Anthropic Admin) | Writes Keychain |
+| `clauge config reset-trial` | Wipe Keychain trial counter (dev-mode only) | Destructive — confirmation prompt unless `--yes` |
+| `clauge --help` | Print usage | Read-only |
+| `clauge --version` | Print version | Read-only |
+
+#### State location single source of truth (`lib/config-paths.js`)
+
+```js
+import os from 'node:os';
+import path from 'node:path';
+
+const APP_NAME = 'Clauge';
+const BUNDLE_ID = 'com.clauding.clauge';
+
+export const configPaths = {
+  configFile: () => path.join(os.homedir(), 'Library', 'Application Support', APP_NAME, 'config.json'),
+  preferencesFile: () => path.join(os.homedir(), 'Library', 'Preferences', `${BUNDLE_ID}.plist`),
+  logsDir: () => path.join(os.homedir(), 'Library', 'Logs', APP_NAME),
+  cacheDir: () => path.join(os.homedir(), 'Library', 'Caches', APP_NAME),
+  portFile: () => path.join(configPaths.cacheDir(), 'active-port'),
+  keychainItems: {
+    anthropicOAuth: 'Claude Code-credentials',
+    claudeAiSession: 'com.clauding.clauge.claude-ai-session',
+    trialCounter: 'com.clauding.clauge.trial-counter',
+    anthropicAdmin: 'com.clauding.clauge.anthropic-admin-key',
+  },
+};
+```
+
+#### Communicating with a running Clauge instance
+
+For read subcommands that should reflect live in-memory state:
+
+1. Read the active port from `configPaths.portFile()`.
+2. If found, GET `http://127.0.0.1:<port>/api/config` for live state.
+3. If not found (Clauge not running), read `config.json` from disk directly.
+
+For destructive commands (`reset-trial`, key writes), always operate on persistent storage (config file + Keychain) directly. A running Clauge picks up changes on its next refresh tick.
+
+#### Dev-mode gate (`reset-trial`)
+
+`reset-trial` refuses unless ONE of:
+
+- `CLAUGE_DEV=1` env var is set, OR
+- `config.json` has `"dev_mode": true`.
+
+This prevents production users from accidentally wiping their trial via shell history replay.
+
+#### Tests
+
+- `test/cli/config-get.test.js` — output shape on clean install + populated config; with/without running Clauge.
+- `test/cli/config-providers.test.js` — provider listing with mixed connected/disconnected states.
+- `test/cli/config-enable-disable.test.js` — round-trips through the config file.
+- `test/cli/config-set-api-key.test.js` — Keychain write (mocked via env override); `--no-enable` flag.
+- `test/cli/config-reset-trial.test.js` — refusal without dev-mode; confirmation prompt; success with `--yes`.
+
+#### README update
+
+Add a new "Command-line interface" section with examples:
+
+```bash
+clauge config get
+clauge config providers
+echo "$ANTHROPIC_ADMIN_KEY" | clauge config set-api-key --provider anthropic-admin --stdin
+clauge config disable --provider claude-ai-session
+CLAUGE_DEV=1 clauge config reset-trial --yes
+```
+
+#### Acceptance
+
+- All listed subcommands work on a freshly installed Clauge with the SEA sidecar.
+- `clauge config get` succeeds whether Clauge is running or not.
+- `clauge config reset-trial` refuses without dev-mode; succeeds with `CLAUGE_DEV=1`.
+- README documents all subcommands with copy-pasteable examples.
+- Unit tests pass; `npm run check` green.
 
 ---
 
 ## Sequencing & dependencies
 
+All three phases land on `main` for the v0.9.1 release train. Order is loosely Phase A → Phase B → Phase C, but items within a phase are mostly independent.
+
 ```
 Phase A  ──┬── A1 (npm check)            ┐
-           ├── A2 (lint gate, needs A1)  │  Independent, this week.
-           ├── A3 (release env)          │  Each commits separately to main.
+           ├── A2 (lint gate, needs A1)  │  Independent. Each commits
+           ├── A3 (release env)          │  separately to main.
            ├── A4 (Homebrew tap)         │
            └── A5 (AGENTS.md rules)      ┘
 
 Phase B  ──┬── B1 (OAuth fields)         ┐
-           ├── B2 (server IPC, needs B1) │  Folded into v0.10.0 branch
-           ├── B3 (popover redesign)     │  (clauding-lab/iap-paywall),
-           └── B4 (Sparkle audit)        ┘  starts after v0.9.0 ships.
+           ├── B2 (server IPC, needs B1) │  Starts after Phase A merges.
+           ├── B3 (popover redesign)     │  B3 is the biggest item (~2 days).
+           └── B4 (Sparkle audit)        ┘
 
-Phase C  ──── C1 (companion CLI)              Post-v0.10.0.
+Phase C  ──── C1 (companion CLI)              Can run in parallel with B
+                                              if a separate session is
+                                              available.
+
+──────────  Tag v0.9.1, ship DMG flavor, submit MAS once v0.9.0 is approved.
 ```
 
 **Phase A items are independent and can be done in any order.** Recommended order by leverage:
@@ -368,6 +468,38 @@ This is the canonical reference. Phase B3 implements it.
 
 ---
 
+## v0.9.1 release strategy
+
+**Bundled release.** All Phase A + B + C work ships together as v0.9.1.
+
+### DMG flavor (free, direct download)
+
+Tag `v0.9.1` once all phases pass `npm run check` and the macOS + Windows smoke checklists in `docs/RELEASE_CHECKLIST.md`. The release pipeline (`.github/workflows/release.yml`) handles the rest — Universal DMG, signed updater payload, gh-pages mirror of `latest.json`.
+
+### MAS flavor (Mac App Store)
+
+Submitted to App Store Connect **after** v0.9.0 is approved by Apple and live on the Mac App Store. v0.9.0 is the MAS-launch foundation; v0.9.1 cannot be reviewed by Apple until v0.9.0 has cleared the queue. Realistic timing window: 2026-05-20 to 2026-05-26 (Apple's typical 1-7 day review).
+
+### What v0.9.1 is NOT
+
+v0.9.1 does **not** include the v0.10.0 IAP paywall. The new popover renders in its "live" (non-paywalled) state for all users. The paywall-blurred-state variant of the popover (blurred lower section + "Unlock Clauge" CTA) is added on top in v0.10.0 — not here. This keeps v0.9.1 a pure UX + infrastructure release with zero commercial change.
+
+### Risk: v0.9.0 rejection
+
+If Apple rejects v0.9.0, the v0.9.1 MAS submission is delayed until v0.9.0 is fixed and re-approved. The DMG flavor of v0.9.1 ships regardless. Worst case: DMG users get v0.9.1 a few days before MAS users.
+
+### Release notes outline (draft)
+
+> v0.9.1 — Redesigned popover + Anthropic's new usage windows + companion CLI
+>
+> - Redesigned the popover with macOS vibrancy, a circle Session gauge with a time-elapsed needle indicator, and a spacious vertical layout.
+> - Surfaces Claude Design and Daily Routines weekly usage from Anthropic's `/api/oauth/usage` endpoint (the two newest fields claude.ai shows in Settings → Usage).
+> - Extra usage now shows current credit balance, auto-reload status, and renders over-cap spend in red.
+> - New `clauge config` CLI for headless config + scripted setups.
+> - Project hygiene: `npm run check` quality gate, strict-mode lint commit gate, Homebrew tap (`brew install --cask clauding-lab/tap/clauge`), `.mac-release.env` consolidation.
+
+---
+
 ## Out-of-scope reminder
 
-This plan does **not** include the v0.10.0 IAP paywall implementation. That work is in `docs/superpowers/plans/2026-05-19-clauge-iap-paywall-plan.md` (vienna branch, will be cherry-picked to `clauding-lab/iap-paywall` per Task A0 of that plan when v0.9.0 ships). Phase B of this plan rides on the same branch but is logically separate.
+This plan does **not** include the v0.10.0 IAP paywall implementation. That work is in `docs/superpowers/plans/2026-05-19-clauge-iap-paywall-plan.md` (vienna branch — will be cherry-picked to `clauding-lab/iap-paywall` per Task A0 of that plan). v0.10.0 ships **after** v0.9.1 and builds on the popover redesign from Phase B3.
