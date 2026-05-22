@@ -106,6 +106,7 @@ pub enum KeychainError {
 /// - errSecItemNotFound (-25300) → NotFound
 /// - errSecUserCanceled (-128)   → AccessDenied
 /// - errSecAuthFailed (-25293)   → AccessDenied (user denied or auth flow failed)
+///
 /// Anything else falls through to Framework { code, message }.
 #[cfg(target_os = "macos")]
 fn map_osstatus_to_error(code: i32, msg: &str) -> KeychainError {

@@ -112,7 +112,12 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
                 return tauri::webview::NewWindowResponse::Deny;
             }
             let url_str = url.to_string();
-            if let Err(e) = app_for_open.shell().open(url_str.clone(), None) {
+            // TODO(deprecation): migrate to tauri-plugin-opener when bumping Tauri.
+            // shell.open is #[deprecated(since = "2.1.0")]. Adding the dependency
+            // requires VISION.md sign-off.
+            #[allow(deprecated)]
+            let open_result = app_for_open.shell().open(url_str.clone(), None);
+            if let Err(e) = open_result {
                 log::warn!("Failed to open external link {}: {}", url_str, e);
             }
             tauri::webview::NewWindowResponse::Deny

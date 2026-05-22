@@ -26,6 +26,9 @@ impl CrashBreaker {
 
     /// Returns true if a notification has been emitted in the current window.
     /// Resets to false when the 60s window empties.
+    ///
+    /// Kept for future telemetry/dashboard surfaces; not currently invoked.
+    #[allow(dead_code)]
     pub fn was_notified(&self) -> bool {
         self.notification_sent
     }
@@ -50,13 +53,12 @@ impl CrashBreaker {
         match self.crashes.len() {
             1 | 2 => CrashAction::SilentRespawn,
             3 => {
-                let action = if self.notification_sent {
+                if self.notification_sent {
                     CrashAction::SilentRespawn
                 } else {
                     self.notification_sent = true;
                     CrashAction::NotifyAndRespawn
-                };
-                action
+                }
             }
             n => {
                 // Exponential backoff after #4: 2s, 4s, 8s (capped)
@@ -69,6 +71,11 @@ impl CrashBreaker {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+// Postfix "Respawn" is intentional: every variant describes WHAT KIND of
+// respawn occurs. Removing it would make match arms read worse, not better
+// (`CrashAction::Silent` vs `CrashAction::SilentRespawn` — the latter is clearer
+// because the enum's whole purpose is choosing a respawn flavor).
+#[allow(clippy::enum_variant_names)]
 pub enum CrashAction {
     SilentRespawn,
     NotifyAndRespawn,

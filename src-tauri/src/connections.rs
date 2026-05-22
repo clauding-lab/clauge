@@ -51,8 +51,7 @@ impl ConnectionStatus {
 /// `claude_code_version` sentinels:
 /// - `Some("authenticated")` → ConnectionState::Authenticated (token valid)
 /// - `Some("expired")`       → ConnectionState::Expired (token past expires_at)
-/// - `Some(other)`           → ConnectionState::Authenticated (forward-compat
-///                              for future version-aware UI)
+/// - `Some(other)`           → ConnectionState::Authenticated (forward-compat for future version-aware UI)
 /// - `None`                  → ConnectionState::NotInstalled
 pub fn compose_status(
     claude_code_version: Option<&str>,

@@ -23,7 +23,7 @@
     "tauri:dev": "cd src-tauri && cargo tauri dev",
     "tauri:build": "cd src-tauri && cargo tauri build",
     "check:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
-    "check:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets",
+    "check:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "check:rust-test": "cargo test --manifest-path src-tauri/Cargo.toml --quiet",
     "check": "npm run check:fmt && npm run check:lint && npm run check:rust-test && npm test"
   },

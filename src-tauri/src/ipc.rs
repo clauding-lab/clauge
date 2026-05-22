@@ -117,6 +117,7 @@ impl AppState {
     /// supervisor wakes immediately. Two-phase because:
     ///  - Setting the flag alone won't unblock a `notified()` await
     ///  - `notify_waiters()` alone is lost if no task is awaiting
+    ///
     /// Together they cover both edge-triggered and level-triggered observers.
     pub fn signal_shutdown(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
@@ -318,6 +319,20 @@ pub fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Local /api/health probe timeout. The dashboard polls get_connection_status
+/// every 30s, so a hung Hono response must not block the refresh.
+const LOCAL_HEALTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Maximum response body that `proxy_fetch` will buffer into memory.
+///
+/// 10 MiB ceiling = defense in depth. The sidecar is local and trusted,
+/// but a runaway endpoint (or a future bug that streams an unbounded
+/// log payload) shouldn't be able to OOM the Tauri host process by
+/// returning a JSON document larger than the popover could ever render.
+/// Largest legitimate response observed in v0.3.x is ~600KB (full
+/// sessions list with 488 sessions); 10 MiB leaves ~16× headroom.
+const PROXY_FETCH_MAX_BYTES: usize = 10 * 1024 * 1024;
+
 /// Proxy a GET request to the local SEA sidecar via Rust's reqwest, bypassing
 /// the WKWebView fetch layer entirely.
 ///
@@ -346,21 +361,6 @@ pub fn quit_app(app: tauri::AppHandle) {
 /// frontend from being tricked into fetching arbitrary URLs. The sidecar's
 /// SSRF surface is already minimal (it only reads local files), but defense
 /// in depth is cheap here.
-
-/// Local /api/health probe timeout. The dashboard polls get_connection_status
-/// every 30s, so a hung Hono response must not block the refresh.
-const LOCAL_HEALTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
-
-/// Maximum response body that `proxy_fetch` will buffer into memory.
-///
-/// 10 MiB ceiling = defense in depth. The sidecar is local and trusted,
-/// but a runaway endpoint (or a future bug that streams an unbounded
-/// log payload) shouldn't be able to OOM the Tauri host process by
-/// returning a JSON document larger than the popover could ever render.
-/// Largest legitimate response observed in v0.3.x is ~600KB (full
-/// sessions list with 488 sessions); 10 MiB leaves ~16× headroom.
-const PROXY_FETCH_MAX_BYTES: usize = 10 * 1024 * 1024;
-
 #[tauri::command]
 pub async fn proxy_fetch(
     state: State<'_, AppState>,

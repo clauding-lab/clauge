@@ -156,7 +156,7 @@ pub fn read_stored_cookie() -> Result<String, ClaudeAiError> {
         use security_framework::passwords::get_generic_password;
         let blob = get_generic_password(SESSION_KEYCHAIN_SERVICE, "default")
             .map_err(|_| ClaudeAiError::NotAuthenticated)?;
-        return String::from_utf8(blob).map_err(|_| ClaudeAiError::NotAuthenticated);
+        String::from_utf8(blob).map_err(|_| ClaudeAiError::NotAuthenticated)
     }
     #[cfg(not(target_os = "macos"))]
     Err(ClaudeAiError::NotAuthenticated)
@@ -173,6 +173,11 @@ pub fn clear_stored_cookie() -> Result<(), ClaudeAiError> {
 }
 
 /// Fetch claude.ai usage using the stored session cookie.
+///
+/// Currently unused — kept for the upcoming claude.ai web-cookie data path
+/// (Clauge Sync extension already fetches the same shape via the local server,
+/// this is the Rust-native fallback when extension is not installed).
+#[allow(dead_code)]
 pub async fn fetch_claude_ai_usage(org_uuid: &str) -> Result<serde_json::Value, ClaudeAiError> {
     let cookie = read_stored_cookie()?;
     let url = format!("https://claude.ai/api/organizations/{}/usage", org_uuid);

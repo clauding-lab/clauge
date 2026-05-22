@@ -176,10 +176,12 @@ pub fn run() {
                     // `shell:allow-open` capability is required for this call.
                     // TODO(deprecation): migrate to tauri-plugin-opener when
                     // bumping Tauri. shell.open is #[deprecated(since = "2.1.0")].
-                    if let Err(e) = app
+                    // Adding the dependency requires VISION.md sign-off.
+                    #[allow(deprecated)]
+                    let open_result = app
                         .shell()
-                        .open("https://github.com/clauding-lab/clauge", None)
-                    {
+                        .open("https://github.com/clauding-lab/clauge", None);
+                    if let Err(e) = open_result {
                         log::warn!("Failed to open GitHub repository: {}", e);
                     }
                 }
