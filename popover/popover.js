@@ -373,16 +373,20 @@ function renderRoutines(plan, nowMs) {
 function renderExtra(plan, nowMs) {
   const extra = plan?.extraUsage;
   const balance = plan?.claudeBalance;
+  const consumerOverage = plan?.consumerOverage;
 
-  // Render the bar whenever ANY spend/limit data is present — don't gate on
-  // extra.enabled. The OAuth `is_enabled` flag can be false even when the
-  // user has claude.ai consumer credits configured (different settings).
-  const used = Number.isFinite(extra?.usedDollars) ? extra.usedDollars : null;
-  const limit = Number.isFinite(extra?.limitDollars) ? extra.limitDollars : null;
+  // Preference order:
+  //   1. consumerOverage (claude.ai /overage_spend_limit — actual usage credits)
+  //   2. plan.extraUsage (OAuth-API extra_usage — per-org API spend)
+  // The two report different things; consumerOverage is what the user sees
+  // at claude.ai/settings/usage and what they actually want to track.
+  const primary = consumerOverage ?? extra;
+  const used = Number.isFinite(primary?.usedDollars) ? primary.usedDollars : null;
+  const limit = Number.isFinite(primary?.limitDollars) ? primary.limitDollars : null;
   const hasSpendData = used != null || (limit != null && limit > 0);
 
   if (hasSpendData) {
-    let pctNum = extra?.pct;
+    let pctNum = primary?.pct;
     if ((pctNum == null || !Number.isFinite(pctNum)) && limit && limit > 0 && used != null) {
       pctNum = (used / limit) * 100;
     }

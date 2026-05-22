@@ -17,7 +17,12 @@ import 'dotenv/config';
 import open from 'open';
 
 import { SessionStore } from './lib/session-store.js';
-import { UsageStore, normalizeUsage as normalizePlanUsage, normalizeBalance } from './lib/usage-store.js';
+import {
+  UsageStore,
+  normalizeUsage as normalizePlanUsage,
+  normalizeBalance,
+  normalizeOverageSpendLimit,
+} from './lib/usage-store.js';
 import { bookmarkletHref, bookmarkletSource } from './lib/bookmarklet.js';
 import { loadPriceTable, envFallbackRates } from './lib/cost-calculator.js';
 import { filterSessions, isValidPeriod } from './lib/period.js';
@@ -485,6 +490,7 @@ app.post('/api/usage/ingest', async (c) => {
     raw: body.usage,
     rawClaudeBalance: body.claudeBalance ?? null,
     rawBalance: body.balance ?? null,
+    rawOverageSpendLimit: body.overageSpendLimit ?? null,
     normalized,
   });
   return c.json({
@@ -492,6 +498,7 @@ app.post('/api/usage/ingest', async (c) => {
     ingestedAt: record.ingestedAt,
     claudeBalanceFound: !!claudeBalance,
     apiBalanceFound: !!apiBalance,
+    consumerOverageFound: !!consumerOverage,
   });
 });
 

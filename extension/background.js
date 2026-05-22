@@ -180,6 +180,33 @@ async function syncOnce() {
       }
     }
 
+    // Consumer overage spend limit — confirmed endpoint (discovered via
+    // CodexBar's source): GET /api/organizations/{uuid}/overage_spend_limit
+    //   { monthly_credit_limit, currency, used_credits, is_enabled }
+    // This is the data shown at claude.ai/settings/usage under "Usage
+    // credits" — separate from OAuth-API extra_usage (which is per-org
+    // API spend, not consumer chat spend).
+    let overageSpendLimit = null;
+    const overageProbeLog = [];
+    const overageUrl = `https://claude.ai/api/organizations/${ouuid}/overage_spend_limit`;
+    overageProbeLog.push(`overage GET ${overageUrl}`);
+    const overageResult = await fetchWithRetry(
+      overageUrl,
+      { credentials: 'include', cache: 'no-store' },
+      overageProbeLog,
+      'overage'
+    );
+    if (overageResult.ok) {
+      try {
+        overageSpendLimit = await overageResult.response.json();
+        overageProbeLog.push(
+          `overage: limit=$${overageSpendLimit?.monthly_credit_limit ?? '?'} used=$${overageSpendLimit?.used_credits ?? '?'} enabled=${overageSpendLimit?.is_enabled ?? '?'}`
+        );
+      } catch (parseErr) {
+        overageProbeLog.push(`overage JSON parse error: ${String(parseErr?.message ?? parseErr)}`);
+      }
+    }
+
     // API console balance — confirmed endpoint shape:
     //   GET https://platform.claude.com/api/console/organizations/{platform-uuid}/credits
     //   { amount, currency, auto_reload_settings, ... }
@@ -253,6 +280,8 @@ async function syncOnce() {
     // claude.ai prepaid fetch and the platform.claude.com balance fetch.
     const combinedProbeLog = [
       ...prepaidProbeLog,
+      '--- overage_spend_limit ---',
+      ...overageProbeLog,
       '--- platform.claude.com ---',
       ...balanceProbeLog,
     ];
@@ -262,7 +291,7 @@ async function syncOnce() {
     const post = await fetch(ingestUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ org, usage, claudeBalance, balance }),
+      body: JSON.stringify({ org, usage, claudeBalance, balance, overageSpendLimit }),
     });
     if (!post.ok) throw new Error(`ingest ${post.status}`);
 
