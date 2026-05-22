@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-22 (BDT)
 **Source of inspiration:** [steipete/CodexBar](https://github.com/steipete/CodexBar) — free MIT Swift menu bar app, 13K stars, ~10 commits/day.
-**Release target:** All three phases ship bundled in **v0.9.1**. See "v0.9.1 release strategy" below.
+**Release target:** Phase A + Phase B ship in **v0.9.1**. Phase C (companion CLI) deferred to **v0.9.2**. See "v0.9.1 release strategy" below.
 **Branch home:** All phases land on `main` for the v0.9.1 train. The v0.10.0 IAP work stays on its own branch and ships on top of v0.9.1's UI.
 **Cross-references:** project memory `project_codexbar_competitor.md` · `docs/superpowers/plans/2026-05-19-clauge-iap-paywall-plan.md` (vienna branch — v0.10.0 IAP work).
 
@@ -208,7 +208,7 @@ Compare Tauri updater's user-facing flow (changelog screen, progress bar, restar
 
 ---
 
-## Phase C — Companion CLI (v0.9.1)
+## Phase C — Companion CLI (v0.9.2, deferred from v0.9.1)
 
 ### C1. `clauge config` subcommand
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.9.1] — 2026-05-22
+
+### Added
+
+- **Redesigned popover** — CodexBar-inspired vertical layout with paired circle gauges for Session + Weekly at the top, side-by-side. Each circle has a dual indicator: orange fill = resource used, plus an external white triangle marker on the rim = time elapsed in the window. When usage outpaces time by >10pp, the over-burn arc tints muted red. Vibrancy material lets the wallpaper bleed through.
+- **New weekly windows from Anthropic's OAuth `/api/oauth/usage` endpoint** — Sonnet only, Claude Design (Anthropic codename "omelette"), and Daily Routines (codename "cowork"). Each parsed via a multi-key fallback in `src-tauri/src/anthropic_oauth.rs` so renames between codename and public name don't break the popover. Daily Routines renders as "N of 15 runs today" (count, not %).
+- **Extra usage (MTD) shows real claude.ai consumer credits** — the `$X spent / $Y monthly limit · N% used` numbers visible at claude.ai/settings/usage. Fetched by Clauge Sync v0.2.0 from `https://claude.ai/api/organizations/{uuid}/overage_spend_limit` (endpoint discovered via CodexBar). Past 100%, the bar reproportions to show a red overage segment. Balance + Auto-reload sub-line carries claude.ai's prepaid balance + setting.
+- **Daily spend mini-chart in the popover** — 30 vertical bars showing per-day spend over the last month, today highlighted. Pulls from `/api/daily?period=30d`.
+- **2-column stats grid** — today vs. last 30 days, each with cost (big) + tokens (smaller).
+- **Status: All systems normal action item** + Homebrew install option: `brew install --cask clauding-lab/tap/clauge`.
+- **AGENTS.md + VISION.md** at the repo root — governance docs for AI coding agents (Claude Code, Cursor, Codex CLI). AGENTS.md codifies build/test/release commands, repo structure, and 10 landmines (Tauri IPC triple-registration, SEA manifest mirror, platform-specific webview URLs, etc.) that were previously trapped in Claude's auto-memory only. VISION.md scopes what auto-merges vs. needs sign-off.
+
+### Changed
+
+- **Popover background** is now translucent cool-slate (`rgba(26,24,32,0.22)` over WKWebView `setUnderPageBackgroundColor: clear`), matching CodexBar's see-through vibrancy feel.
+- **Popover width** 360px → 340px to match the spacious vertical rhythm.
+- **All times displayed in human-relative form** (e.g., "1h 24m of 5h", "Day 5 of 7", "resets in 4h 9m") with compact two-line meta under each hero gauge.
+
+### Internal
+
+- **`npm run check` quality gate** — single command runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and `npm test`. Wired into `.github/workflows/check.yml` (push to main + every PR).
+- **11 pre-existing clippy warnings fixed** as a precursor to enabling strict-mode lint. Two trivial auto-fixes (let_and_return, unneeded return), 4 doc-list formatting tweaks, 3 `#[allow(deprecated)]` annotations with TODOs for the pending `tauri-plugin-opener` migration, 2 `#[allow(dead_code)]` annotations on future-use functions, 1 `#[allow(clippy::enum_variant_names)]` on `CrashAction` (the `Respawn` suffix is intentional).
+- **OAuth schema-drift detection** — `PlanUsage::unknown_seven_day_keys()` and `normalizeUsage`'s `unknownSevenDayKeys` field surface any `seven_day_*` keys returned by Anthropic that Clauge doesn't recognize. Logged so future Anthropic renames are visible before users notice silent breakage.
+- **`docs/superpowers/plans/2026-05-22-codexbar-adoption-plan.md`** — 3-phase plan for selectively adopting CodexBar patterns. Phase A (governance + quality gate + Homebrew tap + release-env docs) and Phase B (popover redesign + new fields + Sparkle audit) ship in v0.9.1. Phase C (companion CLI) deferred to v0.9.2.
+- **`docs/updater-ux-audit.md`** — paper audit comparing Clauge's `tauri-plugin-updater` UX to CodexBar's Sparkle. Documents 4 follow-up items (release-notes screen, update-on-consent flow, failure modal, skip-this-version) deferred from v0.9.1.
+- **`.mac-release.env.example`** + RELEASE_CHECKLIST.md "Release identifier locations" section — single source of truth for release-time secrets and IDs.
+- **Companion repo** `clauding-lab/homebrew-tap` created with `Casks/clauge.rb` + an auto-update workflow that bumps the cask on every `v*` tag release.
+
+### Requires
+
+- **Clauge Sync browser extension v0.2.0+** to surface claude.ai consumer overage data (the `$X / $Y monthly limit · N% used` row). Older Sync versions still work — Clauge gracefully falls back to OAuth-API `extraUsage` when the new field is absent. CWS submission is a separate workflow; see `docs/CWS_LISTING.md`.
+
 ## [0.8.2] — 2026-05-16
 
 ### Changed
