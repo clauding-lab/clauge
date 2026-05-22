@@ -405,19 +405,38 @@ function renderStats({ summary, cache, period30d }) {
     tokToday != null ? fmtCompact(tokToday) : '—';
 }
 
-function renderSpendChart(period30d) {
+/**
+ * Convert /api/daily's `days: [{ date, totalCost, ... }]` (sparse — missing
+ * zero-usage days) into a contiguous 30-day spend array ending today.
+ */
+function buildDailySpendBuckets(daily30d, nowMs = Date.now()) {
+  const byDate = new Map();
+  for (const d of daily30d?.days ?? []) {
+    if (d?.date) byDate.set(d.date, d.totalCost ?? 0);
+  }
+  const buckets = [];
+  const today = new Date(nowMs);
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    buckets.push(byDate.get(key) ?? 0);
+  }
+  return buckets;
+}
+
+function renderSpendChart(daily30d) {
   const el = document.getElementById('spend-chart');
   if (!el) return;
-  // Without a real daily-buckets API, render a placeholder mini-chart with
-  // 30 cells representing relative spend if we have it, otherwise hide.
-  const buckets = period30d?.dailySpend;
-  if (!Array.isArray(buckets) || buckets.length === 0) {
+  const buckets = buildDailySpendBuckets(daily30d);
+  const max = Math.max(...buckets, 0.01);
+  // If literally no spend at all, hide rather than render a wall of 2px stubs.
+  if (max <= 0.01) {
     el.innerHTML = '';
     el.style.display = 'none';
     return;
   }
   el.style.display = '';
-  const max = Math.max(...buckets, 0.01);
   const todayIdx = buckets.length - 1;
   el.innerHTML = buckets
     .map((v, i) => {
@@ -486,12 +505,13 @@ async function refresh() {
     setTimeout(() => el.setAttribute('hidden', ''), 220);
   };
   try {
-    const [health, summary, cache, usage, period30d] = await Promise.all([
+    const [health, summary, cache, usage, period30d, daily30d] = await Promise.all([
       fetchJson('/api/health').catch(() => null),
       fetchJson('/api/summary?period=today').catch(() => null),
       fetchJson('/api/cache?period=today').catch(() => null),
       fetchJson('/api/usage').catch(() => null),
       fetchJson('/api/summary?period=30d').catch(() => null),
+      fetchJson('/api/daily?period=30d').catch(() => null),
     ]);
     if (health?.version) serverVersion = health.version;
     healthOk = !!health;
@@ -508,7 +528,7 @@ async function refresh() {
     renderRoutines(plan, nowMs);
     renderExtra(plan, nowMs);
     renderStats({ summary, cache, period30d });
-    renderSpendChart(period30d);
+    renderSpendChart(daily30d);
     renderDisclaimer({ topModel: summary?.topModel });
     renderStatusAction(healthOk);
 
