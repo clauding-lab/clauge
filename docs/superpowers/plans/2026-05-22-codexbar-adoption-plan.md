@@ -178,6 +178,7 @@ Implementation specs:
 - **Simple bars** (Sonnet only / Claude Design / Daily Routines): 6px horizontal, no needle. Fill in `#d97757`.
 - **Daily Routines special handling:** label is `N of 15 runs today` (count, not percent). Fill = `N / 15`.
 - **Extra usage (MTD) overflow rendering:** the fill renders normally up to 100% in orange. Past 100%, the bar extends into red `#c97a7a` for the overage. Absolute percentage shown in the right-aligned label.
+- **Balance + auto-reload status:** sub-line under Extra usage. Format: `Balance: $X.XX · Auto-reload {on|off}`. Source: `extra_usage` OAuth field (sub-keys to confirm during B1 — likely `balance` and `auto_reload`). When balance < $5 with auto-reload off, render the balance in red as a soft warning.
 - **Stats grid:** 2x2 layout for Today $ / 30d cost / 30d tokens / Latest tokens.
 - **Daily spend chart:** vertical bar chart, today highlighted in `#d97757`, history in `#d97757` at ~50% opacity.
 - **Top model + disclaimer:** two lines at smaller text, ~80% opacity.
@@ -323,6 +324,7 @@ This is the canonical reference. Phase B3 implements it.
 │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │
 │  █████████████████████████████████████▓▓▓▓   │
 │  $19.60 spent / $10 limit          196% used │
+│  Balance: $78.63 · Auto-reload off           │
 │                                  Resets Jun 1│
 │                                              │
 │                                              │
@@ -360,8 +362,9 @@ This is the canonical reference. Phase B3 implements it.
 3. **Sonnet only / Claude Design / Daily Routines are simple bars.** No needles. Match CodexBar's lower-section rhythm.
 4. **Daily Routines uses count, not percent.** Anthropic exposes 15/day cap.
 5. **Extra usage can overflow into red.** Matches claude.ai's own visualization for over-cap spend.
-6. **No in-popover Cost or Subscription Utilization sections.** Deep ROI analysis lives in the dashboard. Popover is glanceable only.
-7. **Vibrancy is required.** Match CodexBar's translucent feel; rejects the current dark solid-background look.
+6. **Balance + auto-reload status surfaced inline.** Critical context that softens an alarming "196% used" — user instantly sees runway and whether auto-reload protects continuity. Red soft-warning when balance is low and auto-reload is off.
+7. **No in-popover Cost or Subscription Utilization sections.** Deep ROI analysis lives in the dashboard. Popover is glanceable only.
+8. **Vibrancy is required.** Match CodexBar's translucent feel; rejects the current dark solid-background look.
 
 ---
 
