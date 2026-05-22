@@ -60,9 +60,14 @@ impl<T: objc2::Message> MainThreadCell<T> {
 #[cfg(target_os = "macos")]
 const MIN_POPOVER_HEIGHT: f64 = 200.0;
 #[cfg(target_os = "macos")]
-const MAX_POPOVER_HEIGHT: f64 = 800.0;
+// Bumped from 800 → 1200 in v0.9.1 — the redesigned popover renders Session
+// hero gauge + Weekly + Sonnet + Design + Routines + Extra + stats grid +
+// spend chart + 3 action items + 4 footer rows. Mirrored in popover.js
+// resizeToContent's height clamp.
+const MAX_POPOVER_HEIGHT: f64 = 1200.0;
 #[cfg(target_os = "macos")]
-const POPOVER_WIDTH: f64 = 360.0;
+// v0.9.1 redesign: down from 360 to match CodexBar's spacious 340px popover.
+const POPOVER_WIDTH: f64 = 340.0;
 
 #[cfg(target_os = "macos")]
 static STATUS_ITEM_REF: OnceLock<Mutex<Option<MainThreadCell<NSStatusItem>>>> = OnceLock::new();

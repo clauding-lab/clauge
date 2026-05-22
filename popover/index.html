@@ -3,141 +3,188 @@
 <head>
   <meta charset="UTF-8">
   <title>Clauge</title>
-  <!-- v0.4.0 fixup (T39): self-hosted Inter + JetBrains Mono variable woff2
-       (latin subset only — covers the popover's UI strings + numerics).
-       Replaces fonts.googleapis.com / fonts.gstatic.com calls so the
-       popover renders without a CDN beacon, works fully offline, and
-       skips the cold-start render block. -->
   <link rel="preload" as="font" type="font/woff2" href="fonts/inter-latin-variable.woff2" crossorigin>
   <link rel="preload" as="font" type="font/woff2" href="fonts/jetbrains-mono-latin-variable.woff2" crossorigin>
   <link rel="stylesheet" href="popover.css">
 </head>
 <body>
-  <!-- Default popover state. Switches to the warning variant by toggling
-       data-state="warn" on #root. Both states share the same DOM tree;
-       the CSS hides the irrelevant sections. -->
   <div id="root" data-state="default">
 
-    <!-- Loading overlay shown until popover.js's refresh() completes. The
-         JS toggles `hidden` via showLoading() / hideLoading(); the overlay
-         is visible at first paint so the user never sees the static dash
-         placeholders below it. -->
+    <!-- Loading overlay (preserved from v0.8 — fades out once refresh() completes). -->
     <div id="po-loading" class="po-loading-overlay">
       <div class="po-loading-spinner" aria-hidden="true"></div>
       <div class="po-loading-text mono">Loading…</div>
     </div>
 
-    <!-- ── Header ────────────────────────────────────────────── -->
+    <!-- ── Header ─────────────────────────────────────────────── -->
     <header class="po-head">
       <div class="po-head-left">
         <div class="po-chiclet">
-          <!-- inline brand mark — gauge with brand orange arc + steel-blue inner ring + needle -->
           <svg class="po-chiclet-svg" viewBox="0 0 18 18" aria-hidden="true">
             <circle cx="9" cy="9" r="7" fill="none" stroke="#faf9f5" stroke-opacity="0.06" stroke-width="2"/>
             <circle cx="9" cy="9" r="7" fill="none" stroke="#d97757" stroke-width="2" stroke-linecap="round" stroke-dasharray="33" stroke-dashoffset="9" transform="rotate(135 9 9)"/>
             <circle cx="9" cy="9" r="4.5" fill="none" stroke="#faf9f5" stroke-opacity="0.06" stroke-width="0.5"/>
-            <circle cx="9" cy="9" r="4.5" fill="none" stroke="#6a9bcc" stroke-opacity="0.45" stroke-width="0.5" stroke-linecap="round" stroke-dasharray="21.2" stroke-dashoffset="15.3" transform="rotate(135 9 9)"/>
             <line x1="9" y1="9" x2="13.5" y2="3.5" stroke="#faf9f5" stroke-width="0.75" stroke-linecap="round" opacity="0.88"/>
             <circle cx="9" cy="9" r="1" fill="#faf9f5" opacity="0.85"/>
           </svg>
         </div>
         <div class="po-head-text">
-          <div class="po-name" id="po-name">Clauge</div>
-          <div class="po-meta mono" id="po-meta">v0.8.2 · :3456</div>
+          <div class="po-name">Clauge</div>
+          <div class="po-subhead mono" id="po-subhead">Updated just now</div>
         </div>
       </div>
-      <span class="po-status" id="po-status" role="status" aria-live="polite">
-        <span class="live"></span>
-        <span id="po-status-text">live</span>
-      </span>
+      <span class="po-plan-badge mono" id="po-plan-badge">—</span>
     </header>
 
-    <!-- ── Warning state body (single big ring + suggestion) ─── -->
-    <section class="sect warn-only" id="warn-body">
-      <div class="warn-ring-wrap">
-        <div class="big-warn-ring" id="warn-ring">
-          <!-- filled in by popover.js -->
-        </div>
-        <div class="po-ring-label">Session</div>
-        <div class="po-ring-reset mono" id="warn-reset">resets in —</div>
+    <!-- ── SESSION (hero circle gauge) ────────────────────────── -->
+    <section class="sect sect-hero">
+      <h2 class="sect-label">Session</h2>
+      <div class="gauge-circle-wrap">
+        <div id="session-gauge" class="gauge-circle"><!-- SVG injected --></div>
       </div>
-      <p class="warn-suggest">
-        Consider wrapping up or switching to <span class="mono haiku">haiku</span> for the next task.
-      </p>
-    </section>
-
-    <!-- ── Plan capacity (default state) ─────────────────────── -->
-    <section class="sect default-only">
-      <div class="sect-head">
-        <span class="sect-title">Plan capacity</span>
-        <span class="sect-aux mono" id="plan-status">healthy</span>
-      </div>
-      <div class="po-rings" id="po-rings">
-        <!-- five mini rings injected by popover.js (Session/Weekly/Sonnet/Opus/Design) -->
+      <div class="gauge-meta">
+        <span class="gauge-meta-left mono" id="session-elapsed">— of 5h elapsed</span>
+        <span class="gauge-meta-right mono" id="session-reset">resets in —</span>
       </div>
     </section>
 
-    <!-- ── Finance ───────────────────────────────────────────── -->
-    <section class="sect default-only">
-      <div class="sect-head">
-        <span class="sect-title">Finance</span>
-        <span class="sect-aux mono">USD</span>
+    <!-- ── All models (weekly) — dual-indicator bar ───────────── -->
+    <section class="sect">
+      <h2 class="sect-label">All models (weekly)</h2>
+      <div class="needle-bar" id="weekly-bar" data-needle="0" data-fill="0">
+        <div class="needle-bar-needle" id="weekly-needle"></div>
+        <div class="needle-bar-track">
+          <div class="needle-bar-fill" id="weekly-fill"></div>
+          <div class="needle-bar-overflow" id="weekly-overflow"></div>
+        </div>
       </div>
-      <div class="po-finance">
-        <div class="po-card" id="po-card-extra">
-          <div class="po-card-lbl">Extra usage</div>
-          <div class="po-card-val mono">
-            <span class="currency">$</span><span id="extra-used">—</span><span class="of" id="extra-of"></span>
-          </div>
-          <div class="bar-track"><div class="bar-fill" id="extra-bar" style="width:0%"></div></div>
-          <div class="po-card-foot mono" id="extra-foot">—</div>
-        </div>
-        <div class="po-card" id="po-card-balance">
-          <div class="po-card-lbl">Balance</div>
-          <div class="po-card-val mono">
-            <span class="currency" id="bal-currency">$</span><span id="bal-val">—</span>
-          </div>
-          <div class="bar-track"><div class="bar-fill ok" id="bal-bar" style="width:0%"></div></div>
-          <div class="po-card-foot mono" id="bal-foot">—</div>
-        </div>
+      <div class="bar-meta">
+        <span class="bar-meta-pct mono" id="weekly-pct">— used</span>
+      </div>
+      <div class="bar-meta bar-meta-sub">
+        <span class="mono" id="weekly-elapsed">Day — of 7 elapsed</span>
+        <span class="mono" id="weekly-reset">resets in —</span>
       </div>
     </section>
 
-    <!-- ── Today ─────────────────────────────────────────────── -->
-    <section class="sect default-only">
-      <div class="sect-head">
-        <span class="sect-title">Today</span>
-        <span class="sect-aux mono" id="today-aux">—</span>
+    <!-- ── Sonnet only ────────────────────────────────────────── -->
+    <section class="sect">
+      <h2 class="sect-label">Sonnet only</h2>
+      <div class="simple-bar">
+        <div class="simple-bar-fill" id="sonnet-fill"></div>
       </div>
-      <div class="po-today">
-        <div class="po-stat">
-          <div class="lbl">Cost eq</div>
-          <div class="val mono" id="today-cost">—</div>
-          <div class="sub mono" id="today-cost-sub">—</div>
-        </div>
-        <div class="po-stat">
-          <div class="lbl">Messages</div>
-          <div class="val mono" id="today-msgs">—</div>
-          <div class="sub mono" id="today-msgs-sub">—</div>
-        </div>
-        <div class="po-stat">
-          <div class="lbl">Cache hit</div>
-          <div class="val mono ok" id="today-cache">—</div>
-          <div class="sub mono" id="today-cache-sub">—</div>
-        </div>
+      <div class="bar-meta">
+        <span class="bar-meta-pct mono" id="sonnet-pct">— used</span>
+        <span class="mono" id="sonnet-reset">resets —</span>
       </div>
     </section>
 
-    <!-- ── Footer ────────────────────────────────────────────── -->
-    <footer class="po-foot">
-      <span class="kbds mono">
-        <kbd>⌘D</kbd> dashboard <kbd>⌘R</kbd> refresh
-      </span>
-      <a href="#" class="open-link" id="footer-dashboard">Open →</a>
-    </footer>
+    <!-- ── Claude Design ──────────────────────────────────────── -->
+    <section class="sect">
+      <h2 class="sect-label">Claude Design</h2>
+      <div class="simple-bar">
+        <div class="simple-bar-fill" id="design-fill"></div>
+      </div>
+      <div class="bar-meta">
+        <span class="bar-meta-pct mono" id="design-pct">— used</span>
+        <span class="mono" id="design-reset">resets —</span>
+      </div>
+    </section>
+
+    <!-- ── Daily Routines (count, not percent) ────────────────── -->
+    <section class="sect">
+      <h2 class="sect-label">Daily Routines</h2>
+      <div class="simple-bar">
+        <div class="simple-bar-fill" id="routines-fill"></div>
+      </div>
+      <div class="bar-meta">
+        <span class="bar-meta-pct mono" id="routines-count">— of 15 runs today</span>
+        <span class="mono" id="routines-reset">resets —</span>
+      </div>
+    </section>
+
+    <!-- ── Extra usage (MTD) — can overflow into red ──────────── -->
+    <section class="sect">
+      <h2 class="sect-label">Extra usage (MTD)</h2>
+      <div class="simple-bar">
+        <div class="simple-bar-fill" id="extra-fill"></div>
+        <div class="simple-bar-overflow" id="extra-overflow"></div>
+      </div>
+      <div class="bar-meta">
+        <span class="bar-meta-pct mono" id="extra-pct">$— / $— limit</span>
+        <span class="mono" id="extra-pct-used">— used</span>
+      </div>
+      <div class="bar-meta bar-meta-sub">
+        <span class="mono" id="extra-balance">Balance: —</span>
+        <span class="mono" id="extra-reset">resets —</span>
+      </div>
+    </section>
+
+    <!-- ── 2x2 stats grid ─────────────────────────────────────── -->
+    <section class="sect sect-stats">
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-lbl">Today</div>
+          <div class="stat-val mono" id="stat-today-cost">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">30d cost</div>
+          <div class="stat-val mono" id="stat-30d-cost">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">30d tokens</div>
+          <div class="stat-val mono" id="stat-30d-tokens">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">Latest tokens</div>
+          <div class="stat-val mono" id="stat-latest-tokens">—</div>
+        </div>
+      </div>
+
+      <!-- Daily spend chart (vertical mini-bars). -->
+      <div class="spend-chart" id="spend-chart" aria-hidden="true"></div>
+
+      <div class="disclaimer mono" id="disclaimer">Top model: — · Estimated from local Claude logs</div>
+    </section>
+
+    <!-- ── Action items ───────────────────────────────────────── -->
+    <section class="sect sect-actions">
+      <button class="action-item" id="action-add-account">
+        <span class="action-icon" aria-hidden="true">⎈</span>
+        <span class="action-label">Add Account…</span>
+      </button>
+      <button class="action-item" id="action-dashboard">
+        <span class="action-icon" aria-hidden="true">▤</span>
+        <span class="action-label">Usage Dashboard</span>
+      </button>
+      <button class="action-item" id="action-status">
+        <span class="action-icon" aria-hidden="true">⚡</span>
+        <span class="action-label" id="action-status-label">Status: —</span>
+      </button>
+    </section>
+
+    <!-- ── Footer ─────────────────────────────────────────────── -->
+    <section class="sect sect-footer">
+      <button class="footer-action" id="footer-refresh">
+        <span>↻ Refresh</span>
+        <span class="kbd mono">⌘R</span>
+      </button>
+      <button class="footer-action" id="footer-settings">
+        <span>⚙ Settings…</span>
+        <span class="kbd mono">⌘,</span>
+      </button>
+      <button class="footer-action" id="footer-about">
+        <span>ⓘ About Clauge</span>
+        <span class="kbd mono" id="footer-about-version">v—</span>
+      </button>
+      <button class="footer-action" id="footer-quit">
+        <span>✕ Quit</span>
+        <span class="kbd mono">⌘Q</span>
+      </button>
+    </section>
   </div>
 
-  <!-- ── Preferences panel (slides over main view) ──────────── -->
+  <!-- Preferences panel (slides over main view) — preserved from v0.8. -->
   <div id="prefs" class="prefs-panel" hidden>
     <header class="prefs-header">
       <button id="prefs-back" class="icon-btn" title="Back" aria-label="Back to main view">←</button>
@@ -161,7 +208,7 @@
       </li>
       <li class="prefs-row">
         <span>About</span>
-        <span id="about-version" class="mono prefs-meta">v0.8.2</span>
+        <span id="about-version" class="mono prefs-meta">v—</span>
       </li>
     </ul>
   </div>

@@ -1,28 +1,22 @@
-/* Clauge popover — warm-dark liquid glass.
- * Translates handoff/Clauge - Menu Bar.html into a Tauri 2.x popover.
- * Tokens here are scoped to this file; the dashboard window has its own
- * (public/styles.css). Both files share the brand orange #d97757 and the
- * warm-dark gradient family but the popover stays narrower / denser. */
+/* Clauge popover (v0.9.1 redesign — CodexBar-inspired vertical layout
+ * with circle Session gauge + dual-indicator bars + spacious whitespace).
+ * Width 340px; backdrop-filter handles the vibrancy effect over the
+ * NSVisualEffectView the native popover sets up in native_popover.rs.
+ */
 
-/* v0.4.0 fixup (T39): self-hosted variable fonts. Single woff2 per family
- * carries every weight (Google Fonts serves the same variable file for
- * 400/500/600/700 of Inter and 400/500/600 of JetBrains Mono on modern
- * UAs). Latin subset only — covers UI strings + numerics. Local paths
- * are relative to popover.css's directory. `font-display: swap` so
- * system fallback paints first if the woff2 is delayed. */
 @font-face {
   font-family: "Inter";
+  src: url("fonts/inter-latin-variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
   font-style: normal;
-  font-weight: 400 700;
   font-display: swap;
-  src: url("fonts/inter-latin-variable.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrains Mono";
+  src: url("fonts/jetbrains-mono-latin-variable.woff2") format("woff2-variations");
+  font-weight: 100 800;
   font-style: normal;
-  font-weight: 400 600;
   font-display: swap;
-  src: url("fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
 }
 
 :root {
@@ -33,24 +27,15 @@
   --brand-deep: #b45c41;
   --brand-tint: rgba(217, 119, 87, 0.14);
 
-  --glass-1: rgba(255, 240, 230, 0.04);
-  --glass-2: rgba(255, 240, 230, 0.08);
-
-  --rim-top: rgba(255, 240, 230, 0.10);
-  --rim-bottom: rgba(0, 0, 0, 0.4);
+  --overflow: #c97a7a;
+  --overflow-tint: rgba(201, 122, 122, 0.18);
 
   --text: #f4ece4;
-  --text-2: #c9bdb2;
-  --text-3: #8a7e74;
+  --text-2: rgba(244, 236, 228, 0.66);
+  --text-3: rgba(244, 236, 228, 0.42);
 
-  --ok: #7bc89c;
-  --ok-tint: rgba(123, 200, 156, 0.14);
-  --warn: #e8b06a;
-  --crit: #e07b6e;
-
-  --haiku: #9bc89a;
-  --opus: #b59cdc;
-  --sonnet: #84a8d4;
+  --track: rgba(244, 236, 228, 0.10);
+  --rim: rgba(244, 236, 228, 0.08);
 
   --sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
@@ -68,40 +53,33 @@ html, body {
   font-feature-settings: var(--tnum);
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
-  /* Clip the entire webview to the same 14px corner radius used by #root
-   * and the vibrancy material (windows.rs apply_vibrancy). Without this,
-   * any shadow/halo inside body that extends past #root's rounded edge
-   * paints onto the transparent OS window and shows through whatever sits
-   * behind, producing the v0.4.x "ghost outline" artifact. */
   border-radius: 14px;
   overflow: hidden;
 }
 
-.mono { font-family: var(--mono); font-feature-settings: var(--tnum); }
+.mono {
+  font-family: var(--mono);
+  font-feature-settings: var(--tnum);
+  font-size: 11px;
+}
 
 /* ── Root popover surface ──────────────────────────────────── */
-/* v0.5.0: width matches the NSPopover contentSize set in
- * native_popover.rs::POPOVER_WIDTH (360pt). Was 300px in the v0.4.x Tauri
- * WebviewWindow era; mismatch caused a 60pt gap on the right ("ghost"). */
 #root {
-  width: 360px;
-  background: linear-gradient(180deg, rgba(28, 20, 16, 0.78), rgba(20, 14, 10, 0.85));
+  width: 340px;
+  background: linear-gradient(180deg, rgba(28, 20, 16, 0.55), rgba(20, 14, 10, 0.72));
   -webkit-backdrop-filter: blur(60px) saturate(180%);
           backdrop-filter: blur(60px) saturate(180%);
   border-radius: 14px;
-  /* Dual rim-light borders + a tight ambient drop. The previous
-   * `0 24px 64px -12px` drop extended ~88px past the rounded corners and
-   * got clipped at the transparent OS window edge, painting a visible
-   * rectangular outline ("ghost") on whatever sat behind. Removed in v0.4.4. */
   box-shadow:
-    inset 0 1px 0 var(--rim-top),
-    inset 0 -1px 0 var(--rim-bottom),
-    inset 0 0 0 0.5px rgba(255, 240, 230, 0.06),
+    inset 0 1px 0 rgba(244, 236, 228, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    inset 0 0 0 0.5px rgba(244, 236, 228, 0.06),
     0 1px 1px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   position: relative;
 }
-/* Brand-orange gradient bleed on the upper-left (specular sheen). */
+
+/* Brand-orange specular sheen, top-left. */
 #root::before {
   content: "";
   position: absolute;
@@ -110,538 +88,392 @@ html, body {
   pointer-events: none;
   border-radius: inherit;
 }
-/* v0.4.0 fixup (T39): warning state no longer narrows the inner surface
- * (was `width: 240px`) — the OS window stays at 300px, so a 240px CSS
- * width left a 60px transparent gap on the right. The warn variant now
- * just retints the header and swaps the visible section via the rules
- * below. */
 
-/* Hide the irrelevant sections per state. CSS-only swap so popover.js can
- * just toggle one attribute. */
-#root[data-state="default"] .warn-only { display: none; }
-#root[data-state="warn"] .default-only { display: none; }
-#root[data-state="warn"] .po-head {
-  background: linear-gradient(180deg, rgba(232, 176, 106, 0.12), transparent);
+/* ── Loading overlay ───────────────────────────────────────── */
+.po-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(28, 20, 16, 0.86), rgba(20, 14, 10, 0.94));
+  -webkit-backdrop-filter: blur(20px);
+          backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  z-index: 10;
+  border-radius: inherit;
+  transition: opacity 0.22s var(--ease);
 }
-#root[data-state="warn"] .po-name { color: var(--warn); }
+.po-loading-overlay.fading { opacity: 0; pointer-events: none; }
+.po-loading-overlay[hidden] { display: none; }
+
+.po-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(244, 236, 228, 0.12);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: po-spin 0.9s linear infinite;
+}
+.po-loading-text { color: var(--text-3); font-size: 10px; letter-spacing: 0.04em; }
+@keyframes po-spin { to { transform: rotate(360deg); } }
 
 /* ── Header ────────────────────────────────────────────────── */
 .po-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px 9px;
-  border-bottom: 1px solid rgba(255, 240, 230, 0.06);
+  padding: 14px 16px 10px;
   position: relative;
+  z-index: 2;
 }
-.po-head-left { display: flex; align-items: center; gap: 8px; }
-
+.po-head-left { display: flex; align-items: center; gap: 10px; }
 .po-chiclet {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  background: var(--glass-2);
-  display: grid;
-  place-items: center;
-  box-shadow:
-    inset 0 1px 0 var(--rim-top),
-    inset 0 -1px 0 var(--rim-bottom);
-  flex: none;
+  width: 24px; height: 24px;
+  border-radius: 7px;
+  background: rgba(244, 236, 228, 0.06);
+  box-shadow: inset 0 0 0 0.5px rgba(244, 236, 228, 0.08);
+  display: flex; align-items: center; justify-content: center;
 }
-.po-chiclet-svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-.po-name {
-  font-size: 12px;
+.po-chiclet-svg { width: 100%; height: 100%; }
+
+.po-head-text { display: flex; flex-direction: column; gap: 1px; }
+.po-name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.po-subhead { color: var(--text-3); font-size: 10px; }
+
+.po-plan-badge {
+  padding: 3px 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-}
-.po-meta {
-  font-size: 9px;
-  color: var(--text-3);
-  margin-top: 1px;
+  color: var(--text-2);
+  background: rgba(244, 236, 228, 0.06);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 0.5px rgba(244, 236, 228, 0.08);
+  letter-spacing: 0.02em;
 }
 
-.po-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--text-3);
-  padding: 2px 7px;
-  background: var(--glass-1);
-  border-radius: 999px;
-  box-shadow:
-    inset 0 1px 0 var(--rim-top),
-    inset 0 -1px 0 var(--rim-bottom);
-}
-.po-status .live {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 6px var(--ok);
-  animation: pulse 2s ease-in-out infinite;
-}
-.po-status.stale .live { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
-.po-status.off .live { background: var(--text-3); box-shadow: none; animation: none; }
-@keyframes pulse { 50% { opacity: 0.4; } }
-
-/* ── Section primitive ─────────────────────────────────────── */
-.sect { padding: 11px 12px; position: relative; }
-.sect + .sect { border-top: 1px solid rgba(255, 240, 230, 0.05); }
-.sect-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 9px;
-}
-.sect-title {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-.sect-aux {
-  font-size: 9px;
-  color: var(--text-3);
-}
-.sect-aux.warn { color: var(--warn); }
-.sect-aux.crit { color: var(--crit); }
-.sect-aux.ok { color: var(--ok); }
-
-/* ── Plan capacity rings ──────────────────────────────────── */
-/* 3 columns — Sonnet ring removed in v0.4.5; Opus removed in v0.4.4.
- * Rings + labels scaled up in v0.5.0 for the wider 360pt NSPopover. */
-.po-rings {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  justify-items: center;
-}
-.po-ring-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.mini-ring {
+/* ── Sections ──────────────────────────────────────────────── */
+.sect {
+  padding: 14px 16px;
   position: relative;
-  width: 68px;
-  height: 68px;
+  z-index: 2;
 }
-.mini-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.mini-ring.healthy svg { filter: drop-shadow(0 2px 6px rgba(217, 119, 87, 0.28)); }
-.mini-ring.cool svg { filter: drop-shadow(0 2px 5px rgba(123, 200, 156, 0.16)); }
-.mini-ring.amber svg { filter: drop-shadow(0 2px 8px rgba(232, 176, 106, 0.40)); }
-.mini-ring.crit svg { filter: drop-shadow(0 2px 8px rgba(224, 123, 110, 0.40)); }
+.sect-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  color: var(--text);
+  letter-spacing: 0;
+  margin-bottom: 10px;
+}
+.sect-hero .sect-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  margin-bottom: 12px;
+}
 
-.mini-ring .pct {
-  position: absolute;
-  inset: 0;
+/* ── SESSION circle gauge (hero) ───────────────────────────── */
+.sect-hero { padding: 18px 16px 18px; }
+.gauge-circle-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  font-family: var(--mono);
-  font-size: 17px;
+  margin: 4px 0 12px;
+}
+.gauge-circle {
+  width: 110px;
+  height: 110px;
+  position: relative;
+}
+.gauge-circle svg { width: 100%; height: 100%; }
+.gauge-circle .gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.gauge-circle .gauge-pct {
+  font-size: 26px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1;
-}
-/* Number gets a warm-cream gradient fill — keeps the ring percent legible
- * on the dark surface without competing with the brand orange. */
-.mini-ring .pct .num {
-  background: linear-gradient(180deg, #fff8f0, #f0d8c4);
-  -webkit-background-clip: text;
-          background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.mini-ring.amber .pct .num {
-  background: linear-gradient(180deg, #f0c780, #c88840);
-  -webkit-background-clip: text;
-          background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.mini-ring.crit .pct .num {
-  background: linear-gradient(180deg, #f5a59a, #c66e60);
-  -webkit-background-clip: text;
-          background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.mini-ring .pct .sym {
-  font-size: 10px;
-  color: var(--text-3);
-  margin-left: 1px;
-  align-self: center;
-  transform: translateY(-4px);
-}
-.po-ring-label {
-  font-size: 13px;
-  font-weight: 500;
   color: var(--text);
-  text-align: center;
-  line-height: 1.1;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-feature-settings: var(--tnum);
 }
-.po-ring-reset {
-  font-size: 11px;
+.gauge-circle .gauge-pct-suffix {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-left: 1px;
+}
+.gauge-circle .gauge-sub-label {
+  font-size: 9px;
+  font-weight: 500;
   color: var(--text-3);
-  text-align: center;
-  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  margin-top: 3px;
 }
 
-/* ── Finance cards ────────────────────────────────────────── */
-.po-finance {
+.gauge-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 4px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+/* ── Needle bar (Weekly) ───────────────────────────────────── */
+.needle-bar {
+  position: relative;
+  margin-bottom: 8px;
+  padding-top: 14px;  /* room for needle glyph above */
+}
+.needle-bar-needle {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid rgba(244, 236, 228, 0.85);
+  transform: translateX(-4px);  /* center on the position */
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+  transition: left 0.4s var(--ease);
+}
+.needle-bar-track {
+  position: relative;
+  height: 6px;
+  background: var(--track);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.needle-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--brand);
+  border-radius: 3px;
+  transition: width 0.4s var(--ease);
+}
+.needle-bar-overflow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--overflow);
+  border-radius: 0 3px 3px 0;
+  transition: width 0.4s var(--ease), left 0.4s var(--ease);
+}
+
+/* ── Simple bar (Sonnet only / Claude Design / Daily Routines / Extra) ── */
+.simple-bar {
+  position: relative;
+  height: 6px;
+  background: var(--track);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.simple-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--brand);
+  border-radius: 3px;
+  transition: width 0.4s var(--ease);
+}
+.simple-bar-overflow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--overflow);
+  border-radius: 0 3px 3px 0;
+  transition: width 0.4s var(--ease), left 0.4s var(--ease);
+}
+
+.bar-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.bar-meta-pct {
+  color: var(--text);
+  font-weight: 500;
+}
+.bar-meta-sub {
+  margin-top: 2px;
+  color: var(--text-3);
+}
+
+/* ── 2x2 stats grid ────────────────────────────────────────── */
+.sect-stats { padding-top: 16px; }
+.stats-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 14px 18px;
+  margin-bottom: 14px;
 }
-.po-card {
-  padding: 8px 10px 9px;
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 7px;
-  box-shadow:
-    inset 0 1px 1px rgba(0, 0, 0, 0.3),
-    inset 0 0 0 1px rgba(255, 240, 230, 0.04);
-}
-.po-card-lbl {
-  font-size: 8.5px;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
+.stat-lbl {
+  font-size: 10px;
   color: var(--text-3);
+  text-transform: none;
+  margin-bottom: 2px;
 }
-.po-card-val {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  margin-top: 2px;
-  line-height: 1.1;
-}
-.po-card-val .currency {
-  color: var(--text-3);
-  font-size: 0.7em;
-  margin-right: 1px;
-}
-.po-card-val .of {
-  color: var(--text-3);
-  font-size: 9px;
-  margin-left: 3px;
-  font-weight: 500;
-}
-.po-card .bar-track {
-  height: 3px;
-  background: rgba(255, 240, 230, 0.06);
-  border-radius: 999px;
-  overflow: hidden;
-  margin-top: 6px;
-}
-.po-card .bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--brand-2), var(--brand));
-  border-radius: 999px;
-  transition: width 350ms var(--ease);
-}
-.po-card .bar-fill.ok {
-  background: linear-gradient(90deg, var(--ok), #5fa97e);
-}
-.po-card-foot {
-  font-size: 8.5px;
-  color: var(--text-3);
-  margin-top: 4px;
-}
-
-/* ── Today snapshot (3-cell strip) ────────────────────────── */
-.po-today {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 0;
-}
-.po-stat {
-  padding: 0 10px;
-  position: relative;
-}
-.po-stat:first-child { padding-left: 0; }
-.po-stat:last-child { padding-right: 0; }
-.po-stat + .po-stat::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 1px;
-  background: rgba(255, 240, 230, 0.05);
-}
-.po-stat .lbl {
-  font-size: 8.5px;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-.po-stat .val {
-  font-size: 14px;
+.stat-val {
+  font-size: 16px;
   font-weight: 600;
   color: var(--text);
-  margin-top: 2px;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-.po-stat .val.ok { color: var(--ok); }
-.po-stat .sub {
-  font-size: 9px;
-  color: var(--text-3);
-  margin-top: 2px;
+  letter-spacing: -0.01em;
 }
 
-/* Make the cost-eq value selectable so users can copy it. Same trick used
- * in v0.3.x for the legacy hero amount. */
-#today-cost { -webkit-user-select: text; user-select: text; }
+/* ── Daily spend chart (mini bars) ─────────────────────────── */
+.spend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 34px;
+  margin: 10px 0 8px;
+  padding: 0 2px;
+}
+.spend-chart-bar {
+  flex: 1 1 0;
+  min-width: 4px;
+  background: var(--brand);
+  opacity: 0.5;
+  border-radius: 1.5px 1.5px 0 0;
+  transition: opacity 0.2s var(--ease), height 0.4s var(--ease);
+}
+.spend-chart-bar.today { opacity: 1; }
 
-/* ── Warning state body ───────────────────────────────────── */
-/* v0.4.0 fixup (T39): with the popover at fixed 300×440, the warn body
- * is the only visible section (default rings/finance/today are hidden).
- * Pad the warn section vertically so the big ring sits roughly centered
- * in the available glass surface instead of sticking to the top edge. */
-#warn-body {
-  padding: 28px 12px 32px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 280px;
-}
-.warn-ring-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 4px;
-}
-.big-warn-ring {
-  position: relative;
-  width: 80px;
-  height: 80px;
-}
-.big-warn-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-.big-warn-ring .pct {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  font-family: var(--mono);
-  line-height: 1;
-}
-.big-warn-ring .pct .num {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  background: linear-gradient(180deg, #f0c780, #c88840);
-  -webkit-background-clip: text;
-          background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-.big-warn-ring .pct .sym {
-  font-size: 11px;
+.disclaimer {
   color: var(--text-3);
-  margin-left: 1px;
-  align-self: center;
-  transform: translateY(-5px);
-}
-.warn-suggest {
-  font-size: 11px;
-  color: var(--text-2);
-  text-align: center;
+  font-size: 10px;
   line-height: 1.4;
   margin-top: 4px;
 }
-.warn-suggest .haiku { color: var(--haiku); }
 
-/* ── Footer ───────────────────────────────────────────────── */
-.po-foot {
+/* ── Action items ──────────────────────────────────────────── */
+.sect-actions {
+  padding: 10px 8px;
+  border-top: 1px solid var(--rim);
+}
+.action-item, .footer-action {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-top: 1px solid rgba(255, 240, 230, 0.05);
-  background: rgba(0, 0, 0, 0.2);
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  text-align: left;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
 }
-.po-foot .kbds {
-  font-size: 9px;
-  color: var(--text-3);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.po-foot .kbds kbd {
-  font-family: inherit;
-  background: var(--glass-2);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 9px;
+.action-item:hover, .footer-action:hover { background: rgba(244, 236, 228, 0.06); }
+.action-item:active, .footer-action:active { background: rgba(244, 236, 228, 0.10); }
+
+.action-icon {
+  display: inline-flex;
+  width: 18px;
+  margin-right: 8px;
   color: var(--text-2);
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  font-size: 12px;
 }
-.po-foot .open-link {
-  font-size: 11px;
-  color: var(--brand-2);
-  text-decoration: none;
-  font-weight: 500;
-}
-.po-foot .open-link:hover { color: var(--brand); }
+.action-label { flex: 1; }
 
-/* ── Preferences panel (slide-over) ──────────────────────── */
+/* ── Footer ────────────────────────────────────────────────── */
+.sect-footer {
+  padding: 8px 8px 10px;
+  border-top: 1px solid var(--rim);
+}
+.footer-action {
+  justify-content: space-between;
+}
+.footer-action .kbd {
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+/* ── Preferences panel (preserved from v0.8) ───────────────── */
 .prefs-panel {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(28, 20, 16, 0.92), rgba(20, 14, 10, 0.96));
+  background: linear-gradient(180deg, rgba(28, 20, 16, 0.78), rgba(20, 14, 10, 0.85));
   -webkit-backdrop-filter: blur(60px) saturate(180%);
           backdrop-filter: blur(60px) saturate(180%);
-  border-radius: 14px;
+  border-radius: inherit;
+  z-index: 5;
   display: flex;
   flex-direction: column;
-  z-index: 10;
 }
-.prefs-panel[hidden] { display: none; }
-
 .prefs-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px 9px;
-  border-bottom: 1px solid rgba(255, 240, 230, 0.06);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rim);
+  font-size: 13px;
+  font-weight: 500;
 }
 .icon-btn {
-  appearance: none;
-  width: 24px;
-  height: 24px;
-  border: 0;
   background: transparent;
-  color: var(--text-3);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  display: grid;
-  place-items: center;
-  font-family: inherit;
-}
-.icon-btn:hover {
-  background: var(--glass-2);
+  border: none;
   color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
-
-.prefs-list {
-  list-style: none;
-  padding: 8px;
-}
+.icon-btn:hover { background: rgba(244, 236, 228, 0.06); }
+.prefs-list { list-style: none; padding: 8px 14px; }
 .prefs-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 11px 10px;
-  border-radius: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rim);
   font-size: 12px;
 }
-.prefs-row + .prefs-row { margin-top: 1px; }
-.prefs-row:hover { background: var(--glass-1); }
+.prefs-row:last-child { border-bottom: none; }
+.prefs-meta { color: var(--text-3); font-size: 11px; }
 .prefs-btn {
-  appearance: none;
-  border: 0;
-  background: var(--glass-2);
+  background: rgba(244, 236, 228, 0.06);
+  border: none;
   color: var(--text);
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
-  font-family: inherit;
-  box-shadow:
-    inset 0 1px 0 var(--rim-top),
-    inset 0 -1px 0 var(--rim-bottom);
 }
-.prefs-btn:hover {
-  background: var(--brand-tint);
-  color: var(--brand-2);
-}
-.prefs-meta { color: var(--text-3); font-size: 11px; }
+.prefs-btn:hover { background: rgba(244, 236, 228, 0.10); }
 
-/* iOS-style toggle (matches dashboard's). */
-.toggle {
-  position: relative;
-  width: 38px;
-  height: 22px;
-  cursor: pointer;
-}
+/* Toggle switch */
+.toggle { position: relative; display: inline-block; width: 32px; height: 18px; }
 .toggle input { display: none; }
 .toggle-slider {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 240, 230, 0.10);
-  border-radius: 999px;
-  transition: background 250ms var(--ease);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  position: absolute; cursor: pointer; inset: 0;
+  background: rgba(244, 236, 228, 0.12);
+  border-radius: 9px;
+  transition: background 0.15s var(--ease);
 }
 .toggle-slider::before {
-  content: "";
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  background: linear-gradient(180deg, #ffffff, #e8e0d8);
+  content: ""; position: absolute;
+  width: 14px; height: 14px;
+  top: 2px; left: 2px;
+  background: #fff;
   border-radius: 50%;
-  top: 2px;
-  left: 2px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: left 250ms var(--ease);
+  transition: transform 0.15s var(--ease);
 }
-.toggle input:checked + .toggle-slider {
-  background: linear-gradient(180deg, var(--brand-2), var(--brand));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 2px 8px -1px rgba(217, 119, 87, 0.4);
-}
-.toggle input:checked + .toggle-slider::before { left: 18px; }
-
-/* v0.8.0: Loading overlay shown while popover.js's refresh() hydrates.
- * Sits above the static skeleton so the user never sees the bare
- * dash placeholders. JS removes [hidden] on showLoading() and adds
- * .fading + hides after the fade transition completes (220ms). */
-.po-loading-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: linear-gradient(180deg, #2a1812, #0d0805);
-  z-index: 20;
-  transition: opacity 220ms ease;
-  opacity: 1;
-}
-.po-loading-overlay.fading { opacity: 0; pointer-events: none; }
-.po-loading-overlay[hidden] { display: none; }
-.po-loading-spinner {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2.5px solid rgba(217, 119, 87, 0.18);
-  border-top-color: #d97757;
-  animation: po-loading-spin 0.9s linear infinite;
-}
-.po-loading-text {
-  font-size: 11px;
-  color: rgba(255, 240, 230, 0.65);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-@keyframes po-loading-spin {
-  to { transform: rotate(360deg); }
-}
+.toggle input:checked + .toggle-slider { background: var(--brand); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(14px); }
