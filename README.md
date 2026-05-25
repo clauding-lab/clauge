@@ -159,6 +159,7 @@ This is the architectural elegance: nothing to leak, nothing to rotate, nothing 
 
 - **Per-session tracking** — tokens, cost, model, cache hit, primary task type
 - **Per-project breakdown** — cost · sessions · messages · tools · tokens · hit %
+- **Activity heatmap** *(new in v0.9.4)* — GitHub-style 7-row × variable-column grid of daily usage intensity in the dashboard (range dropdown: 180d / 365d / All) and a compact 180-day grid in the popover. Reports active days, current streak, and longest streak.
 - **Per-model cost split** — Opus / Sonnet / Haiku, each with cache hit rate
 - **Task classification** — Coding / Debugging / Testing / Planning / Git Ops / Build / Exploration / Conversation (heuristic, deterministic)
 - **Cache analytics** — corrected hit-rate formula and **net cache savings** (subtracts cache-write overhead, distinguishes 5-minute vs 1-hour cache tiers)

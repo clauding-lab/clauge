@@ -220,6 +220,27 @@ For real users: ship updates via the Chrome Web Store. The CWS submission flow i
 
 **Test discovery:** `npm test` glob is `test/*.test.js test/cli/*.test.js`. New CLI test files go under `test/cli/`. New non-CLI test files at `test/`. If you add a third directory, update the glob in `package.json` — without that, `npm run check` silently skips your tests.
 
+### 15. Activity heatmap (v0.9.4) — data path + popover removals
+
+**Data path** is the same on both surfaces. Don't fork the renderer:
+
+1. `lib/activity.js` — pure helpers (`computeBuckets`, `countActiveDays`, `computeCurrentStreak`, `computeLongestStreak`, `summarizeActivity`, `aggregateDailyActivity`). All side-effect-free, all testable. `today` is always passed in — the lib never reads the clock.
+2. `server.js::GET /api/activity` — thin Hono wrapper. Reads `period` (`180d` | `365d` | `all`) and `tz` query params; returns `{ period, tz, today, rangeStart, totalDays, activeDays, currentStreak, longestStreak, days: [{ date, sessions, tokens, costUSD, claudeAiMessages, intensity }] }`. Also listed in `READ_ONLY_API_PATHS` so the popover's cross-origin fetch from `tauri://localhost` clears the wildcard CORS.
+3. `popover/heatmap.js` — vanilla renderer. Classic script (not ES module) that exposes `window.ClaugeHeatmap.render(rootEl, data, options)`. Loaded by BOTH dashboard (`public/index.html`) and popover (`popover/index.html`) via `<script src="…/popover/heatmap.js" defer></script>`. Same palette on both surfaces (single orange ramp at hue 40); variant only swaps cell size + label visibility.
+4. `popover/heatmap.css` — the orange ramp tokens (`--cell-0` through `--cell-4` in oklch) plus the host scroll wrapper. Loaded by both surfaces too.
+
+`claudeAiMessages` is always `0` in v0.9.4. The `UsageStore` only persists the most recent ingest, so per-day claude.ai history isn't available yet. The field is plumbed through both the API and the renderer so the per-day breakdown can be wired up without a shape change. Wiring this for real is a v0.9.5+ follow-up.
+
+**Popover buttons retired in v0.9.4:** the heatmap pushed two pruning decisions. Five items are GONE from the popover; their IDs / handlers / CSS no longer exist:
+
+- `#action-add-account`, `#action-dashboard`, `#action-status` (+ `#action-status-label`, `renderStatusAction()`) — the whole `sect-actions` panel was retired.
+- `#footer-refresh` + the `⌘R` keyboard shortcut — auto-refresh runs every 10s; the manual button was redundant.
+- `#footer-settings` + the `⌘,` keyboard shortcut — Preferences is reachable via tray right-click (`src-tauri/src/menu.rs`).
+
+**Don't reintroduce.** If a future agent sees a "Refresh" or "Settings" button referenced in screenshots / older code and thinks it's a regression — it isn't, it was a deliberate v0.9.4 removal. Status info still surfaces through `renderHeaderSubhead()`'s "Updated …" subtitle.
+
+**Popover height check** still lives in `native_popover.rs::resizeToContent` (`200..1200`) and is mirrored by `popover/popover.js::resizeToContent`'s same clamp. Heatmap section adds ~120px; the five removed items netted ~170px back, so v0.9.4 popover is shorter than v0.9.3. Plenty of headroom — but if you add another section, check `MAX_POPOVER_HEIGHT` (`native_popover.rs:67`) is still respected.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
