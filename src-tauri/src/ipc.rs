@@ -664,10 +664,28 @@ pub async fn restart_app(state: State<'_, AppState>, app: tauri::AppHandle) -> R
 /// the bundled `Contents/Resources/clauge-cli` wrapper. Returns a human-
 /// readable status string the wizard can display directly.
 ///
-/// Idempotent and fails-soft: if the symlink already points at our wrapper,
-/// returns "already installed". If a foreign file occupies the path, returns
-/// an Err with the manual `ln -s` command for the user to run. Permission
-/// errors return an Err suggesting the same manual command via `sudo`.
+/// macOS-only: the wrapper is a POSIX shell script and the symlink target is
+/// `/usr/local/bin`. Windows + Linux variants ship in v0.9.5+ (Windows would
+/// place a `clauge.cmd` shim on `PATH`; Linux likely `~/.local/bin/clauge`).
+/// The function exists on all platforms with the same signature so
+/// `lib.rs::generate_handler![ipc::install_cli_symlink]` resolves cleanly;
+/// the non-macOS variant returns an explanatory Err immediately.
+///
+/// macOS implementation is idempotent and fails-soft: if the symlink already
+/// points at our wrapper, returns "already installed". If a foreign file
+/// occupies the path, returns an Err with the manual `ln -s` command for the
+/// user to run. Permission errors return an Err suggesting the same manual
+/// command via `sudo`.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn install_cli_symlink() -> Result<String, String> {
+    Err(
+        "install_cli_symlink is macOS-only in v0.9.4 — Windows + Linux variants ship in v0.9.5+."
+            .to_string(),
+    )
+}
+
+#[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn install_cli_symlink() -> Result<String, String> {
     let bundle_cli = resolve_bundle_cli_path()
@@ -723,6 +741,7 @@ pub fn install_cli_symlink() -> Result<String, String> {
 /// Resolve the absolute path to the bundled CLI wrapper. macOS bundle layout:
 ///   /Applications/Clauge.app/Contents/MacOS/Clauge           <- current_exe
 ///   /Applications/Clauge.app/Contents/Resources/clauge-cli   <- wrapper
+#[cfg(target_os = "macos")]
 fn resolve_bundle_cli_path() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let contents = exe.parent()?.parent()?;
