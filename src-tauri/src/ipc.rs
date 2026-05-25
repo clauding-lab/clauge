@@ -59,12 +59,26 @@ impl Default for AppState {
 
 impl AppState {
     /// Set the bound sidecar port. Used by sidecar startup once the server reports ready.
+    ///
+    /// Also mirrors the port to a known file on disk
+    /// (`crate::port_file`) so a standalone Node CLI invocation can find a
+    /// running Clauge to talk to. The file write is best-effort: failure to
+    /// write the side-channel never fails the in-memory port set, because
+    /// the running app's IPC (which uses the in-memory port) is more
+    /// load-bearing than the CLI's HTTP fallback.
     pub fn set_port(&self, port: u16) -> Result<(), String> {
         let mut guard = self
             .server_port
             .lock()
             .map_err(|e| format!("lock poisoned: {}", e))?;
         *guard = Some(port);
+        drop(guard);
+        if let Err(e) = crate::port_file::write(port) {
+            log::warn!(
+                "port_file::write failed (CLI HTTP discovery may fall back to disk): {}",
+                e
+            );
+        }
         Ok(())
     }
 

@@ -7,6 +7,7 @@ mod keychain_cache;
 mod menu;
 mod native_popover;
 mod port_discovery;
+mod port_file;
 mod sidecar;
 mod tray;
 mod windows;
@@ -299,6 +300,12 @@ pub fn run() {
                 // empirically enough on macOS without making quit feel sluggish
                 // — most of the work above is synchronous already.
                 std::thread::sleep(std::time::Duration::from_millis(200));
+
+                // Best-effort port-file cleanup so a stale port doesn't
+                // confuse the next CLI run. Idempotent — Ok if absent.
+                if let Err(e) = crate::port_file::remove() {
+                    log::warn!("port_file::remove on quit failed: {}", e);
+                }
             }
         }
     });
