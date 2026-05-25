@@ -17,7 +17,15 @@
 }
 
 .heatmap--popover {
-  --cell-gap: 2px;
+  --cell-gap: 1px;
+  display: block;
+}
+
+/* Block-level so rootEl.clientWidth reads the parent's content area.
+   `.heatmap`'s inline-block default would collapse rootEl to 0 on first
+   render (no content yet) and force the auto-fit's fallback width. */
+.heatmap--dashboard {
+  display: block;
 }
 
 .heatmap table {

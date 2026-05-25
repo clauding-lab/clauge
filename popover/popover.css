@@ -64,25 +64,23 @@ html, body {
 }
 
 /* ── Root popover surface ──────────────────────────────────── */
-/* v0.9.4 Phase C — opaque-vibrancy parity with the dashboard.
- * Was (v0.9.1..v0.9.3): cool-slate translucent base at 0.22 alpha with
- *   blur(100px) saturate(200%). Lighter, more wallpaper bleed.
- * Now (v0.9.4): heavy linear-gradient at 0.78-0.82 alpha with
- *   blur(60px) saturate(180%). Reads near-solid; the wallpaper hue
- *   still tints faintly through. Matches the dashboard's body wash so
- *   both surfaces feel like the same app.
+/* v0.9.4 — popover vibrancy wash.
  *
- * VISIBLE CHANGE vs v0.9.1's validated look — manual smoke-test on
- * bright wallpapers before merge. If the heavier recipe reads muddy in
- * practice, this block is the rollback point; the dashboard wash can
- * stay as-is independently.
+ * Goal: visible wallpaper-hue bleed through a tinted overlay (macOS HUD-style
+ * vibrancy via CSS). Dashboard kept its v0.9.3 wash — `.transparent(true)` +
+ * `apply_vibrancy(HudWindow, ...)` broke the dashboard render during smoke,
+ * so single-surface vibrancy ships here.
+ *
+ * Tuning history (v0.9.1 .22 → too see-through; v0.9.4 .93 → too flat).
+ * Settled on .55-.60 alpha with 80px blur — wallpaper colors visible through
+ * a tinted overlay; text on top stays legible on bright backgrounds.
  */
 #root {
   width: 340px;
   background:
-    linear-gradient(180deg, rgba(30, 26, 38, 0.78) 0%, rgba(20, 18, 26, 0.82) 100%);
-  -webkit-backdrop-filter: blur(60px) saturate(180%);
-          backdrop-filter: blur(60px) saturate(180%);
+    linear-gradient(180deg, rgba(30, 26, 38, 0.55) 0%, rgba(20, 18, 26, 0.60) 100%);
+  -webkit-backdrop-filter: blur(80px) saturate(180%);
+          backdrop-filter: blur(80px) saturate(180%);
   border-radius: 14px;
   box-shadow:
     inset 0 1px 0 rgba(244, 236, 228, 0.10),

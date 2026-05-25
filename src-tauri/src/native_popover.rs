@@ -418,7 +418,10 @@ fn create_popover(
     Retained<ClaugeScriptHandler>,
 ) {
     use objc2::runtime::ProtocolObject;
-    use objc2_app_kit::{NSPopoverBehavior, NSViewController};
+    use objc2_app_kit::{
+        NSPopoverBehavior, NSViewController, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
+        NSVisualEffectState, NSVisualEffectView,
+    };
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURLRequest, NSURL};
     use objc2_web_kit::WKWebViewConfiguration;
 
@@ -457,20 +460,41 @@ fn create_popover(
     // constructed directly and needs the explicit setter.
     unsafe { webview.setInspectable(true) };
 
-    // Make the WKWebView's under-page background transparent so the CSS
-    // `background: transparent` on html/body + the translucent `#root` tint
-    // actually let the OS NSPopover's vibrancy layer (and ultimately the
-    // wallpaper behind it) show through. Without this, WKWebView paints a
-    // system-appropriate opaque color BEHIND the page in any area not
-    // explicitly painted by the page itself — which defeats the popover's
-    // CodexBar-style translucent feel.
+    // Make every layer involved in the WKWebView stack transparent so the
+    // NSVisualEffectView (HudWindow material — same as the dashboard window)
+    // we install below actually shows through:
+    //
+    //   1. setUnderPageBackgroundColor: clearColor — clears the over/under-
+    //      scroll fill the WebView paints when content doesn't reach an edge.
+    //   2. setValue: NO forKey: "drawsBackground" — undocumented but stable
+    //      KVC path on WKWebView (used by Slack, Linear, etc.). Stops the
+    //      WebView from painting its own opaque background before the page
+    //      renders. Documented public alternative landed in macOS 14.x but
+    //      we still target 12.0+ per tauri.conf.json minimumSystemVersion.
+    //   3. setWantsLayer + clear layer background — makes the host NSView
+    //      composite transparently with the parent visual-effect view.
+    //
+    // Without all three, the popover stack is: dark NSPopover chrome ->
+    // opaque WKWebView host -> page (CSS at any alpha doesn't matter
+    // because the WKWebView's own fill blocks the vibrancy material).
     unsafe {
+        use objc2::runtime::Bool;
         use objc2_app_kit::NSColor;
+        use objc2_foundation::NSNumber;
         let clear = NSColor::clearColor();
         let _: () = objc2::msg_send![&*webview, setUnderPageBackgroundColor: &*clear];
-        // Also nuke the layer's background so any default layer fill from
-        // the WKWebView's NSView itself doesn't bleed through.
+        // KVC path: WKWebView honors `drawsBackground = NO` (Slack / Linear /
+        // Notion use this trick on macOS 12-13). 14+ added a public setter
+        // but we still target 12.0+.
+        let no: Retained<NSNumber> = NSNumber::new_bool(false);
+        let key = NSString::from_str("drawsBackground");
+        let _: () = objc2::msg_send![&*webview, setValue: &*no, forKey: &*key];
         let _: () = objc2::msg_send![&*webview, setWantsLayer: true];
+        if let Some(layer) = webview.layer() {
+            let cg_clear: *mut std::ffi::c_void = objc2::msg_send![&*clear, CGColor];
+            let _: () = objc2::msg_send![&*layer, setBackgroundColor: cg_clear];
+            let _: () = objc2::msg_send![&*layer, setOpaque: Bool::NO];
+        }
     }
 
     // Load popover content from the SEA sidecar (same-origin to /api). At
@@ -485,10 +509,26 @@ fn create_popover(
         log::error!("native_popover: failed to construct NSURL from {}", url_str);
     }
 
-    // NSViewController wraps the WKWebView so NSPopover has a
-    // contentViewController to host.
+    // v0.9.4 attempt #2: wrap the WKWebView in an NSVisualEffectView. The
+    // first attempt looked DARKER than the dashboard because we left
+    // WKWebView opaque — its host NSView was drawing on top of the effect
+    // view. With drawsBackground=NO + setOpaque(false) + clear layer
+    // backgroundColor above, the WKWebView is now fully transparent and
+    // the effect view's vibrancy material (same HudWindow the dashboard
+    // uses via apply_vibrancy) shows through correctly. BehindWindow
+    // blending mode pulls the wallpaper behind the NSPopover window through.
+    let effect_view = NSVisualEffectView::initWithFrame(mtm.alloc(), frame);
+    effect_view.setMaterial(NSVisualEffectMaterial::HUDWindow);
+    effect_view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
+    effect_view.setState(NSVisualEffectState::Active);
+    effect_view.addSubview(&webview);
+    unsafe {
+        // Autoresizing bitmask: width-flex (2) | height-flex (16) = 18.
+        let _: () = objc2::msg_send![&*webview, setAutoresizingMask: 18u64];
+    }
+
     let vc = NSViewController::new(mtm);
-    vc.setView(&webview);
+    vc.setView(&effect_view);
 
     // v0.9.2: switched from ApplicationDefined → Transient to match the
     // macOS menu-bar convention every other menu-bar app uses (system

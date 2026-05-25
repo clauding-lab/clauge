@@ -125,14 +125,12 @@
     const variant = opts.variant === 'popover' ? 'popover' : 'dashboard';
     const showDayLabels = opts.showDayLabels ?? (variant === 'dashboard');
     const showMonthLabels = opts.showMonthLabels ?? (variant === 'dashboard');
-    const cellSize = opts.cellSize ?? (variant === 'dashboard' ? 12 : 8);
     const tooltipFn = typeof opts.onHover === 'function' ? opts.onHover : defaultTooltip;
 
     // Clear any prior render. replaceChildren() with no args removes all
     // children safely (no innerHTML, no XSS surface).
     rootEl.replaceChildren();
     rootEl.classList.add('heatmap', `heatmap--${variant}`);
-    rootEl.style.setProperty('--cell-size', `${cellSize}px`);
 
     if (!data || !Array.isArray(data.days) || data.days.length === 0) {
       rootEl.classList.add('heatmap--empty');
@@ -142,6 +140,27 @@
 
     const weeks = bucketIntoWeeks(data.days);
     const leadingEmptyCols = showDayLabels ? 1 : 0;
+
+    // Auto-fit cellSize so the heatmap spans rootEl's full width on both
+    // surfaces. Explicit opts.cellSize wins. rootEl.clientWidth is 0 if the
+    // node isn't yet in the DOM — fall back to variant defaults in that case.
+    let cellSize;
+    if (Number.isFinite(opts.cellSize)) {
+      cellSize = opts.cellSize;
+    } else {
+      const containerWidth = rootEl.clientWidth || (variant === 'popover' ? 316 : 800);
+      const cellGap = variant === 'popover' ? 1 : 3;
+      const labelCol = showDayLabels ? 40 : 0;
+      const available = Math.max(0, containerWidth - labelCol);
+      const weekCount = Math.max(1, weeks.length);
+      // border-spacing puts a gap on each side of every cell:
+      //   width = N * cellSize + (N + 1) * cellGap
+      const fit = Math.floor((available - (weekCount + 1) * cellGap) / weekCount);
+      // Cap at 32 — bigger feels chunky in screenshots, and very wide
+      // dashboards (>2000px) are fine with a little right-side slack.
+      cellSize = Math.max(8, Math.min(32, fit));
+    }
+    rootEl.style.setProperty('--cell-size', `${cellSize}px`);
 
     const table = document.createElement('table');
     table.setAttribute('role', 'grid');

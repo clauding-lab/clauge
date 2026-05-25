@@ -728,6 +728,7 @@ async function init() {
   // Preferences menu item (src-tauri/src/menu.rs).
 
   // Footer
+  document.getElementById('footer-dashboard')?.addEventListener('click', openDashboard);
   document.getElementById('footer-about')?.addEventListener('click', () => {
     // Open prefs panel (legacy About flow).
     document.getElementById('prefs')?.removeAttribute('hidden');

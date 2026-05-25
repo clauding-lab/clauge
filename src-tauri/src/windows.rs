@@ -62,11 +62,12 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         .min_inner_size(900.0, 600.0)
         .resizable(true)
         .visible(true)
-        // v0.9.4 Phase C: transparent window so the OS vibrancy layer
-        // (apply_vibrancy below on macOS, apply_mica/acrylic on Windows) can
-        // paint through. The CSS body wash then blends on top. Without
-        // .transparent(true) the OS paints an opaque system color behind the
-        // page and the wallpaper bleed dies.
+        // v0.9.4: transparent window so the OS vibrancy layer (apply_vibrancy
+        // on macOS, apply_mica/acrylic on Windows, both wired below) paints
+        // through. CSS body wash blends on top at low alpha for legibility.
+        // First smoke attempt with this looked blank because on_navigation
+        // was blocking the dev-mode initial URL (127.0.0.1:1430/splash.html);
+        // the dev-mode allowance lower in this file unblocks it.
         .transparent(true);
 
     #[cfg(target_os = "macos")]
@@ -94,6 +95,19 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
                 return true;
             }
             if matches!(host, Some("tauri.localhost")) && matches!(u.scheme(), "http" | "https") {
+                return true;
+            }
+            // v0.9.4: Tauri 2 fires on_navigation for the initial URL too.
+            // In `cargo tauri dev` the initial URL is `http://127.0.0.1:1430/
+            // splash.html` (Tauri's dev server). Allow that in debug builds
+            // only so `tauri:dev` smoke-tests can actually load the dashboard.
+            // Production .app uses `tauri://localhost/splash.html` (caught by
+            // the earlier scheme=tauri branch) so this dev allowance is gated.
+            #[cfg(debug_assertions)]
+            if u.scheme() == "http"
+                && matches!(host, Some("127.0.0.1") | Some("localhost"))
+                && u.port_or_known_default() == Some(1430)
+            {
                 return true;
             }
             let live_port = app_for_handler
@@ -134,11 +148,10 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build()?;
 
-    // v0.9.4 Phase C: opaque-vibrancy material. NSVisualEffectMaterial::HudWindow
-    // tints with the wallpaper hue at low saturation; FollowsWindowActiveState
-    // dims it when the window loses focus. 14.0 = window corner radius (must
-    // match the CSS body / #root border-radius). On Windows, prefer Mica
-    // (Win11) and fall through to Acrylic (Win10).
+    // v0.9.4 vibrancy. HudWindow tints with wallpaper hue at low saturation;
+    // FollowsWindowActiveState dims when the window loses focus. 14.0 is the
+    // window corner radius. On Windows, prefer Mica (Win11), fall through to
+    // Acrylic (Win10) with a dark RGBA tint matching the upper gradient stop.
     #[cfg(target_os = "macos")]
     if let Err(e) = apply_vibrancy(
         &win,
@@ -150,10 +163,8 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        // Mica is Windows 11+. On Windows 10 it errors out; fall back to acrylic
-        // with a dark RGBA tint matching the body gradient's upper stop.
         if apply_mica(&win, Some(true)).is_err() {
-            if let Err(e) = apply_acrylic(&win, Some((30, 26, 38, 180))) {
+            if let Err(e) = apply_acrylic(&win, Some((30, 26, 38, 160))) {
                 log::warn!("apply_acrylic fallback failed on Windows dashboard: {}", e);
             }
         }

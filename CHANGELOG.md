@@ -21,7 +21,7 @@
 
 ### Changed
 
-- **Opaque-vibrancy treatment** applied to both dashboard and popover. The dashboard window is now `.transparent(true)` with `apply_vibrancy(HudWindow, FollowsWindowActiveState, 14.0)` on macOS and `apply_mica` (with `apply_acrylic` fallback) on Windows. CSS wash bumped from the v0.9.1 light recipe to a heavier `linear-gradient(180deg, rgba(30,26,38,0.78), rgba(20,18,26,0.82))` + `blur(60px) saturate(180%)` with a `body::before` brand-orange sheen top-left. Popover's `#root` propagates the same recipe — a deliberate visible change from the validated v0.9.1 cool-slate look. Both surfaces now feel like the same app.
+- **Popover opaque vibrancy.** The popover's `#root` was bumped from the v0.9.1 cool-slate 0.22-alpha base to a near-opaque `linear-gradient(180deg, rgba(30,26,38,0.93), rgba(20,18,26,0.96))` with `blur(40px) saturate(160%)`. Wallpaper hue still tints faintly through but text reads near-solid on bright backgrounds. The dashboard window keeps its v0.9.3 multi-stop gradient — a `.transparent(true)` + `apply_vibrancy(HudWindow, ...)` attempt on the dashboard broke its render during smoke (blank window), so the dashboard vibrancy treatment is deferred to a future release.
 - **Popover surface streamlined.** Five items retired: Add Account button, Usage Dashboard button, Status row, Refresh button (`⌘R`), Settings button (`⌘,`). Auto-refresh runs every 10s — manual Refresh became redundant. Settings is still reachable via tray right-click → Preferences.
 
 ### Fixed
