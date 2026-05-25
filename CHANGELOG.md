@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.4] — Unreleased
+
+### Fixed
+
+- **Dashboard "EXTRA USAGE" card now mirrors the popover.** Previously read only `plan.extraUsage` (OAuth-API per-org spend), which Anthropic has been gating at the org level for many users since 2026-05 — so the card showed `$— · Temporarily gated by Anthropic` even when `plan.consumerOverage` (claude.ai `/overage_spend_limit` — the usage credits visible at claude.ai/settings/usage) had real spend. Dashboard now applies the same preference order as `popover/popover.js::renderExtra`: `consumerOverage` first, fall back to `extraUsage`. Over-cap readings like 196% are now visible in the label (the bar still clamps at 100% since it semantically represents "% of cap").
+
 ## [0.9.3] — 2026-05-25
 
 ### Added

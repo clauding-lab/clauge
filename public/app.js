@@ -300,27 +300,47 @@ function renderFinanceSide() {
   const usage = state.data.usage;
   const plan = usage?.plan ?? {};
   const extra = plan.extraUsage;
+  const consumerOverage = plan.consumerOverage;
   const usedEl = document.getElementById('extra-used');
   const capEl = document.getElementById('extra-cap');
   const barEl = document.getElementById('extra-bar');
   const pctEl = document.getElementById('extra-pct');
   const currEl = document.getElementById('extra-currency');
 
-  if (extra && extra.enabled) {
-    const used = extra.usedDollars ?? 0;
-    const limit = extra.limitDollars ?? 0;
+  // Render the spend layout for either source. consumerOverage and extraUsage
+  // share { usedDollars, limitDollars, pct, currency } — see lib/usage-store.js.
+  const renderSpend = (source) => {
+    const used = source.usedDollars ?? 0;
+    const limit = source.limitDollars ?? 0;
     usedEl.textContent = used.toFixed(2);
     capEl.textContent = limit > 0 ? `/ $${limit.toFixed(2)}` : '';
-    let pct = extra.pct;
+    let pct = source.pct;
     if ((pct == null || !Number.isFinite(pct)) && limit > 0) pct = (used / limit) * 100;
-    pct = Math.max(0, Math.min(100, pct ?? 0));
-    barEl.style.width = `${pct.toFixed(1)}%`;
+    pct = Math.max(0, pct ?? 0);
+    // Bar represents "of cap" — clamp to 100. Label shows the true pct so an
+    // over-cap reading (e.g. 196%) stays visible (matches popover.js).
+    barEl.style.width = `${Math.min(100, pct).toFixed(1)}%`;
     pctEl.textContent = `${pct.toFixed(1)}% of cap`;
-    currEl.textContent = extra.currency || 'USD';
+    currEl.textContent = source.currency || 'USD';
     barEl.classList.remove('bar-fill--gated');
+  };
+
+  // Prefer plan.consumerOverage (claude.ai /overage_spend_limit — the usage
+  // credits visible at claude.ai/settings/usage) over plan.extraUsage (OAuth-API
+  // extra_usage, gated at the org level for many users since 2026-05). Same
+  // preference popover.js::renderExtra applies.
+  const overageHasData =
+    consumerOverage &&
+    (Number.isFinite(consumerOverage.usedDollars) ||
+      (Number.isFinite(consumerOverage.limitDollars) && consumerOverage.limitDollars > 0));
+
+  if (overageHasData) {
+    renderSpend(consumerOverage);
+  } else if (extra && extra.enabled) {
+    renderSpend(extra);
   } else if (extra && !extra.enabled && extra.disabledReason) {
     // v0.8.2: gated state — Anthropic disabled the feature at the org level.
-    // Show the reason instead of misleading "not configured" copy.
+    // Only reached when consumerOverage has no data either.
     usedEl.textContent = '—';
     capEl.textContent = '';
     barEl.style.width = '100%';
