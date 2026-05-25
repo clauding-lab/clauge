@@ -503,3 +503,51 @@ If Apple rejects v0.9.0, the v0.9.1 MAS submission is delayed until v0.9.0 is fi
 ## Out-of-scope reminder
 
 This plan does **not** include the v0.10.0 IAP paywall implementation. That work is in `docs/superpowers/plans/2026-05-19-clauge-iap-paywall-plan.md` (vienna branch — will be cherry-picked to `clauding-lab/iap-paywall` per Task A0 of that plan). v0.10.0 ships **after** v0.9.1 and builds on the popover redesign from Phase B3.
+
+---
+
+## Revised Phase C scope (2026-05-25)
+
+Phase C kicked off on the feature branch `worktree-phase-c-cli`. The original plan above (lines 211+) was written against assumed infrastructure; the audit done at session start surfaced three gaps the plan didn't address:
+
+1. **No port-file mechanism existed.** The plan assumed `~/Library/Caches/Clauge/active-port` was already being written by the Tauri shell. It wasn't. Adding it became part of Phase C foundational work.
+2. **Settings live in `tauri_plugin_store` (Rust-managed)**, not a plain `config.json` the JS sidecar / CLI could just read. The file is plain JSON on disk at `~/Library/Application Support/com.clauding.clauge/settings.json` — bundleId-keyed (not productName), readable from JS, but the canonical writer is the Tauri shell.
+3. **`com.clauding.clauge.trial-counter` and `com.clauding.clauge.anthropic-admin-key` Keychain items don't exist in current code.** They're forward-looking to v0.10.0 IAP. Naming is locked in Phase C's `lib/config-paths.js::keychainItems`; the actual Keychain wrappers ship later.
+
+Adnan's call (2026-05-25): take "Full scope ~7-8h" with these realities. Split into shipping-coherent halves:
+
+### Read-only half (v0.9.3-rc1) — SHIPPED
+
+Branch: `worktree-phase-c-cli`. 8 commits.
+
+| # | Commit | What |
+|---|---|---|
+| 49ad947 | `feat(cli): add lib/config-paths.js` | Single source of truth for state locations + Keychain item names. macOS/Windows/Linux branching. `CLAUGE_HOME` env override for test isolation. |
+| 612d0dc | `feat(cli): port_file write/remove` | Rust `src-tauri/src/port_file.rs` + wired into `AppState::set_port` + `RunEvent::ExitRequested` cleanup. Atomic write via tmp+rename. |
+| 8f0e109 | `feat(cli): dispatcher + entrypoint` | `lib/cli/index.js` parser/dispatcher. `server.js` routes any argv past script name through it (so typos get errors, not a server). |
+| 0bd6d94 | `feat(cli): expose providers via /api/config` | `lib/providers.js` catalogue (4 providers, defaults, descriptions). `/api/config` endpoint expanded. |
+| 9215d86 | `feat(cli): clauge config get` | HTTP-first, disk-fallback. `running: true/false` flag is the explicit signal. `fetchImpl` injection for tests. |
+| 89e6b05 | `feat(cli): clauge config providers` | Tabular default + `--json` for machines. Reuses `buildConfigOutput`. |
+
+End state: `clauge --help`, `clauge --version`, `clauge config get`, `clauge config providers` all live. 169 JS tests + 65 Rust tests pass. `npm run check` green.
+
+### Write half (v0.9.3 final, or v0.9.4) — DEFERRED
+
+Still pending. Requires Rust-side work and new HTTP IPC endpoints the original plan didn't have:
+
+- **`POST /api/config/providers/:name`** — flip the `enabled` flag. Writes need to go through the Tauri shell (which owns the `tauri_plugin_store` writer) to avoid concurrent-write races with the dashboard UI. The JS sidecar proxies via a new Tauri command.
+- **New Keychain wrappers in `src-tauri/src/keychain.rs`** — `trial_counter::read/write/clear` and `anthropic_admin_key::set/get/clear`. Each needs a corresponding `#[tauri::command]` plus capabilities/main.json registration (landmine #1).
+- **`POST /api/keychain/anthropic-admin` and `DELETE /api/keychain/trial-counter`** — the HTTP shim the CLI hits.
+- **`clauge config enable/disable`** — thin wrappers over the provider POST.
+- **`clauge config set-api-key --stdin`** — pipes stdin → POST to the Keychain endpoint.
+- **`clauge config reset-trial`** — three-lock dev-mode gate (`CLAUGE_DEV=1` OR `dev_mode: true` in settings; confirmation prompt; `--yes` to skip prompt).
+
+Pacing on the write half: the Rust IPC work is the big piece (~2-3h on its own). Best handled in a fresh session.
+
+### Path agreement contract
+
+Both `lib/config-paths.js` (JS) and `src-tauri/src/port_file.rs` (Rust) compute the port file path. They agree by convention, not by import. **If one drifts, the other's tests fail loud** — both sides include unit tests asserting the exact path string. Don't relax either without checking the other.
+
+### Test override convention
+
+`CLAUGE_HOME` env var redirects all path lookups under a tmpdir for test isolation. Honored by both `lib/config-paths.js` and `src-tauri/src/port_file.rs`. Unset in production. Any new path helpers added in the write half should follow the same convention.
