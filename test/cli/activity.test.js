@@ -6,7 +6,27 @@ import {
   computeCurrentStreak,
   computeLongestStreak,
   summarizeActivity,
+  aggregateDailyActivity,
 } from '../../lib/activity.js';
+
+// ─── aggregateDailyActivity fixtures ────────────────────────
+
+function mkSession({ startedAt, messageCount = 1, totalTokens = 1000, cost = 0.05 }) {
+  return {
+    startedAt,
+    messageCount,
+    tokens: {
+      inputTokens: Math.round(totalTokens * 0.4),
+      outputTokens: Math.round(totalTokens * 0.1),
+      cacheRead: Math.round(totalTokens * 0.5),
+      cacheCreate5m: 0,
+      cacheCreate1h: 0,
+      webSearches: 0,
+      webFetches: 0,
+    },
+    cost,
+  };
+}
 
 // ─── computeBuckets ─────────────────────────────────────────
 
@@ -163,6 +183,109 @@ test('computeLongestStreak: picks longest of multiple runs', () => {
     { date: '2026-05-25', sessions: 0, tokens: 0, cost: 0 },
   ];
   assert.equal(computeLongestStreak(days), 3);
+});
+
+// ─── summarizeActivity ──────────────────────────────────────
+
+// ─── aggregateDailyActivity ─────────────────────────────────
+
+test('aggregateDailyActivity: empty sessions → dense zero-filled array of `periodDays`', () => {
+  const days = aggregateDailyActivity([], {
+    today: '2026-05-25',
+    periodDays: 5,
+    tz: 'UTC',
+  });
+  assert.equal(days.length, 5);
+  assert.deepEqual(
+    days.map((d) => d.date),
+    ['2026-05-21', '2026-05-22', '2026-05-23', '2026-05-24', '2026-05-25'],
+  );
+  for (const d of days) {
+    assert.equal(d.sessions, 0);
+    assert.equal(d.tokens, 0);
+    assert.equal(d.costUSD, 0);
+    assert.equal(d.claudeAiMessages, 0);
+    assert.equal(d.intensity, 0);
+  }
+});
+
+test('aggregateDailyActivity: single session lands on today (UTC)', () => {
+  const days = aggregateDailyActivity(
+    [mkSession({ startedAt: '2026-05-25T10:00:00Z', totalTokens: 5000, cost: 0.42 })],
+    { today: '2026-05-25', periodDays: 3, tz: 'UTC' },
+  );
+  assert.equal(days.length, 3);
+  const today = days[days.length - 1];
+  assert.equal(today.date, '2026-05-25');
+  assert.equal(today.sessions, 1);
+  assert.equal(today.tokens, 5000);
+  assert.equal(today.costUSD, 0.42);
+  assert.ok(today.intensity >= 1);
+});
+
+test('aggregateDailyActivity: multiple sessions on same day aggregate', () => {
+  const days = aggregateDailyActivity(
+    [
+      mkSession({ startedAt: '2026-05-25T01:00:00Z', totalTokens: 1000, cost: 0.1 }),
+      mkSession({ startedAt: '2026-05-25T12:00:00Z', totalTokens: 2000, cost: 0.2 }),
+      mkSession({ startedAt: '2026-05-25T23:00:00Z', totalTokens: 3000, cost: 0.3 }),
+    ],
+    { today: '2026-05-25', periodDays: 1, tz: 'UTC' },
+  );
+  assert.equal(days.length, 1);
+  assert.equal(days[0].sessions, 3);
+  assert.equal(days[0].tokens, 6000);
+  assert.ok(Math.abs(days[0].costUSD - 0.6) < 1e-9);
+});
+
+test('aggregateDailyActivity: sessions outside the period window are dropped', () => {
+  const days = aggregateDailyActivity(
+    [
+      mkSession({ startedAt: '2026-01-01T00:00:00Z' }),
+      mkSession({ startedAt: '2026-05-25T10:00:00Z' }),
+    ],
+    { today: '2026-05-25', periodDays: 3, tz: 'UTC' },
+  );
+  assert.equal(days.length, 3);
+  const allSessionCount = days.reduce((sum, d) => sum + d.sessions, 0);
+  assert.equal(allSessionCount, 1);
+});
+
+test('aggregateDailyActivity: respects user TZ when bucketing into calendar days', () => {
+  // 22:00 UTC = 04:00 Asia/Dhaka (UTC+6) the NEXT day
+  const days = aggregateDailyActivity(
+    [mkSession({ startedAt: '2026-05-24T22:00:00Z' })],
+    { today: '2026-05-25', periodDays: 2, tz: 'Asia/Dhaka' },
+  );
+  // In Asia/Dhaka, this session lands on 2026-05-25 (today), not 2026-05-24
+  assert.equal(days[1].date, '2026-05-25');
+  assert.equal(days[1].sessions, 1);
+  assert.equal(days[0].sessions, 0);
+});
+
+test('aggregateDailyActivity: periodDays="all" derives rangeStart from earliest session', () => {
+  const days = aggregateDailyActivity(
+    [
+      mkSession({ startedAt: '2026-05-20T10:00:00Z' }),
+      mkSession({ startedAt: '2026-05-25T10:00:00Z' }),
+    ],
+    { today: '2026-05-25', periodDays: 'all', tz: 'UTC' },
+  );
+  // Earliest session is 2026-05-20, today is 2026-05-25 → 6 days inclusive.
+  assert.equal(days.length, 6);
+  assert.equal(days[0].date, '2026-05-20');
+  assert.equal(days[5].date, '2026-05-25');
+});
+
+test('aggregateDailyActivity: periodDays="all" with no sessions → just today', () => {
+  const days = aggregateDailyActivity([], {
+    today: '2026-05-25',
+    periodDays: 'all',
+    tz: 'UTC',
+  });
+  assert.equal(days.length, 1);
+  assert.equal(days[0].date, '2026-05-25');
+  assert.equal(days[0].sessions, 0);
 });
 
 // ─── summarizeActivity ──────────────────────────────────────

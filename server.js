@@ -40,6 +40,12 @@ import { toCsv, toJson } from './lib/exporter.js';
 import { listProviders, PROVIDERS } from './lib/providers.js';
 import { setProviderEnabled } from './lib/settings-writer.js';
 import { runCli } from './lib/cli/index.js';
+import {
+  aggregateDailyActivity,
+  countActiveDays,
+  computeCurrentStreak,
+  computeLongestStreak,
+} from './lib/activity.js';
 
 // CLI mode short-circuit. ANY argv past the script name routes through the
 // CLI dispatcher (which prints usage + exit 2 on unknown verbs). This way
@@ -167,6 +173,7 @@ const READ_ONLY_API_PATHS = [
   '/api/usage',          // GET + DELETE — reading or wiping local usage
   '/api/bookmarklet',
   '/api/export',
+  '/api/activity',
 ];
 const readOnlyCors = cors({
   origin: '*',
@@ -455,6 +462,49 @@ app.get('/api/cache', async (c) => {
     })
     .sort((a, b) => a.date.localeCompare(b.date));
   return c.json({ period: filtered.period, hitRate, netSavingsUSD: netSavings, dailyTrend });
+});
+
+// Activity heatmap (v0.9.4 Phase A). Returns a dense per-day record array
+// suitable for the GitHub-style heatmap renderer in both the dashboard and
+// the popover. Heavy lifting lives in lib/activity.js; this handler is a
+// thin wrapper over store.loadAllSummaries() + the pure aggregator.
+app.get('/api/activity', async (c) => {
+  const periodParam = c.req.query('period') ?? '365d';
+  const tz = c.req.query('tz') ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+
+  let periodDays;
+  if (periodParam === 'all') {
+    periodDays = 'all';
+  } else if (periodParam === '180d') {
+    periodDays = 180;
+  } else if (periodParam === '365d') {
+    periodDays = 365;
+  } else {
+    return c.json({ error: `unsupported period '${periodParam}' — expected 180d, 365d, or all` }, 400);
+  }
+
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
+  const all = await store.loadAllSummaries();
+  const days = aggregateDailyActivity(all, { today, periodDays, tz });
+  const rangeStart = days[0]?.date ?? today;
+
+  return c.json({
+    period: periodParam,
+    tz,
+    today,
+    rangeStart,
+    totalDays: days.length,
+    activeDays: countActiveDays(days),
+    currentStreak: computeCurrentStreak(days, today),
+    longestStreak: computeLongestStreak(days),
+    days,
+  });
 });
 
 app.get('/api/roi', async (c) => {
