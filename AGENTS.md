@@ -201,6 +201,25 @@ To test local extension changes:
 
 For real users: ship updates via the Chrome Web Store. The CWS submission flow is in `docs/CWS_LISTING.md`. Manifest description must be ≤132 chars (verified by upload rejection).
 
+### 14. Companion CLI (v0.9.3) — port-file, settings.json race, macOS-only Keychain ops
+
+`server.js` doubles as the CLI binary. Argv past the script name routes through `lib/cli/index.js`'s dispatcher; bare `node server.js` falls through to the Hono server (legacy npx-clauge entrypoint). If you add a new top-level CLI verb, two places need updates:
+
+1. `lib/cli/index.js::parseArgs` — currently only `config` has a subverb. New verbs without subverbs need the verb itself added to the dispatch switch.
+2. New subverb modules live at `lib/cli/<verb>-<subverb>.js` and are loaded by dynamic import. Missing modules print "not yet implemented" and exit 2 — graceful, but ship the module if you intend the verb to work.
+
+**Port-file mechanism (`src-tauri/src/port_file.rs` ↔ `lib/config-paths.js::portFile`):** the Tauri shell writes `~/Library/Caches/Clauge/active-port` from `AppState::set_port` (best-effort — failure logs a warning but doesn't fail the in-memory port set). The shutdown handler removes the file on `RunEvent::ExitRequested`. CLI uses this file to find a running Clauge. **The Rust + JS sides compute the path independently** — both have unit tests asserting the exact path string. If you rename `APP_NAME` or change cache-dir conventions on either side, the other's tests fail loud. Don't relax either test without also updating the other side.
+
+**`CLAUGE_HOME` env override:** both `lib/config-paths.js` and `src-tauri/src/port_file.rs` honor this for test isolation — sandboxes path resolution under a tmpdir. Unset in production. Any new path helper should follow the same convention so tests can sandbox it.
+
+**settings.json race (known, accepted in v0.9.3):** the JS sidecar writes provider toggles directly to `settings.json` (the Tauri plugin_store file). If the Tauri shell has the store loaded in memory and calls `store.save()` AFTER the CLI's write, the providers section can be clobbered. Real-world trigger requires toggling via CLI AND completing the wizard via dashboard at the same moment — implausible but non-zero. Proper fix (Rust IPC bridge for settings writes) deferred to v0.9.4. Until then: don't change wizard-completion code paths to call `store.save()` more aggressively than necessary.
+
+**Keychain item names locked in `lib/config-paths.js::keychainItems`:** four items — two existing (`Claude Code-credentials`, `com.clauding.clauge.claude-ai-session`) and two forward-looking (`com.clauding.clauge.trial-counter`, `com.clauding.clauge.anthropic-admin-key`). The forward-looking pair has no Rust reader yet — they're written by the CLI (`set-api-key`, `reset-trial`) and will be consumed by v0.10.0 IAP code. **Don't rename** any of the four; the JS CLI and the (future) Rust reader must agree on the strings.
+
+**CLI Keychain ops are macOS-only:** `set-api-key` and `reset-trial` shell out to `security`. Other platforms get a clean error with exit 2. Windows + Linux Keychain support (`cmdkey` / libsecret, or a Node native binding like `keytar`) tracked for v0.9.4. `set-api-key` passes the key via `-w <key>` which puts it in `security`'s argv for the spawn — small ps-visibility window. v0.9.4 will swap to `keytar` to close this.
+
+**Test discovery:** `npm test` glob is `test/*.test.js test/cli/*.test.js`. New CLI test files go under `test/cli/`. New non-CLI test files at `test/`. If you add a third directory, update the glob in `package.json` — without that, `npm run check` silently skips your tests.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

@@ -233,12 +233,46 @@ RATE_CACHE_CREATE=3.75
 RATE_CACHE_CREATE_1H=6.00
 ```
 
+## Command-line interface (v0.9.3+)
+
+Power-user equivalent of the menu-bar UI. The same Node binary that backs the dashboard also acts as a CLI when invoked with a verb. Useful for scripting, troubleshooting, and headless setups.
+
+```bash
+# Print Clauge config as JSON (HTTP-first; falls back to settings.json on disk if Clauge isn't running)
+clauge config get
+
+# List providers + their enabled state — tabular by default, --json for machines
+clauge config providers
+clauge config providers --json
+
+# Flip a provider on/off
+clauge config enable  --provider claude-ai-session
+clauge config disable --provider clauge-sync
+
+# Store an admin API key in macOS Keychain (forward-looking — v0.10.0 will consume it)
+echo "$ANTHROPIC_ADMIN_KEY" | clauge config set-api-key --provider anthropic-admin --stdin
+
+# Wipe the trial counter (dev-mode only; three locks)
+CLAUGE_DEV=1 clauge config reset-trial --yes
+
+# Help + version
+clauge --help
+clauge --version
+```
+
+**Notes:**
+- `set-api-key` and `reset-trial` are **macOS-only** in v0.9.3 — they shell out to `security`. Windows + Linux Keychain support tracked for v0.9.4.
+- `set-api-key` rejects API keys passed on the command line. Always pipe via stdin so the key doesn't land in shell history.
+- The CLI talks to a running Clauge over HTTP when possible (via `~/Library/Caches/Clauge/active-port`). When Clauge isn't running, read commands fall back to the on-disk settings file; write commands write directly to disk (`enable`/`disable`) or to Keychain (`set-api-key` / `reset-trial`).
+- When installed via Homebrew, the `clauge` command is on your `PATH`. From source: `node server.js config get`.
+
 ## Development
 
 ```bash
-npm test          # 113 unit tests via Node's built-in test runner
+npm test          # unit tests via Node's built-in test runner
 npm run dev       # auto-restart server on changes
 npm start         # plain start
+npm run check     # canonical gate: cargo fmt + clippy + cargo test + npm test
 ```
 
 ## API

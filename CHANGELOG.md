@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.3] — 2026-05-25
+
+### Added
+
+- **Companion CLI** (`clauge config`). Six subcommands plus `--help` / `--version`:
+  - `clauge config get` — print Clauge config as JSON. HTTP-first (talks to a running Clauge via the new port-file mechanism), disk-fallback when offline.
+  - `clauge config providers` — list providers + enabled state. Tabular by default, `--json` for machines.
+  - `clauge config enable --provider <name>` / `disable --provider <name>` — toggle a provider on/off. Routes through the running Clauge's HTTP endpoint when available; writes directly to `settings.json` when not.
+  - `clauge config set-api-key --provider anthropic-admin --stdin` — store an admin API key in macOS Keychain (forward-looking — consumed by v0.10.0 IAP). Rejects keys passed on argv; **only** reads from stdin to avoid shell-history leaks.
+  - `clauge config reset-trial [--yes]` — wipe the trial-counter Keychain item. Three locks: macOS-only platform gate, dev-mode gate (`CLAUGE_DEV=1` OR `settings.json.dev_mode: true`), and a confirmation prompt unless `--yes` is passed.
+- **Port-file mechanism** — Tauri shell now writes `~/Library/Caches/Clauge/active-port` from `AppState::set_port` (atomic write via tmp + rename) and removes it on graceful shutdown. Enables the CLI to find a running Clauge over HTTP without any IPC handshake.
+
+### Notes
+
+- `set-api-key` and `reset-trial` are **macOS-only** in v0.9.3 — they shell out to the `security` CLI. Windows + Linux Keychain support tracked for v0.9.4.
+- The forward-looking Keychain items (`com.clauding.clauge.trial-counter`, `com.clauding.clauge.anthropic-admin-key`) are written by the CLI but not yet read by any Clauge code path. They become live in v0.10.0 IAP work.
+- Known race documented in `AGENTS.md` landmine #14: concurrent writes to `settings.json` by the JS sidecar (CLI path) and the Tauri plugin_store (dashboard path) can clobber each other in a small window. Real-world trigger is implausible; proper fix (Rust IPC bridge) deferred to v0.9.4.
+
 ## [0.9.2] — 2026-05-23
 
 ### Changed
