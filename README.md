@@ -19,7 +19,7 @@
   <img src="docs/screenshots/v0.9.1/popover.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover in CodexBar style: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`.
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. **v0.9.2** flips the popover to dismiss on outside click, matching the macOS menu-bar convention. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`.
 
 ## Install
 
@@ -64,7 +64,7 @@ If you click **Skip for now** instead, the dashboard appears immediately with Cl
 
 **Option B — Native Windows app (v0.8.0+):**
 
-Download `Clauge_<version>_x64-setup.exe` (latest is v0.9.1) from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
+Download `Clauge_<version>_x64-setup.exe` (latest is v0.9.2) from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
 
 You'll click through two "unknown publisher" warnings on the first install — this is normal for unsigned indie apps. Authenticode code-signing is on the v0.8.x roadmap; until then:
 
@@ -80,11 +80,11 @@ The NSIS installer runs as **per-user, no UAC** (no admin prompt). When it finis
 
 There is **no Windows system-tray icon in v0.8.0** — the macOS menu-bar percentage chiclet has no cheap Windows equivalent (Win32 tray icons can't render dynamic numbers without per-frame ICO compositing, which is deferred to a later v0.8.x). On Windows, just **close the dashboard window to quit** the app; relaunch from the Start Menu.
 
-The 4-step Welcome wizard (described above) applies to Windows too — same window, same flow. The one difference: **the "macOS Keychain Access" step is a no-op on Windows.** Claude Code on Windows stores its OAuth credentials in a per-user file (`%USERPROFILE%\.claude\.credentials.json`) instead of a system keychain, so there's no permission prompt to click through. Walk past Step 2, click **Connect ✓** on Step 4, and the dashboard populates.
+The 5-step Welcome wizard (described above) applies to Windows too — same window, same flow. The one difference: **the "macOS Keychain Access" step is a no-op on Windows.** Claude Code on Windows stores its OAuth credentials in a per-user file (`%USERPROFILE%\.claude\.credentials.json`) instead of a system keychain, so there's no permission prompt to click through. Walk past Step 2, click **Connect ✓** on Step 4, and the dashboard populates.
 
 **Auto-updates work the same as macOS.** Settings → Updates → **Check Now** queries the shared `gh-pages/latest.json` manifest (which now lists `darwin-aarch64`, `darwin-x86_64`, **and** `windows-x86_64` entries side-by-side). When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** — the running app exits and the new installer takes over.
 
-> **Verify the download (optional, advanced):** the GitHub Release page lists the SHA-256 of `Clauge_0.8.0_x64-setup.exe`. In PowerShell: `Get-FileHash Clauge_0.8.0_x64-setup.exe -Algorithm SHA256` and compare against the value on the Releases page.
+> **Verify the download (optional, advanced):** the GitHub Release page lists the SHA-256 of `Clauge_0.9.2_x64-setup.exe`. In PowerShell: `Get-FileHash Clauge_0.9.2_x64-setup.exe -Algorithm SHA256` and compare against the value on the Releases page.
 
 > **Known Windows limitations in v0.8.0:**
 > - The SmartScreen "publisher unknown" warning fires until Authenticode signing lands. Reputation accrues over time even on an unsigned cert, but the cleanest fix is a paid EV/OV code-signing certificate (v0.8.x).
@@ -148,7 +148,7 @@ This is the architectural elegance: nothing to leak, nothing to rotate, nothing 
 
 ### What this means in practice
 
-- **No account creation, no Anthropic credentials.** A 4-step first-launch wizard (v0.7.2+) explains the one macOS Keychain permission Clauge needs to read Claude Code's OAuth blob. It never asks for an account, password, or API key. After **Connect**, your data appears immediately — provided you've used Claude Code on this machine.
+- **No account creation, no Anthropic credentials.** A 5-step first-launch wizard (v0.8.1+) explains the one macOS Keychain permission Clauge needs to read Claude Code's OAuth blob. It never asks for an account, password, or API key. After **Connect**, your data appears immediately — provided you've used Claude Code on this machine.
 - **No accounts, no plans, no passwords held by Clauge.** Compromise the binary, you compromise nothing about your Anthropic identity.
 - **No telemetry.** Clauge never phones home — Clauding-Lab does not know you exist.
 - **The extension is optional.** The dashboard works fine without it; you just won't see claude.ai plan-ring data (the Claude Code CLI metrics are unaffected).
@@ -267,7 +267,6 @@ npm start         # plain start
 
 - **Authenticode code-signing for Windows (v0.8.x)** — eliminates the SmartScreen "publisher unknown" click-through on the Windows installer. EV/OV certificate path TBD.
 - **claude.ai sign-in on Windows (v0.8.x)** — Architecture A native OAuth pop-up parity with the macOS surface. v0.8.0 ships Windows with Claude Code CLI integration only.
-- **Auto-detect missing extension + first-run install prompt** — detect whether Clauge Sync is installed and, if not, surface a Chrome Web Store install banner in the dashboard on first launch.
 - **Intelligence banner** with pace projections (priority rules: extra usage near cap, session reset imminent, weekly-vs-Sonnet routing hints, etc.)
 - **One-shot success rate** per task category
 - **Per-project drill-down view** with sessions, files edited, tools used
