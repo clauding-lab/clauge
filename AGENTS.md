@@ -56,7 +56,11 @@ docs/                       # RELEASE_CHECKLIST.md, PRIVACY.md, CWS_LISTING.md, 
 
 `npm run check` is the **canonical gate** — same command CI runs on every push/PR via `.github/workflows/check.yml`. Run it locally before any commit you intend to push; failures there will fail CI the same way.
 
-`cargo tauri dev` runs Tauri's own dev loop but **does NOT run npm's prebuild scripts** — so changes to the sidecar (`scripts/build-sidecar.mjs`) won't be picked up. Always run `npm run build:sidecar` before `cargo tauri dev` after sidecar changes.
+`cargo tauri dev` runs Tauri's own dev loop but **does NOT run npm's prebuild scripts**. The SEA bundle embeds `server.js` + `lib/` + `public/` (which includes `popover/` copied in by build-sidecar). Changes to ANY of those — not just `scripts/build-sidecar.mjs` — require a fresh `npm run build:sidecar` before `cargo tauri dev`. The canonical iteration cycle while developing popover/server code is:
+
+```bash
+pkill -f clauge && npm run build:sidecar && npm run tauri:dev
+```
 
 ## Release flow
 
@@ -183,6 +187,19 @@ In `src-tauri/src/native_popover.rs`:
 - `consumerOverage` — claude.ai consumer "Usage credits" (the `$X spent / $Y limit` visible at claude.ai/settings/usage). The one users actually see and care about.
 
 The popover prefers `consumerOverage` when present and falls back to `extraUsage`. Don't merge them — the semantics differ. claude.ai returns values in **cents** (1000 = $10); OAuth returns in **cents** for `monthly_limit` but `pct` is already 0..100.
+
+### 13. Chrome extension dev: the Web Store version overrides local edits
+
+When iterating on `extension/`, the Chrome Web Store-published version (currently Clauge Sync v0.2.0 in review at time of writing) **takes precedence** over file edits in `extension/`. Reloading at `chrome://extensions` does nothing because Chrome runs the published version, not the local folder.
+
+To test local extension changes:
+
+1. Open `chrome://extensions` → toggle "Developer mode" ON (top-right).
+2. Click **"Load unpacked"** → select `/Users/adnanrashid/Projects/clauge/extension`.
+3. **Disable** the Web Store version (toggle off) so both don't poll claude.ai simultaneously and POST duplicates to `/api/usage/ingest`.
+4. After edits, click the ↻ reload icon on the unpacked card (only appears in Developer mode) to pick them up.
+
+For real users: ship updates via the Chrome Web Store. The CWS submission flow is in `docs/CWS_LISTING.md`. Manifest description must be ≤132 chars (verified by upload rejection).
 
 ## Communication & timezone
 
