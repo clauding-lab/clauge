@@ -70,13 +70,19 @@ Tag-driven. `git tag v0.X.Y && git push origin v0.X.Y` triggers `.github/workflo
 
 **Before tagging:** complete the macOS smoke + Windows smoke in `docs/RELEASE_CHECKLIST.md`. **Pre-fill `CHANGELOG.md` with a `## [X.Y.Z] — YYYY-MM-DD` section** — release.yml auto-extracts it for the GitHub Release body. Missing section = empty release page.
 
-**Homebrew tap** (`clauding-lab/homebrew-tap`) does **not** auto-bump on `v*` tag pushes — the release.yml currently doesn't dispatch to it. After every release ships, manually trigger:
+**Homebrew tap** (`clauding-lab/homebrew-tap`) **auto-bumps on stable `v*` tag pushes** via the `dispatch-homebrew` job in release.yml, which POSTs `repository_dispatch` (`event_type: clauge-release`) to the tap. The tap's `auto-update.yml` workflow then downloads the new DMG, computes its SHA256, and commits the updated `Casks/clauge.rb` — typically within ~30s of release publication.
+
+**Prereleases skip the dispatch** — the tap only carries the latest stable cask (the `if: !contains(github.ref_name, '-')` guard handles this).
+
+**Required secret in the clauge repo**: `HOMEBREW_TAP_DISPATCH_TOKEN` — a fine-grained PAT scoped to `clauding-lab/homebrew-tap` with **Contents: write** permission. Cross-repo `/dispatches` POST cannot use the default `GITHUB_TOKEN` (it's scoped to the workflow's own repo and 403s on writes to other repos). Set this at: Settings → Secrets and variables → Actions on the clauge repo.
+
+**Manual fallback** (if dispatch fails or for an out-of-band bump):
 
 ```bash
 gh workflow run auto-update.yml --repo clauding-lab/homebrew-tap -f version=X.Y.Z
 ```
 
-The tap workflow downloads the new DMG, hashes it, and updates `Casks/clauge.rb`.
+The tap also runs a daily 04:17 UTC cron as a safety net — even if dispatch and manual trigger are both missed, the cron catches it within 24 hours.
 
 **MAS build:** uses a separate `tauri.mas.conf.json` (lives on the `mas-implement-session` branch, not main). Don't merge or rebase that branch into main without explicit sign-off — it contains signing IDs and provisioning profile paths that are environment-specific.
 
