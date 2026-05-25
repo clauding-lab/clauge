@@ -286,6 +286,16 @@ For real users: ship updates via the Chrome Web Store. The CWS submission flow i
 
 **Popover height check** still lives in `native_popover.rs::resizeToContent` (`200..1200`) and is mirrored by `popover/popover.js::resizeToContent`'s same clamp. Heatmap section adds ~120px; the five removed items netted ~170px back, so v0.9.4 popover is shorter than v0.9.3. Plenty of headroom — but if you add another section, check `MAX_POPOVER_HEIGHT` (`native_popover.rs:67`) is still respected.
 
+### 16. Tauri bridge + copy registry (v0.9.4) — both infrastructure is wired, migration is partial
+
+`popover/lib/tauri-bridge.js` is the canonical facade for every `tauri.invoke()` call. **New code should call `window.ClaugeBridge.xxx()` instead of `window.__TAURI__.core.invoke(...)`.** The bridge file enumerates every command in one place — pair it with `scripts/validate-ipc-triple-register.cjs` and you can audit the whole IPC surface from two files.
+
+Existing callsites still use raw `__TAURI__.core.invoke()`. Migration is incremental: `public/connections.js`, `public/app.js`, `public/onboarding/onboarding.js`, and `popover/splash.js` will move to the bridge across follow-up commits. **Don't add new raw invokes.** If you spot one that's safe to migrate while you're touching nearby code, do it as a separate small commit.
+
+`popover/copy.json` + `popover/lib/copy.js` are the parallel story for user-facing strings. **New strings should be added to `copy.json` and called via `window.t('key.path', { params })`.** Validator at `scripts/validate-copy-registry.cjs` (in `npm run check`) catches typos in t() keys and ensures the JSON is well-formed. Same incremental-migration shape: the registry is wired, existing inline strings stay inline until each one is migrated.
+
+Both bridges are loaded as classic scripts (not ES modules) to keep the dashboard's mixed loading model coherent (`app.js` is an ES module but everything else under `public/` is classic-script for compatibility with the popover's WKWebView).
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
