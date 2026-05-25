@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clauge — Translucent Dashboard Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --brand: #d97757;
+  --brand-2: #e89478;
+  --brand-deep: #b45c41;
+  --brand-tint: rgba(217, 119, 87, 0.14);
+  --glass-1: rgba(255, 240, 230, 0.04);
+  --glass-2: rgba(255, 240, 230, 0.07);
+  --rim-top: rgba(255, 240, 230, 0.10);
+  --rim-bottom: rgba(0, 0, 0, 0.4);
+  --text: #f4ece4;
+  --text-2: #c9bdb2;
+  --text-3: #8a7e74;
+  --ok: #7bc89c;
+  --warn: #e8b06a;
+  --opus: #b59cdc;
+  --sonnet: #84a8d4;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* === Checkered "desktop" backdrop === */
+body {
+  min-height: 100vh;
+  font-family: var(--sans);
+  color: var(--text);
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+  /* checker squares — alternating tones so the translucency reads clearly */
+  background-color: #7a5a8a;
+  background-image:
+    linear-gradient(45deg, #3a2848 25%, transparent 25%),
+    linear-gradient(-45deg, #3a2848 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #3a2848 75%),
+    linear-gradient(-45deg, transparent 75%, #3a2848 75%);
+  background-size: 80px 80px;
+  background-position: 0 0, 0 40px, 40px -40px, -40px 0;
+  padding: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* === The dashboard window === */
+.window {
+  width: 1100px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 30px 80px -20px rgba(0, 0, 0, 0.6),
+    0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  position: relative;
+
+  /* === The translucent-but-opaque surface === */
+  /* CodexBar-style: vibrancy reads through faintly but the surface is
+   * substantively opaque. Higher alpha (0.72) + a layered dark/violet
+   * wash + heavy blur. Wallpaper hue still tints via backdrop-filter
+   * saturate, but text reads on near-solid surface. */
+  background:
+    linear-gradient(180deg, rgba(30, 26, 38, 0.78) 0%, rgba(20, 18, 26, 0.82) 100%);
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
+          backdrop-filter: blur(60px) saturate(180%);
+}
+.window::before {
+  /* very subtle brand orange specular sheen */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(80% 50% at 0% 0%, rgba(217, 119, 87, 0.06), transparent 60%);
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+/* === macOS traffic lights === */
+.titlebar {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+}
+.dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2);
+}
+.dot.red { background: #ff5f57; }
+.dot.amber { background: #febc2e; }
+.dot.green { background: #28c840; }
+
+/* === Topbar === */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 16px 18px;
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid rgba(255, 240, 230, 0.06);
+}
+.brand {
+  display: flex; align-items: center; gap: 12px;
+}
+.chiclet {
+  width: 30px; height: 30px;
+  border-radius: 7px;
+  background: var(--glass-2);
+  box-shadow: inset 0 1px 0 var(--rim-top), inset 0 -1px 0 var(--rim-bottom);
+  display: grid; place-items: center;
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--brand);
+}
+.brand-name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.brand-meta { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+
+.tabs {
+  display: inline-flex;
+  padding: 4px;
+  gap: 0;
+  background: var(--glass-1);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 var(--rim-top), inset 0 -1px 0 var(--rim-bottom);
+}
+.tabs button {
+  appearance: none; border: 0; cursor: pointer;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: transparent;
+  border-radius: 999px;
+}
+.tabs button.active {
+  color: var(--text);
+  background: var(--glass-2);
+  box-shadow: inset 0 1px 0 rgba(255,240,230,0.12), inset 0 -1px 0 rgba(0,0,0,0.3);
+}
+
+.controls { display: flex; align-items: center; gap: 6px; }
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  position: relative;
+  background: var(--glass-1);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 var(--rim-top), inset 0 -1px 0 var(--rim-bottom);
+}
+.seg button {
+  appearance: none; border: 0; cursor: pointer;
+  padding: 5px 11px;
+  font: inherit; font-size: 11px; font-weight: 500;
+  color: var(--text-3);
+  background: transparent;
+  border-radius: 999px;
+}
+.seg button.active {
+  color: #1c100a;
+  background: linear-gradient(180deg, var(--brand-2), var(--brand));
+  box-shadow: 0 4px 12px -2px rgba(217,119,87,0.5);
+}
+
+/* === Content === */
+main {
+  padding: 18px;
+  display: grid; gap: 14px;
+  position: relative;
+  z-index: 2;
+}
+
+.glass {
+  background: var(--glass-1);
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
+          backdrop-filter: blur(60px) saturate(180%);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow:
+    inset 0 1px 0 var(--rim-top),
+    inset 0 -1px 0 var(--rim-bottom),
+    inset 1px 0 0 rgba(255,240,230,0.04),
+    inset -1px 0 0 rgba(255,240,230,0.04),
+    0 1px 1px rgba(0,0,0,0.3),
+    0 12px 24px -12px rgba(0,0,0,0.4);
+  position: relative;
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,250,245,0.06) 0%, transparent 35%);
+  pointer-events: none;
+}
+
+/* === Plan capacity hero === */
+.hero { padding: 22px 24px; }
+.hero-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.hero-title { display: flex; align-items: center; gap: 10px; }
+.hero-title h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.sync {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+}
+.live {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+.healthy {
+  font-size: 10.5px; padding: 3px 9px; border-radius: 999px;
+  background: rgba(123,200,156,0.14); color: var(--ok);
+}
+
+.rings {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr) 1.2fr;
+  gap: 18px;
+  align-items: center;
+}
+.ring-card { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ring { width: 92px; height: 92px; position: relative; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring .pct {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; gap: 1px;
+  font-family: var(--mono);
+}
+.ring .pct .n {
+  font-size: 28px; font-weight: 600; letter-spacing: -0.03em;
+  background: linear-gradient(180deg, #fff8f0, #f0d8c4);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.ring .pct .s { font-size: 11px; color: var(--text-3); margin-top: -8px; }
+.ring-label { font-size: 11.5px; font-weight: 500; }
+.ring-label .window-tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--glass-2);
+  color: var(--text-3);
+  margin-left: 4px;
+}
+.ring-reset { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 2px; }
+
+.side {
+  padding: 14px 16px;
+  background: rgba(0,0,0,0.20);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,240,230,0.05);
+}
+.side-lbl {
+  font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-3);
+}
+.side-val {
+  font-family: var(--mono);
+  font-size: 24px; font-weight: 600;
+  margin-top: 4px;
+  letter-spacing: -0.02em;
+}
+.side-val .cur { color: var(--text-3); font-size: 0.7em; }
+.bar {
+  height: 4px; background: rgba(255,240,230,0.08); border-radius: 999px;
+  margin-top: 10px; overflow: hidden;
+}
+.bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--brand-2), var(--brand)); border-radius: 999px; }
+.side-foot { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 6px; display: flex; justify-content: space-between; }
+
+/* === Digest strip === */
+.strip {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(5, 1fr);
+  padding: 14px 22px;
+}
+.ms { padding: 0 18px; position: relative; }
+.ms + .ms::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px;
+  width: 1px; background: rgba(255,240,230,0.06);
+}
+.ms:first-child { padding-left: 4px; }
+.ms-lbl { font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-3); display: flex; gap: 5px; align-items: center; }
+.ms-lbl .chip {
+  font-family: var(--mono); font-size: 9px; padding: 1px 5px; border-radius: 3px;
+  background: var(--glass-2); color: var(--text-3); text-transform: lowercase;
+}
+.ms-val {
+  font-family: var(--mono); font-size: 22px; font-weight: 600; letter-spacing: -0.02em;
+  margin-top: 5px;
+}
+.ms-val.ok { color: var(--ok); }
+.ms.primary .ms-val { font-size: 26px; color: var(--brand-2); }
+.ms-sub { font-size: 10.5px; color: var(--text-3); margin-top: 4px; }
+.savings { color: var(--ok); font-family: var(--mono); }
+
+/* === Chart row === */
+.chart-row { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.card-title { font-size: 11px; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-2); margin: 0; }
+.card-sub { font-size: 11px; color: var(--text-3); }
+.bar-chart { display: flex; gap: 6px; align-items: flex-end; height: 120px; }
+.bar-chart .b {
+  flex: 1;
+  background: linear-gradient(180deg, var(--brand-2) 0%, var(--brand) 70%, var(--brand-deep) 100%);
+  border-radius: 3px 3px 1px 1px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 12px -4px rgba(217,119,87,0.4);
+  min-height: 3px;
+}
+.bar-chart .b.dim {
+  background: linear-gradient(180deg, rgba(217,119,87,0.4), rgba(217,119,87,0.2));
+  box-shadow: none;
+}
+.peak { display: flex; gap: 3px; align-items: flex-end; height: 90px; }
+.peak .b {
+  flex: 1;
+  background: rgba(255,240,230,0.08);
+  border-radius: 2px;
+  min-height: 2px;
+}
+.peak .b.hot {
+  background: linear-gradient(180deg, var(--brand-2), var(--brand));
+}
+.xaxis { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+
+/* === Caption === */
+.caption {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  max-width: 320px;
+  padding: 14px 16px;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  font-size: 11px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.5;
+}
+.caption h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+.caption code {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Popover action buttons */
+.action-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: left;
+  font-family: var(--sans);
+}
+.action-btn > :first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.action-btn:hover {
+  background: rgba(244, 236, 228, 0.06);
+}
+</style>
+</head>
+<body>
+
+<div class="window">
+  <div class="titlebar">
+    <div class="dot red"></div>
+    <div class="dot amber"></div>
+    <div class="dot green"></div>
+  </div>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="chiclet">◔</div>
+      <div>
+        <div class="brand-name">Clauge</div>
+        <div class="brand-meta">v0.9.3 · localhost:3456</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="active">Overview</button>
+      <button>Sessions</button>
+      <button>Projects</button>
+      <button>Tools</button>
+      <button>Models</button>
+      <button>Settings</button>
+      <button>About</button>
+    </nav>
+    <div class="controls">
+      <div class="seg">
+        <button>Today</button>
+        <button class="active">7d</button>
+        <button>30d</button>
+        <button>All</button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <!-- Plan capacity hero -->
+    <div class="glass hero">
+      <div class="hero-head">
+        <div class="hero-title">
+          <h3>Plan capacity</h3>
+          <span class="sync"><span class="live"></span>synced 12s ago</span>
+        </div>
+        <span class="healthy">● Healthy</span>
+      </div>
+      <div class="rings">
+        <div class="ring-card">
+          <div class="ring">
+            <svg viewBox="0 0 92 92">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#e89478"/><stop offset="100%" stop-color="#b45c41"/>
+                </linearGradient>
+              </defs>
+              <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(255,240,230,0.06)" stroke-width="7"/>
+              <circle cx="46" cy="46" r="40" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round" stroke-dasharray="251.33" stroke-dashoffset="130.7"/>
+            </svg>
+            <div class="pct"><span class="n">48</span><span class="s">%</span></div>
+          </div>
+          <div style="text-align:center">
+            <div class="ring-label">Session<span class="window-tag">5h</span></div>
+            <div class="ring-reset">resets in 1h 5m</div>
+          </div>
+        </div>
+        <div class="ring-card">
+          <div class="ring">
+            <svg viewBox="0 0 92 92">
+              <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(255,240,230,0.06)" stroke-width="7"/>
+              <circle cx="46" cy="46" r="40" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round" stroke-dasharray="251.33" stroke-dashoffset="168.4"/>
+            </svg>
+            <div class="pct"><span class="n">33</span><span class="s">%</span></div>
+          </div>
+          <div style="text-align:center">
+            <div class="ring-label">Weekly<span class="window-tag">7d</span></div>
+            <div class="ring-reset">resets in 5d 8h</div>
+          </div>
+        </div>
+        <div class="ring-card">
+          <div class="ring">
+            <svg viewBox="0 0 92 92">
+              <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(255,240,230,0.06)" stroke-width="7"/>
+              <circle cx="46" cy="46" r="40" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round" stroke-dasharray="251.33" stroke-dashoffset="248.8"/>
+            </svg>
+            <div class="pct"><span class="n">1</span><span class="s">%</span></div>
+          </div>
+          <div style="text-align:center">
+            <div class="ring-label">Sonnet<span class="window-tag">7d</span></div>
+            <div class="ring-reset">resets in 5d 8h</div>
+          </div>
+        </div>
+        <div class="ring-card">
+          <div class="ring">
+            <svg viewBox="0 0 92 92">
+              <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(255,240,230,0.06)" stroke-width="7"/>
+              <circle cx="46" cy="46" r="40" fill="none" stroke="url(#g1)" stroke-width="7" stroke-linecap="round" stroke-dasharray="251.33" stroke-dashoffset="231.2"/>
+            </svg>
+            <div class="pct"><span class="n">8</span><span class="s">%</span></div>
+          </div>
+          <div style="text-align:center">
+            <div class="ring-label">Design<span class="window-tag">7d</span></div>
+            <div class="ring-reset">resets in 5d 8h</div>
+          </div>
+        </div>
+        <div style="display:grid;gap:10px;">
+          <div class="side">
+            <div class="side-lbl">Extra usage</div>
+            <div class="side-val"><span class="cur">$</span>0.00 <span style="color:var(--text-3);font-size:12px">/ $10</span></div>
+            <div class="bar"><span style="width:0%"></span></div>
+            <div class="side-foot"><span>0% of cap</span><span>USD</span></div>
+          </div>
+          <div class="side">
+            <div class="side-lbl">Balance</div>
+            <div class="side-val"><span class="cur">$</span>98.24</div>
+            <div class="side-foot"><span>USD</span><span>refreshed 12s ago</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Digest strip -->
+    <div class="glass strip">
+      <div class="ms primary">
+        <div class="ms-lbl">API equivalent <span class="chip">7d</span></div>
+        <div class="ms-val">$1,356.50</div>
+        <div class="ms-sub">replaces $200/mo · <span class="savings">$8,280 saved</span></div>
+      </div>
+      <div class="ms">
+        <div class="ms-lbl">Messages</div>
+        <div class="ms-val">15,195</div>
+        <div class="ms-sub">6,657 tools</div>
+      </div>
+      <div class="ms">
+        <div class="ms-lbl">Sessions</div>
+        <div class="ms-val">522</div>
+        <div class="ms-sub">223 subagents</div>
+      </div>
+      <div class="ms">
+        <div class="ms-lbl">Cache hit</div>
+        <div class="ms-val ok">98.0%</div>
+        <div class="ms-sub">1.88B reads</div>
+      </div>
+      <div class="ms">
+        <div class="ms-lbl">Tokens</div>
+        <div class="ms-val">1.92B</div>
+        <div class="ms-sub">in / out</div>
+      </div>
+      <div class="ms">
+        <div class="ms-lbl">ROI <span class="chip">approx</span></div>
+        <div class="ms-val ok">19.5×</div>
+        <div class="ms-sub">$1,156 net value</div>
+      </div>
+    </div>
+
+    <!-- Chart row -->
+    <div class="chart-row">
+      <div class="glass">
+        <div class="card-head">
+          <h3 class="card-title">Cost over time</h3>
+          <span class="card-sub">7 days</span>
+        </div>
+        <div class="bar-chart">
+          <div class="b dim" style="height:22%"></div>
+          <div class="b" style="height:88%"></div>
+          <div class="b dim" style="height:32%"></div>
+          <div class="b" style="height:64%"></div>
+          <div class="b" style="height:48%"></div>
+          <div class="b" style="height:72%"></div>
+          <div class="b dim" style="height:18%"></div>
+          <div class="b" style="height:54%"></div>
+        </div>
+        <div class="xaxis">
+          <span>05/01</span><span>05/02</span><span>05/03</span><span>05/04</span><span>05/05</span><span>05/06</span><span>05/07</span><span>today</span>
+        </div>
+      </div>
+      <div class="glass">
+        <div class="card-head">
+          <h3 class="card-title">Peak hours</h3>
+          <span class="card-sub">Asia/Dhaka</span>
+        </div>
+        <div class="peak" id="peak"></div>
+        <div class="xaxis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- v0.9.1 Popover preview floating next to the dashboard -->
+<div class="popover" style="width:340px;align-self:flex-start;margin-top:60px;border-radius:14px;position:relative;overflow:hidden;background:linear-gradient(180deg, rgba(30, 26, 38, 0.78) 0%, rgba(20, 18, 26, 0.82) 100%);backdrop-filter:blur(60px) saturate(180%);-webkit-backdrop-filter:blur(60px) saturate(180%);box-shadow:0 0 0 0.5px rgba(244,236,228,0.06) inset, 0 1px 0 rgba(244,236,228,0.10) inset, 0 -1px 0 rgba(0,0,0,0.4) inset, 0 30px 80px -20px rgba(0,0,0,0.6);">
+  <!-- caret to menu bar -->
+  <div style="position:absolute;top:-7px;left:50%;transform:translateX(-50%) rotate(45deg);width:12px;height:12px;background:rgba(30,26,38,0.82);border-left:1px solid rgba(244,236,228,0.08);border-top:1px solid rgba(244,236,228,0.08);z-index:3;"></div>
+  <!-- brand-orange specular sheen -->
+  <div style="position:absolute;inset:0;background:radial-gradient(80% 50% at 0% 0%, rgba(217, 119, 87, 0.06), transparent 60%);pointer-events:none;border-radius:inherit;z-index:0;"></div>
+
+  <!-- Header -->
+  <header style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;position:relative;z-index:2;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:24px;height:24px;border-radius:7px;background:rgba(244,236,228,0.06);box-shadow:inset 0 0 0 0.5px rgba(244,236,228,0.08);display:grid;place-items:center;">
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <circle cx="9" cy="9" r="7" fill="none" stroke="#faf9f5" stroke-opacity="0.06" stroke-width="2"/>
+          <circle cx="9" cy="9" r="7" fill="none" stroke="#d97757" stroke-width="2" stroke-linecap="round" stroke-dasharray="33" stroke-dashoffset="9" transform="rotate(135 9 9)"/>
+          <circle cx="9" cy="9" r="4.5" fill="none" stroke="#faf9f5" stroke-opacity="0.06" stroke-width="0.5"/>
+          <line x1="9" y1="9" x2="13.5" y2="3.5" stroke="#faf9f5" stroke-width="0.75" stroke-linecap="round" opacity="0.88"/>
+          <circle cx="9" cy="9" r="1" fill="#faf9f5" opacity="0.85"/>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:1px;">
+        <div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;color:var(--text);">Clauge</div>
+        <div class="mono" style="color:var(--text-3);font-size:10px;">Updated just now</div>
+      </div>
+    </div>
+    <span class="mono" style="padding:3px 9px;font-size:10px;font-weight:600;color:var(--text-2);background:rgba(244,236,228,0.06);border-radius:6px;box-shadow:inset 0 0 0 0.5px rgba(244,236,228,0.08);">Max 20×</span>
+  </header>
+
+  <!-- SESSION + WEEKLY hero pair -->
+  <section style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 8px 18px;position:relative;z-index:2;">
+    <!-- Session -->
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <h2 style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.10em;color:rgba(244,236,228,0.66);margin:0 0 6px;text-align:center;">Session</h2>
+      <div style="width:120px;height:120px;position:relative;">
+        <svg viewBox="0 0 120 120" style="width:100%;height:100%;">
+          <!-- track -->
+          <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(244,236,228,0.10)" stroke-width="8"/>
+          <!-- fill: 48% — starts at top (rotate -90) -->
+          <circle cx="60" cy="60" r="46" fill="none" stroke="#d97757" stroke-width="8" stroke-linecap="round"
+            stroke-dasharray="289.03" stroke-dashoffset="150.30"
+            transform="rotate(-90 60 60)"/>
+          <!-- time-elapsed needle (38% of window): triangle outside the rim at angle 38% around clockwise from top -->
+          <g transform="rotate(136.8 60 60)">
+            <polygon points="60,7 56,14 64,14" fill="rgba(244,236,228,0.85)" />
+          </g>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <span style="font-size:26px;font-weight:600;color:var(--text);line-height:1;letter-spacing:-0.02em;font-family:var(--mono);">48<span style="font-size:14px;font-weight:500;color:rgba(244,236,228,0.66);margin-left:1px;">%</span></span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10px;line-height:1.35;text-align:center;color:rgba(244,236,228,0.66);">
+        <span class="mono">1h 54m of 5h</span>
+        <span class="mono" style="color:rgba(244,236,228,0.42);">resets in 3h 6m</span>
+      </div>
+    </div>
+    <!-- Weekly -->
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <h2 style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.10em;color:rgba(244,236,228,0.66);margin:0 0 6px;text-align:center;">Weekly</h2>
+      <div style="width:120px;height:120px;position:relative;">
+        <svg viewBox="0 0 120 120" style="width:100%;height:100%;">
+          <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(244,236,228,0.10)" stroke-width="8"/>
+          <circle cx="60" cy="60" r="46" fill="none" stroke="#d97757" stroke-width="8" stroke-linecap="round"
+            stroke-dasharray="289.03" stroke-dashoffset="193.65"
+            transform="rotate(-90 60 60)"/>
+          <!-- needle at 71% (Day 5 of 7) — clockwise from top -->
+          <g transform="rotate(255.6 60 60)">
+            <polygon points="60,7 56,14 64,14" fill="rgba(244,236,228,0.85)" />
+          </g>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <span style="font-size:26px;font-weight:600;color:var(--text);line-height:1;letter-spacing:-0.02em;font-family:var(--mono);">33<span style="font-size:14px;font-weight:500;color:rgba(244,236,228,0.66);margin-left:1px;">%</span></span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10px;line-height:1.35;text-align:center;color:rgba(244,236,228,0.66);">
+        <span class="mono">Day 5 of 7</span>
+        <span class="mono" style="color:rgba(244,236,228,0.42);">resets in 1d 18h</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sonnet only -->
+  <section style="padding:14px 16px;position:relative;z-index:2;">
+    <h2 style="font-size:11px;font-weight:500;color:var(--text);margin:0 0 10px;">Sonnet only</h2>
+    <div style="position:relative;height:6px;background:rgba(244,236,228,0.10);border-radius:3px;overflow:hidden;margin-bottom:8px;">
+      <div style="position:absolute;inset:0 auto 0 0;width:1%;background:var(--brand);border-radius:3px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;color:rgba(244,236,228,0.66);font-size:11px;">
+      <span class="mono" style="color:var(--text);font-weight:500;">1% used</span>
+      <span class="mono">resets in 1d 18h</span>
+    </div>
+  </section>
+
+  <!-- Claude Design -->
+  <section style="padding:14px 16px;position:relative;z-index:2;">
+    <h2 style="font-size:11px;font-weight:500;color:var(--text);margin:0 0 10px;">Claude Design</h2>
+    <div style="position:relative;height:6px;background:rgba(244,236,228,0.10);border-radius:3px;overflow:hidden;margin-bottom:8px;">
+      <div style="position:absolute;inset:0 auto 0 0;width:8%;background:var(--brand);border-radius:3px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;color:rgba(244,236,228,0.66);font-size:11px;">
+      <span class="mono" style="color:var(--text);font-weight:500;">8% used</span>
+      <span class="mono">resets in 1d 18h</span>
+    </div>
+  </section>
+
+  <!-- Daily Routines -->
+  <section style="padding:14px 16px;position:relative;z-index:2;">
+    <h2 style="font-size:11px;font-weight:500;color:var(--text);margin:0 0 10px;">Daily Routines</h2>
+    <div style="position:relative;height:6px;background:rgba(244,236,228,0.10);border-radius:3px;overflow:hidden;margin-bottom:8px;">
+      <div style="position:absolute;inset:0 auto 0 0;width:33%;background:var(--brand);border-radius:3px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;color:rgba(244,236,228,0.66);font-size:11px;">
+      <span class="mono" style="color:var(--text);font-weight:500;">5 of 15 runs today</span>
+      <span class="mono">resets in 12h</span>
+    </div>
+  </section>
+
+  <!-- Extra usage (MTD) -->
+  <section style="padding:14px 16px;position:relative;z-index:2;">
+    <h2 style="font-size:11px;font-weight:500;color:var(--text);margin:0 0 10px;">Extra usage (MTD)</h2>
+    <div style="position:relative;height:6px;background:rgba(244,236,228,0.10);border-radius:3px;overflow:hidden;margin-bottom:8px;">
+      <div style="position:absolute;inset:0 auto 0 0;width:24%;background:var(--brand);border-radius:3px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;color:rgba(244,236,228,0.66);font-size:11px;">
+      <span class="mono" style="color:var(--text);font-weight:500;">$2.40 / $10 limit</span>
+      <span class="mono">24% used</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;margin-top:2px;color:rgba(244,236,228,0.42);">
+      <span class="mono">Balance: $98.24 · Auto-reload off</span>
+      <span class="mono">resets Jun 1</span>
+    </div>
+  </section>
+
+  <!-- 2x2 stats grid + spend chart -->
+  <section style="padding:16px 16px 14px;position:relative;z-index:2;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;margin-bottom:14px;">
+      <div>
+        <div style="font-size:11px;color:rgba(244,236,228,0.42);text-transform:lowercase;margin-bottom:4px;">today</div>
+        <div class="mono" style="font-size:18px;font-weight:600;color:var(--text);letter-spacing:-0.01em;line-height:1.15;">$14.42</div>
+        <div class="mono" style="font-size:11px;color:rgba(244,236,228,0.42);margin-top:3px;">8.4M Tokens</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:rgba(244,236,228,0.42);text-transform:lowercase;margin-bottom:4px;">last 30 days</div>
+        <div class="mono" style="font-size:18px;font-weight:600;color:var(--text);letter-spacing:-0.01em;line-height:1.15;">$1,356.50</div>
+        <div class="mono" style="font-size:11px;color:rgba(244,236,228,0.42);margin-top:3px;">1.92B Tokens</div>
+      </div>
+    </div>
+    <!-- 30-day spend mini-chart -->
+    <div id="spend-mini" style="display:flex;align-items:flex-end;gap:2px;height:34px;margin:10px 0 8px;padding:0 2px;"></div>
+    <div class="mono" style="color:rgba(244,236,228,0.42);font-size:10px;line-height:1.4;margin-top:4px;">Top model: sonnet-4.5 · Estimated from local Claude logs</div>
+  </section>
+
+  <!-- Action items -->
+  <section style="padding:10px 8px;border-top:1px solid rgba(244,236,228,0.08);position:relative;z-index:2;">
+    <button class="action-btn">
+      <span style="opacity:0.66;">⎈</span>
+      <span>Add Account…</span>
+    </button>
+    <button class="action-btn">
+      <span style="opacity:0.66;">▤</span>
+      <span>Usage Dashboard</span>
+    </button>
+    <button class="action-btn">
+      <span style="opacity:0.66;color:var(--ok);">●</span>
+      <span>Status: All systems normal</span>
+    </button>
+  </section>
+
+  <!-- Footer -->
+  <section style="padding:6px 8px 10px;border-top:1px solid rgba(244,236,228,0.08);position:relative;z-index:2;">
+    <button class="action-btn"><span>↻ Refresh</span><span class="kbd mono" style="font-size:10px;color:rgba(244,236,228,0.42);">⌘R</span></button>
+    <button class="action-btn"><span>⚙ Settings…</span><span class="kbd mono" style="font-size:10px;color:rgba(244,236,228,0.42);">⌘,</span></button>
+    <button class="action-btn"><span>ⓘ About Clauge</span><span class="kbd mono" style="font-size:10px;color:rgba(244,236,228,0.42);">v0.9.2</span></button>
+    <button class="action-btn"><span>✕ Quit</span><span class="kbd mono" style="font-size:10px;color:rgba(244,236,228,0.42);">⌘Q</span></button>
+  </section>
+</div>
+
+<div class="caption">
+  <h4>Translucent preview</h4>
+  <p style="margin:0">CodexBar-style opaque vibrancy. Surface uses <code>linear-gradient rgba(30,26,38, 0.78 → 0.82)</code> + <code>blur(60px) saturate(180%)</code> — wallpaper hue tints faintly, panel reads near-solid.</p>
+</div>
+
+<script>
+  // Peak hours
+  const hours = Array.from({length:24}, (_,h) => {
+    const peak = Math.exp(-Math.pow((h-18)/4.5,2))*0.9 + 0.05;
+    const morn = Math.exp(-Math.pow((h-9)/3,2))*0.4;
+    return Math.max(0.02, peak+morn+Math.sin(h*0.7)*0.05);
+  });
+  const max = Math.max(...hours);
+  document.getElementById('peak').innerHTML = hours.map(v => {
+    const h = (v/max)*100;
+    const hot = v/max > 0.55;
+    return `<div class="b ${hot?'hot':''}" style="height:${h}%"></div>`;
+  }).join('');
+
+  // 30-day spend mini-chart in popover
+  const days = Array.from({length:30}, (_,i) => {
+    const t = i / 29;
+    return Math.max(0.08, 0.5 + Math.sin(i*0.6 + 2) * 0.3 + Math.cos(i*0.31) * 0.2 + (i === 22 ? 0.4 : 0));
+  });
+  const dmax = Math.max(...days);
+  document.getElementById('spend-mini').innerHTML = days.map((v,i) => {
+    const h = (v/dmax)*100;
+    const today = i === days.length - 1;
+    return `<div style="flex:1 1 0;min-width:4px;background:var(--brand);opacity:${today?1:0.5};border-radius:1.5px 1.5px 0 0;height:${h}%"></div>`;
+  }).join('');
+</script>
+
+</body>
+</html>
