@@ -81,3 +81,19 @@
   font-size: 12px;
   font-style: italic;
 }
+
+/* Dashboard heatmap container — scrolls horizontally on narrow viewports
+   so a 365-day grid (~52 weeks) still reads cleanly. */
+.heatmap-host {
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+/* Compact select to match the dashboard's accent palette without the
+   .input default 180px minimum. */
+.heatmap-range-select {
+  min-width: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}

@@ -12,6 +12,7 @@
   <link rel="preload" as="font" type="font/woff2" href="/fonts/inter-latin-variable.woff2" crossorigin />
   <link rel="preload" as="font" type="font/woff2" href="/fonts/jetbrains-mono-latin-variable.woff2" crossorigin />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/popover/heatmap.css" />
 </head>
 <body>
 
@@ -197,6 +198,22 @@
         <tbody id="act-body"></tbody>
       </table>
     </div>
+  </div>
+
+  <!-- Activity heatmap (v0.9.4 Phase A) -->
+  <div class="glass card" style="margin-top:14px">
+    <div class="card-head">
+      <div class="card-title-row">
+        <h3 class="card-title">Activity</h3>
+        <span class="card-sub" id="heatmap-stats">—</span>
+      </div>
+      <select id="heatmap-range" class="input heatmap-range-select" aria-label="Heatmap range">
+        <option value="180d">Last 180 days</option>
+        <option value="365d" selected>Last 365 days</option>
+        <option value="all">All time</option>
+      </select>
+    </div>
+    <div id="heatmap-root" class="heatmap-host"></div>
   </div>
 
 </section>
@@ -509,6 +526,7 @@
 
 </main>
 
+<script src="/popover/heatmap.js" defer></script>
 <script src="/connections.js" type="module"></script>
 <script src="/app.js" type="module"></script>
 </body>

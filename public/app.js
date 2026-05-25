@@ -25,6 +25,7 @@ const state = {
     expensive: null,
     health: null,
     roi: null,
+    heatmap: null,
   },
 };
 
@@ -961,12 +962,50 @@ async function refreshAll() {
     renderSessionsTable();
     renderToolLists();
     if (state.tab === 'settings') renderSettings();
+    // Heatmap fetches its own range (independent of state.period). Fire and
+    // forget so a transient /api/activity failure doesn't fail the whole
+    // refresh — the heatmap card has its own error handling.
+    refreshHeatmap();
     return true;
   } catch (err) {
     console.error('refreshAll failed', err);
     return false;
   } finally {
     document.body.classList.remove('loading');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Activity heatmap (v0.9.4 Phase A)
+// ═══════════════════════════════════════════════════════════
+async function refreshHeatmap() {
+  const range = document.getElementById('heatmap-range')?.value ?? '365d';
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  try {
+    state.data.heatmap = await api('/api/activity', { period: range, tz });
+    renderActivityHeatmap();
+  } catch (err) {
+    console.error('heatmap fetch failed', err);
+  }
+}
+
+function renderActivityHeatmap() {
+  const root = document.getElementById('heatmap-root');
+  const statsEl = document.getElementById('heatmap-stats');
+  if (!root || !window.ClaugeHeatmap) return;
+  const data = state.data.heatmap;
+  window.ClaugeHeatmap.render(root, data, { variant: 'dashboard' });
+  if (statsEl) {
+    if (!data || data.totalDays === 0) {
+      statsEl.textContent = '—';
+      return;
+    }
+    const parts = [`${data.activeDays} active day${data.activeDays === 1 ? '' : 's'}`];
+    if (data.currentStreak > 0) parts.push(`${data.currentStreak}-day streak`);
+    if (data.longestStreak > 0 && data.longestStreak !== data.currentStreak) {
+      parts.push(`longest ${data.longestStreak}`);
+    }
+    statsEl.textContent = parts.join(' · ');
   }
 }
 
@@ -1018,6 +1057,11 @@ function bindControls() {
   });
   // v0.7.0: claude.ai sync card removed; Connections panel (connections.js)
   // owns the sync/extension/keychain state. Old set-sync-* IDs are gone.
+
+  // v0.9.4: heatmap range dropdown.
+  document.getElementById('heatmap-range')?.addEventListener('change', () => {
+    refreshHeatmap();
+  });
 }
 
 bindSegments();
