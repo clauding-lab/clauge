@@ -37,7 +37,8 @@ import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
-import { listProviders } from './lib/providers.js';
+import { listProviders, PROVIDERS } from './lib/providers.js';
+import { setProviderEnabled } from './lib/settings-writer.js';
 import { runCli } from './lib/cli/index.js';
 
 // CLI mode short-circuit. ANY argv past the script name routes through the
@@ -478,6 +479,27 @@ app.get('/api/config', async (c) => {
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     providers,
   });
+});
+
+app.post('/api/config/providers/:name', async (c) => {
+  const name = c.req.param('name');
+  const known = new Set(PROVIDERS.map((p) => p.name));
+  if (!known.has(name)) {
+    return c.json({ error: `unknown provider: ${name}` }, 404);
+  }
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'expected body: { enabled: boolean }' }, 400);
+  }
+  await setProviderEnabled(name, body.enabled);
+  const providers = await listProviders();
+  const updated = providers.find((p) => p.name === name);
+  return c.json({ provider: updated });
 });
 
 app.post('/api/usage/ingest', async (c) => {
