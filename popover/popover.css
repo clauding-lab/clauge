@@ -413,14 +413,35 @@ html, body {
   margin-top: 4px;
 }
 
-/* ── Action items ──────────────────────────────────────────── */
-.sect-actions {
-  padding: 10px 8px;
+/* ── Activity heatmap (v0.9.4 Phase A) ─────────────────────── */
+.sect-heatmap {
+  padding: 12px 12px 8px;
   border-top: 1px solid var(--rim);
 }
-.action-item, .footer-action {
+.sect-heatmap-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.sect-heatmap-stat {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.po-heatmap-host {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+/* ── Footer ────────────────────────────────────────────────── */
+.sect-footer {
+  padding: 8px 8px 10px;
+  border-top: 1px solid var(--rim);
+}
+.footer-action {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
   padding: 7px 10px;
   background: transparent;
@@ -433,26 +454,8 @@ html, body {
   cursor: pointer;
   transition: background 0.12s var(--ease);
 }
-.action-item:hover, .footer-action:hover { background: rgba(244, 236, 228, 0.06); }
-.action-item:active, .footer-action:active { background: rgba(244, 236, 228, 0.10); }
-
-.action-icon {
-  display: inline-flex;
-  width: 18px;
-  margin-right: 8px;
-  color: var(--text-2);
-  font-size: 12px;
-}
-.action-label { flex: 1; }
-
-/* ── Footer ────────────────────────────────────────────────── */
-.sect-footer {
-  padding: 8px 8px 10px;
-  border-top: 1px solid var(--rim);
-}
-.footer-action {
-  justify-content: space-between;
-}
+.footer-action:hover { background: rgba(244, 236, 228, 0.06); }
+.footer-action:active { background: rgba(244, 236, 228, 0.10); }
 .footer-action .kbd {
   color: var(--text-3);
   font-size: 10px;

@@ -6,6 +6,7 @@
   <link rel="preload" as="font" type="font/woff2" href="fonts/inter-latin-variable.woff2" crossorigin>
   <link rel="preload" as="font" type="font/woff2" href="fonts/jetbrains-mono-latin-variable.woff2" crossorigin>
   <link rel="stylesheet" href="popover.css">
+  <link rel="stylesheet" href="heatmap.css">
 </head>
 <body>
   <div id="root" data-state="default">
@@ -134,32 +135,21 @@
       <div class="disclaimer mono" id="disclaimer">Top model: — · Estimated from local Claude logs</div>
     </section>
 
-    <!-- ── Action items ───────────────────────────────────────── -->
-    <section class="sect sect-actions">
-      <button class="action-item" id="action-add-account">
-        <span class="action-icon" aria-hidden="true">⎈</span>
-        <span class="action-label">Add Account…</span>
-      </button>
-      <button class="action-item" id="action-dashboard">
-        <span class="action-icon" aria-hidden="true">▤</span>
-        <span class="action-label">Usage Dashboard</span>
-      </button>
-      <button class="action-item" id="action-status">
-        <span class="action-icon" aria-hidden="true">⚡</span>
-        <span class="action-label" id="action-status-label">Status: —</span>
-      </button>
+    <!-- ── Activity heatmap (v0.9.4 Phase A) ──────────────────── -->
+    <section class="sect sect-heatmap">
+      <div class="sect-heatmap-head">
+        <h2 class="sect-label">Activity · last 180 days</h2>
+        <span class="mono sect-heatmap-stat" id="po-heatmap-active">—</span>
+      </div>
+      <div id="po-heatmap-root" class="po-heatmap-host"></div>
+      <div class="bar-meta bar-meta-sub">
+        <span class="mono" id="po-heatmap-streak">Streak: —</span>
+        <span class="mono" id="po-heatmap-longest">Longest: —</span>
+      </div>
     </section>
 
     <!-- ── Footer ─────────────────────────────────────────────── -->
     <section class="sect sect-footer">
-      <button class="footer-action" id="footer-refresh">
-        <span>↻ Refresh</span>
-        <span class="kbd mono">⌘R</span>
-      </button>
-      <button class="footer-action" id="footer-settings">
-        <span>⚙ Settings…</span>
-        <span class="kbd mono">⌘,</span>
-      </button>
       <button class="footer-action" id="footer-about">
         <span>ⓘ About Clauge</span>
         <span class="kbd mono" id="footer-about-version">v—</span>
@@ -200,6 +190,7 @@
     </ul>
   </div>
 
+  <script src="heatmap.js" defer></script>
   <script src="popover.js" defer></script>
 </body>
 </html>
