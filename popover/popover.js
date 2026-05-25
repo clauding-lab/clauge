@@ -710,6 +710,15 @@ function quitApp() {
 // Init
 // ────────────────────────────────────────────────────────────
 async function init() {
+  // v0.9.4 Phase B.1: wait for the copy registry to load before any render
+  // path so t() calls (when callers start migrating to them) never race the
+  // copy.json fetch. Today the registry is wired but no string is yet routed
+  // through t() — the await is a no-op fast-path while the migration
+  // proceeds across follow-up commits.
+  if (typeof window !== 'undefined' && window.__claugeCopyReady) {
+    try { await window.__claugeCopyReady; } catch { /* fallback baked into copy.js */ }
+  }
+
   const locPort = parseInt(window.location.port, 10);
   if (Number.isFinite(locPort) && locPort > 0) serverPort = locPort;
 

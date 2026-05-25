@@ -25,7 +25,7 @@
     "check:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "check:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "check:rust-test": "cargo test --manifest-path src-tauri/Cargo.toml --quiet",
-    "check:validators": "node scripts/validate-ipc-triple-register.cjs && node scripts/validate-no-console-log.cjs && node scripts/validate-no-hardcoded-port.cjs",
+    "check:validators": "node scripts/validate-ipc-triple-register.cjs && node scripts/validate-no-console-log.cjs && node scripts/validate-no-hardcoded-port.cjs && node scripts/validate-copy-registry.cjs",
     "check": "npm run check:validators && npm run check:fmt && npm run check:lint && npm run check:rust-test && npm test"
   },
   "engines": {

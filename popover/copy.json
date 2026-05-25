@@ -1,0 +1,92 @@
+{
+  "_meta": {
+    "version": 1,
+    "description": "User-facing strings registry (v0.9.4 Phase B.1). Reference via t('key', { params }) from popover/lib/copy.js. Add new strings here; do not hardcode user-facing text in popover.js / heatmap.js / index.html.",
+    "_validator": "scripts/validate-copy-registry.cjs"
+  },
+  "header": {
+    "name": "Clauge",
+    "updatedJustNow": "Updated just now",
+    "updatedMinutes": "Updated {minutes}m ago",
+    "planUnknown": "—",
+    "planMax": "Max"
+  },
+  "session": {
+    "label": "Session",
+    "elapsedOf5h": "{hours}h {minutes}m of 5h",
+    "elapsedEmpty": "— of 5h",
+    "resetsIn": "resets in {duration}",
+    "resetsInUnknown": "resets in —"
+  },
+  "weekly": {
+    "label": "Weekly",
+    "dayOf7": "Day {day} of 7",
+    "dayUnknown": "Day — of 7"
+  },
+  "sonnet": {
+    "label": "Sonnet only",
+    "percentUsed": "{percent}% used",
+    "resets": "resets {when}"
+  },
+  "design": {
+    "label": "Claude Design"
+  },
+  "routines": {
+    "label": "Daily Routines",
+    "runsToday": "{count} of {cap} runs today",
+    "unknownRunsToday": "— of 15 runs today"
+  },
+  "extra": {
+    "label": "Extra usage (MTD)",
+    "spendOverLimit": "${used} / ${limit} limit",
+    "noLimit": "${used} / no limit",
+    "noSpendData": "$— / $— limit",
+    "percentUsedShort": "{percent}% used",
+    "balanceLine": "Balance: ${balance} · Auto-reload {state}",
+    "balanceUnknown": "Balance: — · Auto-reload —",
+    "autoReloadOn": "on",
+    "autoReloadOff": "off",
+    "disabled": "Disabled · {reason}",
+    "noData": "no data"
+  },
+  "stats": {
+    "today": "today",
+    "last30Days": "last 30 days",
+    "tokensSuffix": " Tokens",
+    "tokensUnknown": "— Tokens"
+  },
+  "footer": {
+    "about": "ⓘ About Clauge",
+    "quit": "✕ Quit",
+    "version": "v{version}",
+    "versionUnknown": "v—"
+  },
+  "heatmap": {
+    "title": "Activity · last 180 days",
+    "ariaLabel": "Activity heatmap",
+    "activeDays": "{count} active day{plural}",
+    "activeDaysUnknown": "—",
+    "streak": "Streak: {count} day{plural}",
+    "streakUnknown": "Streak: —",
+    "longest": "Longest: {count} day{plural}",
+    "longestUnknown": "Longest: —",
+    "tooltipActivity": "{weekday} {date} — {parts}",
+    "tooltipNoActivity": "{weekday} {date} — No activity",
+    "tooltipSessions": "{count} session{plural}",
+    "tooltipMessages": "{count} claude.ai message{plural}",
+    "emptyState": "No activity yet"
+  },
+  "loading": {
+    "main": "Loading…"
+  },
+  "prefs": {
+    "title": "Preferences",
+    "back": "Back",
+    "launchAtLogin": "Launch at login",
+    "checkUpdates": "Check for updates",
+    "checkNow": "Check now",
+    "openDashboard": "Open dashboard",
+    "openDashboardBtn": "Open →",
+    "about": "About"
+  }
+}
