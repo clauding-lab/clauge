@@ -1,0 +1,83 @@
+/* Clauge activity heatmap (v0.9.4 Phase A.3).
+   Single orange ramp on both surfaces; sized via --cell-size which the
+   renderer sets per variant (dashboard 12px, popover 8px). */
+
+.heatmap {
+  --cell-0: oklch(22% 0.01 40);    /* near-black with warm tint, for empty days */
+  --cell-1: oklch(45% 0.11 40);
+  --cell-2: oklch(60% 0.16 40);
+  --cell-3: oklch(72% 0.19 40);
+  --cell-4: oklch(82% 0.21 40);
+  --cell-size: 12px;
+  --cell-gap: 3px;
+  --label-muted: rgba(255, 240, 230, 0.5);
+
+  display: inline-block;
+  color: var(--text, rgba(255, 240, 230, 0.92));
+}
+
+.heatmap--popover {
+  --cell-gap: 2px;
+}
+
+.heatmap table {
+  border-collapse: separate;
+  border-spacing: var(--cell-gap);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.heatmap__cell {
+  width: var(--cell-size);
+  height: var(--cell-size);
+  min-width: var(--cell-size);
+  border-radius: 2px;
+  background: var(--cell-0);
+  outline: none;
+  transition: background 80ms ease;
+  padding: 0;
+}
+
+.heatmap__cell.cell-0 { background: var(--cell-0); }
+.heatmap__cell.cell-1 { background: var(--cell-1); }
+.heatmap__cell.cell-2 { background: var(--cell-2); }
+.heatmap__cell.cell-3 { background: var(--cell-3); }
+.heatmap__cell.cell-4 { background: var(--cell-4); }
+
+.heatmap__cell--empty {
+  background: transparent;
+}
+
+.heatmap__cell:focus {
+  outline: 2px solid var(--brand, #d97757);
+  outline-offset: 1px;
+}
+
+.heatmap__cell:hover:not(.heatmap__cell--empty) {
+  filter: brightness(1.15);
+}
+
+.heatmap__day-label,
+.heatmap__month-label {
+  font-weight: 400;
+  color: var(--label-muted);
+  text-align: left;
+  padding: 0 4px;
+  height: var(--cell-size);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmap__month-row th {
+  padding: 0 0 2px 0;
+  height: auto;
+}
+
+.heatmap--empty::before {
+  content: 'No activity yet';
+  display: block;
+  padding: 8px;
+  color: var(--label-muted);
+  font-size: 12px;
+  font-style: italic;
+}

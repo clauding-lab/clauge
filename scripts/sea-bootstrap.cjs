@@ -51,6 +51,8 @@ const ASSETS = [
   'public/popover/index.html',
   'public/popover/popover.js',
   'public/popover/popover.css',
+  'public/popover/heatmap.js',
+  'public/popover/heatmap.css',
   'public/popover/fonts/inter-latin-variable.woff2',
   'public/popover/fonts/jetbrains-mono-latin-variable.woff2',
   'public/onboarding/index.html',
