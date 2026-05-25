@@ -37,6 +37,7 @@ import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
+import { listProviders } from './lib/providers.js';
 import { runCli } from './lib/cli/index.js';
 
 // CLI mode short-circuit. ANY argv past the script name routes through the
@@ -469,13 +470,15 @@ app.get('/api/roi', async (c) => {
   });
 });
 
-app.get('/api/config', (c) =>
-  c.json({
+app.get('/api/config', async (c) => {
+  const providers = await listProviders();
+  return c.json({
     claudeDir: CLAUDE_DIR,
     subscriptionCost: SUBSCRIPTION_COST,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
-  })
-);
+    providers,
+  });
+});
 
 app.post('/api/usage/ingest', async (c) => {
   let body;
