@@ -97,6 +97,49 @@ The tap also runs a daily 04:17 UTC cron as a safety net — even if dispatch an
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, etc.) with optional scope. Imperative mood. **No `Co-Authored-By: Claude` lines** — attribution is disabled globally; do not re-add.
 - **Files:** keep modules focused; ~400 lines typical, 800 max. Split Rust modules when one starts mixing tray + popover + keychain logic.
 
+## Load-bearing conventions (data contract)
+
+The cost math depends on a handful of invariants that aren't obvious from reading any single file. Touch any of these and re-run `test/parser.test.js` + `test/cost-calculator.test.js` + `test/aggregator.test.js`. If a change feels like it conflicts with one of these, raise it as a separate refactor task instead of silently bending the contract.
+
+### 1. JSONL turns are deduped by `requestId`
+
+A single assistant API request emits **three** JSONL lines in `~/.claude/projects/<encoded>/<session>.jsonl` — one per content-block type (`thinking`, `text`, `tool_use`). All three carry the **same** `usage` block, so summing them naively triples the token count.
+
+`lib/parser.js::parseSession` deduplicates by `record.requestId`: the first assistant record for a given requestId becomes the canonical turn; subsequent records for the same requestId merge content blocks into the same turn but do **not** add tokens. Records without `requestId` are dropped (they're orphan content blocks from interrupted streams).
+
+Anything new that traverses JSONL records and accumulates tokens **must** dedup. The safest path is to consume `parser.parseSession`'s output (which is already deduped) instead of reading JSONL directly.
+
+### 2. Cache-tier columns: `ephemeral_5m` vs `ephemeral_1h`
+
+Anthropic's `usage.cache_creation` object has two fields with distinct economics:
+
+- `ephemeral_5m_input_tokens` — 5-minute cache, billed at the higher write rate.
+- `ephemeral_1h_input_tokens` — 1-hour cache, billed at an even higher write rate.
+
+`lib/parser.js::normalizeUsage` lifts these into `cacheCreate5m` and `cacheCreate1h` separately. **Don't collapse them**. `cost-calculator.js::computeTurnCost` reads each at its own rate (`cache_creation_input_token_cost` and `cache_creation_input_token_cost_above_1hr`). Cache *read* tokens (`cache_read_input_tokens`) are a third bucket with a fourth rate — also tracked separately.
+
+The legacy JSONL field name is `cache_creation_input_tokens` (no tier breakdown). It's still emitted by some session files and is **not** what we use. Always prefer `cache_creation.ephemeral_*` over the legacy aggregate.
+
+### 3. Cost is **always** recomputed from rates — never read from `costUSD`
+
+JSONL records sometimes carry a `costUSD` field. **Do not use it.** It's frequently stale (rate changes since the session ran) or outright wrong (intermediate streaming snapshots).
+
+`lib/cost-calculator.js::computeTurnCost` is the canonical path: it reads `usage.{input,output,cache_read,cache_creation.ephemeral_5m,cache_creation.ephemeral_1h}_tokens` and multiplies each by the current `priceTable` entry for the model. The `priceTable` is loaded from LiteLLM's `model_prices_and_context_window.json` (vendored fallback at `lib/litellm-prices.fallback.json`), with optional env-var overrides for models LiteLLM doesn't track yet.
+
+`lib/cost-calculator.js`'s top-of-file comment locks this: `NEVER reads costUSD from JSONL. Cost is always recomputed from token counts and rates.`
+
+### 4. Never compute cost from `total_tokens` or summed totals
+
+Even given a correct dedup, computing `total_tokens × some_unified_rate` produces a wrong cost. The four token classes have **different rates** (input / output / cache_read / cache_creation), and the cache-creation class itself splits by tier. There is no single "average" rate that gives the right answer.
+
+If you find yourself reaching for a `totalTokens(usage) * rate` shortcut, stop. Either call `computeTurnCost(turn, rates)` (correct) or sum the four/five components × their respective rates explicitly. The TokenTracker competitor (`mm7894215/TokenTracker`) shipped a regression around this in early 2026; their CLAUDE.md now documents the same warning.
+
+### 5. Tokens-summary aggregator preserves the same shape
+
+`lib/aggregator.js` and its `aggregateUsage` helper keep the same field names (`inputTokens`, `outputTokens`, `cacheRead`, `cacheCreate5m`, `cacheCreate1h`, `webSearches`, `webFetches`). The dashboard, popover, and CSV/JSON exporter all assume that shape. Adding a new token class means updating all three consumers in lock-step.
+
+`lib/parser.js`'s top-of-file comment cross-references this section. Update both if you change the dedup or normalization rules.
+
 ## Known landmines (read before touching these areas)
 
 ### 1. Tauri 2 IPC needs registration in THREE places

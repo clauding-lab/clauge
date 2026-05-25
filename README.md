@@ -311,6 +311,11 @@ npm run check     # canonical gate: cargo fmt + clippy + cargo test + npm test
 
 Five apps track Claude usage. None provide token-level analytics for Claude Code. None compute subscription value vs API equivalent at observed usage. None tell you what to do about your usage. Clauge does the first two natively, plus pulls claude.ai plan utilisation into the same dashboard so you see Code spend and plan limits side-by-side.
 
+## Contributing & security
+
+- Want to send a patch? See [CONTRIBUTING.md](CONTRIBUTING.md) — short read, covers commit style, `npm run check`, and where issues go.
+- Found a vulnerability? See [SECURITY.md](SECURITY.md). Do **not** file a public issue.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Privacy policy in [docs/PRIVACY.md](docs/PRIVACY.md).
