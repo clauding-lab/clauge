@@ -152,6 +152,8 @@ Adding a new `#[tauri::command]` requires updating:
 
 Missing any one of the three = silent IPC rejection from JS with no useful error. The browser console may show `Command "foo" not allowed` or just hang.
 
+v0.9.4 added `scripts/validate-ipc-triple-register.cjs` (runs in `npm run check`) which scans `src-tauri/src/*.rs` for `#[tauri::command]` and asserts each one is in `generate_handler![]`, that each `APP_COMMANDS` entry has a matching command + `allow-<kebab>` capability, and that no dead `allow-*` permissions linger. CI fails fast on drift.
+
 ### 2. SEA sidecar has TWO asset manifests — keep them in sync
 
 The Node SEA (Single Executable Application) bootstrapper has two parallel asset lists:
