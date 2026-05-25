@@ -19,7 +19,7 @@
   <img src="docs/screenshots/v0.9.1/popover.png" alt="Clauge menu-bar popover" width="380" />
 </p>
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. **v0.9.2** flips the popover to dismiss on outside click, matching the macOS menu-bar convention. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`.
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. **v0.9.2** flips the popover to dismiss on outside click, matching the macOS menu-bar convention. **v0.9.3** ships the Companion CLI (`clauge config get` / `providers` / `enable` / `disable` / `set-api-key` / `reset-trial`). **v0.9.4** adds a GitHub-style **activity heatmap** on both surfaces with current/longest streak stats, an **opaque-vibrancy** treatment so the wallpaper hue bleeds faintly through both the dashboard window and the popover, a bundled `clauge` CLI at `/Applications/Clauge.app/Contents/Resources/clauge-cli` (no Homebrew required to use it), and a fix for the dashboard EXTRA USAGE card so it mirrors the popover's `consumerOverage`-first preference instead of stalling on "Temporarily gated by Anthropic" when the OAuth-API feature is org-gated. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`.
 
 ## Install
 
@@ -38,7 +38,7 @@ brew install --cask clauding-lab/tap/clauge
 Or download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag `Clauge.app` to Applications, and launch.
 
 The app sits in your menu bar:
-- **Left-click** the menu-bar icon → glanceable popover. v0.9.1 layout: paired **Session** + **Weekly** circle gauges (each with a time-elapsed needle marker on the rim — orange fill past the needle = burning faster than the clock), weekly bars for **Sonnet only** / **Claude Design** / **Daily Routines**, an **Extra usage (MTD)** bar with real claude.ai consumer overage data + balance + auto-reload state, a 2-column **today / last 30 days** stats grid, a 30-day spend mini-chart, and action items (Add Account / Usage Dashboard / Status).
+- **Left-click** the menu-bar icon → glanceable popover. v0.9.4 layout: paired **Session** + **Weekly** circle gauges (each with a time-elapsed needle marker on the rim — orange fill past the needle = burning faster than the clock), weekly bars for **Sonnet only** / **Claude Design** / **Daily Routines**, an **Extra usage (MTD)** bar with real claude.ai consumer overage data + balance + auto-reload state, a 2-column **today / last 30 days** stats grid, a 30-day spend mini-chart, and a **180-day activity heatmap** with current + longest streak stats. Footer: **Dashboard** (⌘D) / **About Clauge** / **Quit** (⌘Q). The v0.9.4 streamlining retired the Add Account / Usage Dashboard / Status / Refresh / Settings entries — Settings is on the tray right-click menu, and auto-refresh runs every 10s.
 - **Right-click** → Open Dashboard / Preferences / Check for Updates / Quit
 - **Auto-updates** from gh-pages on every launch. When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** in Settings → Updates (or wait for the macOS notification). v0.7.3+ also self-heals across updates: if the previous version's sidecar is still running, the new launch detects the version mismatch and evicts it before adopting a fresh one.
 
@@ -64,7 +64,7 @@ If you click **Skip for now** instead, the dashboard appears immediately with Cl
 
 **Option B — Native Windows app (v0.8.0+):**
 
-Download `Clauge_<version>_x64-setup.exe` (latest is v0.9.2) from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
+Download `Clauge_<version>_x64-setup.exe` (latest is v0.9.4) from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
 
 You'll click through two "unknown publisher" warnings on the first install — this is normal for unsigned indie apps. Authenticode code-signing is on the v0.8.x roadmap; until then:
 
@@ -84,7 +84,7 @@ The 5-step Welcome wizard (described above) applies to Windows too — same wind
 
 **Auto-updates work the same as macOS.** Settings → Updates → **Check Now** queries the shared `gh-pages/latest.json` manifest (which now lists `darwin-aarch64`, `darwin-x86_64`, **and** `windows-x86_64` entries side-by-side). When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** — the running app exits and the new installer takes over.
 
-> **Verify the download (optional, advanced):** the GitHub Release page lists the SHA-256 of `Clauge_0.9.2_x64-setup.exe`. In PowerShell: `Get-FileHash Clauge_0.9.2_x64-setup.exe -Algorithm SHA256` and compare against the value on the Releases page.
+> **Verify the download (optional, advanced):** the GitHub Release page lists the SHA-256 of `Clauge_0.9.4_x64-setup.exe`. In PowerShell: `Get-FileHash Clauge_0.9.4_x64-setup.exe -Algorithm SHA256` and compare against the value on the Releases page.
 
 > **Known Windows limitations in v0.8.0:**
 > - The SmartScreen "publisher unknown" warning fires until Authenticode signing lands. Reputation accrues over time even on an unsigned cert, but the cleanest fix is a paid EV/OV code-signing certificate (v0.8.x).
@@ -281,7 +281,7 @@ clauge --version
 ```
 
 **Notes:**
-- `set-api-key` and `reset-trial` are **macOS-only** in v0.9.3 — they shell out to `security`. Windows + Linux Keychain support tracked for v0.9.4.
+- `set-api-key` and `reset-trial` are **macOS-only** — they shell out to `security`. Windows (`cmdkey` / `keytar`) and Linux (libsecret) coverage is tracked for v0.9.5+.
 - `set-api-key` rejects API keys passed on the command line. Always pipe via stdin so the key doesn't land in shell history.
 - The CLI talks to a running Clauge over HTTP when possible (via `~/Library/Caches/Clauge/active-port`). When Clauge isn't running, read commands fall back to the on-disk settings file; write commands write directly to disk (`enable`/`disable`) or to Keychain (`set-api-key` / `reset-trial`).
 - When installed via Homebrew, the `clauge` command is on your `PATH`. From source: `node server.js config get`.

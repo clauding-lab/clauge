@@ -1,32 +1,46 @@
 # Changelog
 
-## [0.9.4] — 2026-05-25
+## [0.9.4] — 2026-05-26
+
+The biggest user-visible release since v0.9.1: an **activity heatmap** on both the dashboard and popover, **opaque vibrancy** on both surfaces (wallpaper hue tints faintly through HudWindow material — see screenshots), a **bundled `clauge` CLI** at a stable path inside the .app bundle, and a "**Temporarily gated by Anthropic**" dashboard regression fixed. Plus a quiet engineering layer: SECURITY + CONTRIBUTING docs, four `npm run check` validators that catch architectural drift at lint time, a release-pipeline version-sync gate, and groundwork for i18n (copy registry) and IPC consolidation (single Tauri bridge facade).
 
 ### Added
 
-- **Activity heatmap.** GitHub-style 7-row × variable-column grid of daily usage intensity on the dashboard (range dropdown: 180d / 365d / All) and a compact 180-day grid in the popover. Reports active days, current streak, and longest streak. Single orange ramp on both surfaces matches Clauge's existing accent. Built on `lib/activity.js` (pure helpers — quartile-based bucketing + streaks) and `GET /api/activity` (Hono wrapper that aggregates `SessionStore.loadAllSummaries()` into a dense day array honoring the user's local timezone).
-- **Bundled `clauge` CLI.** After a DMG install, the CLI is at `/Applications/Clauge.app/Contents/Resources/clauge-cli` and callable directly without any setup. A new `install_cli_symlink` Tauri IPC adds the one-click `/usr/local/bin/clauge` symlink (wizard step lands in v0.9.5; manual `sudo ln -s ...` documented in README).
-- **SECURITY.md and CONTRIBUTING.md** at repo root, linked from README. SECURITY documents the Keychain / OAuth blob / local-HTTP / Tauri webview surface, in-scope vs out-of-scope, and the 48h / 14d response targets. CONTRIBUTING covers Conventional Commits + no-Claude-attribution rule, `npm run check` expansion, where issues go, and a 48h-response soft SLA.
-- **AGENTS.md "Load-bearing conventions (data contract)"** section. Five rules the cost math depends on: JSONL turns deduped by `requestId`, `ephemeral_5m` vs `ephemeral_1h` cache-tier split, never reading `costUSD` from JSONL, never computing cost from `total_tokens`, and the canonical aggregator field-shape. Cross-referenced from `lib/parser.js`.
-- **AGENTS.md landmines #15 + #16** documenting the heatmap data path + the 5 popover items retired in v0.9.4 (Add Account / Usage Dashboard / Status / Refresh / Settings + ⌘R / ⌘,), and the in-progress copy-registry / tauri-bridge migration shape.
-- **Four architecture validators** in `npm run check`:
-  - `validate-ipc-triple-register.cjs` — every `#[tauri::command]` is in `generate_handler![]` + `APP_COMMANDS` + `capabilities/main.json`. Catches landmine #1 at lint time.
-  - `validate-no-console-log.cjs` — no `console.log` in `lib/` + `popover/` (server.js's startup banner is allowed).
-  - `validate-no-hardcoded-port.cjs` — no `:3456..:3460` URL literals in `popover/`.
-  - `validate-copy-registry.cjs` — every `t('key')` call resolves to `popover/copy.json`.
-  Each has a passing + intentionally-failing test fixture under `test/validators.test.js`.
-- **Release-pipeline version-sync** step in `release.yml`. Asserts `package.json` + `tauri.conf.json` + `Cargo.toml` + the pushed tag all carry the same version before any build work runs. TokenTracker shipped v0.5.77 with Info.plist stuck on v0.5.76; this step makes the same regression impossible for Clauge.
-- **Copy registry infrastructure** at `popover/copy.json` + `popover/lib/copy.js`. 61 keys covering the popover's user-facing string surface. `window.t('key.path', { params })` lookup with dot-separated keys + `{placeholder}` substitution. Validator catches typos. String migration of existing inline strings is incremental — registry is wired and ready for new strings now.
-- **Tauri ↔ Web bridge infrastructure** at `popover/lib/tauri-bridge.js`. `window.ClaugeBridge` exposes one method per Tauri command — enumerates the entire IPC surface in one file for trivial audit. Loaded on the dashboard, popover, and onboarding wizard. Migration of existing `__TAURI__.core.invoke(...)` callsites is incremental.
+- **Activity heatmap.** GitHub-style grid of daily usage intensity. Dashboard variant has a `180d / 365d / All` range dropdown; popover shows a compact 180-day grid below the spend chart. Stats line: "N active days · M-day current streak · longest L". Single orange ramp on both surfaces. Built on `lib/activity.js` (pure quartile bucketing + streak helpers, with full unit-test coverage) and `GET /api/activity`.
+- **Dashboard button in the popover footer.** ⌘D from the popover (or click the button) opens the full dashboard. Added in front of "About Clauge" to bring back one-click access after the v0.9.4 popover streamlining removed the Usage Dashboard action.
+- **Bundled `clauge` CLI** inside the .app. After a DMG install, the CLI is callable at:
+  ```bash
+  /Applications/Clauge.app/Contents/Resources/clauge-cli config get
+  ```
+  To put it on `PATH`, symlink once:
+  ```bash
+  sudo ln -s "/Applications/Clauge.app/Contents/Resources/clauge-cli" /usr/local/bin/clauge
+  ```
+  A new `install_cli_symlink` Tauri IPC wires this up for a future one-click wizard step (v0.9.5). Homebrew installs already place `clauge` on `PATH`.
+- **SECURITY.md and CONTRIBUTING.md** at repo root, linked from README. SECURITY enumerates the Keychain / OAuth blob / local-HTTP / Tauri webview surface (in-scope vs out-of-scope) and a 48h-ack / 14d-fix target for high-severity reports. CONTRIBUTING covers Conventional Commits, `npm run check`, where issues go, and a 48h-response soft SLA.
 
 ### Changed
 
-- **Popover opaque vibrancy.** The popover's `#root` was bumped from the v0.9.1 cool-slate 0.22-alpha base to a near-opaque `linear-gradient(180deg, rgba(30,26,38,0.93), rgba(20,18,26,0.96))` with `blur(40px) saturate(160%)`. Wallpaper hue still tints faintly through but text reads near-solid on bright backgrounds. The dashboard window keeps its v0.9.3 multi-stop gradient — a `.transparent(true)` + `apply_vibrancy(HudWindow, ...)` attempt on the dashboard broke its render during smoke (blank window), so the dashboard vibrancy treatment is deferred to a future release.
-- **Popover surface streamlined.** Five items retired: Add Account button, Usage Dashboard button, Status row, Refresh button (`⌘R`), Settings button (`⌘,`). Auto-refresh runs every 10s — manual Refresh became redundant. Settings is still reachable via tray right-click → Preferences.
+- **Opaque vibrancy treatment on both surfaces.** Dashboard window now uses `.transparent(true)` + `apply_vibrancy(HudWindow, FollowsWindowActiveState, 14.0)` on macOS, with `apply_mica`/`apply_acrylic` fallback on Windows. Popover wraps its WKWebView in an `NSVisualEffectView(HudWindow)` so it matches. Both surfaces composite the same CSS wash (`rgba(30,26,38,0.55)` → `rgba(20,18,26,0.60)`, `blur(80px) saturate(180%)`, brand-orange sheen top-left) onto the OS material — wallpaper hue bleeds through, text stays legible.
+- **Popover surface streamlined.** Five items retired to make room for the heatmap: **Add Account**, **Usage Dashboard**, **Status row**, **Refresh button** (`⌘R`), **Settings button** (`⌘,`). Auto-refresh runs every 10s so the manual Refresh became redundant; Settings is still reachable via tray right-click → Preferences. ⌘D still opens the dashboard, and a new explicit "Dashboard" button surfaces it in the footer.
 
 ### Fixed
 
-- **Dashboard "EXTRA USAGE" card now mirrors the popover.** Previously read only `plan.extraUsage` (OAuth-API per-org spend), which Anthropic has been gating at the org level for many users since 2026-05 — so the card showed `$— · Temporarily gated by Anthropic` even when `plan.consumerOverage` (claude.ai `/overage_spend_limit` — the usage credits visible at claude.ai/settings/usage) had real spend. Dashboard now applies the same preference order as `popover/popover.js::renderExtra`: `consumerOverage` first, fall back to `extraUsage`. Over-cap readings like 196% are now visible in the label (the bar still clamps at 100% since it semantically represents "% of cap").
+- **Dashboard "EXTRA USAGE" card no longer reads `$— · Temporarily gated by Anthropic` when the data is actually present.** Previously the dashboard only consumed `plan.extraUsage` (OAuth-API per-org spend, which Anthropic has been gating at the org level for many users since 2026-05). The popover already preferred `plan.consumerOverage` (the claude.ai `/overage_spend_limit` row — the usage credits you see at claude.ai/settings/usage); the dashboard now applies the same preference. Over-cap readings like `196%` are now visible in the label.
+
+### Engineering
+
+- **`AGENTS.md` "Load-bearing conventions (data contract)"** section. Five invariants the cost math depends on: JSONL turns deduped by `requestId`, `ephemeral_5m` vs `ephemeral_1h` cache-tier split, never reading `costUSD` from JSONL, never computing cost from `total_tokens`, and the canonical aggregator field-shape. Cross-referenced from `lib/parser.js`.
+- **`AGENTS.md` landmines #15 + #16** documenting the heatmap data path (lib/activity.js → /api/activity → popover/heatmap.js shared renderer) and the in-progress copy-registry + Tauri-bridge migration shape.
+- **Four architecture validators in `npm run check`:**
+  - `validate-ipc-triple-register.cjs` — every `#[tauri::command]` is in `generate_handler![]` + `APP_COMMANDS` + `capabilities/main.json` (catches landmine #1 at lint time).
+  - `validate-no-console-log.cjs` — no `console.log` in `lib/` + `popover/`.
+  - `validate-no-hardcoded-port.cjs` — no `:3456..:3460` URL literals in `popover/`.
+  - `validate-copy-registry.cjs` — every `t('key')` call resolves to `popover/copy.json`.
+  Each has a passing + intentionally-failing test fixture under `test/validators.test.js`.
+- **Release-pipeline version-sync** step in `release.yml`. Asserts `package.json` + `tauri.conf.json` + `Cargo.toml` + the pushed tag all carry the same version before any build work runs.
+- **Copy registry infrastructure** at `popover/copy.json` + `popover/lib/copy.js`. 61 keys covering the popover string surface; `window.t('key.path', { params })` lookup with `{placeholder}` substitution. Validator catches typos. String migration of existing inline strings is incremental — the registry is wired and ready for new strings now.
+- **Tauri ↔ Web bridge infrastructure** at `popover/lib/tauri-bridge.js`. `window.ClaugeBridge` exposes one method per Tauri command — enumerates the entire IPC surface in one file for trivial audit. Loaded on dashboard, popover, and onboarding wizard. Migration of existing `__TAURI__.core.invoke(...)` callsites is incremental.
 
 ## [0.9.3] — 2026-05-25
 
