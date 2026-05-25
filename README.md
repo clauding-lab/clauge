@@ -256,6 +256,25 @@ echo "$ANTHROPIC_ADMIN_KEY" | clauge config set-api-key --provider anthropic-adm
 # Wipe the trial counter (dev-mode only; three locks)
 CLAUGE_DEV=1 clauge config reset-trial --yes
 
+### Where the `clauge` CLI lives after a DMG install (v0.9.4+)
+
+The `.app` bundle ships the CLI at a stable path inside `Resources/`. You can
+call it directly without any setup:
+
+```bash
+/Applications/Clauge.app/Contents/Resources/clauge-cli config get
+```
+
+To put it on `PATH`, symlink it once:
+
+```bash
+sudo ln -s "/Applications/Clauge.app/Contents/Resources/clauge-cli" /usr/local/bin/clauge
+```
+
+Or use the `install_cli_symlink` Tauri IPC (forward-looking — a one-click
+wizard step will land in v0.9.5). Homebrew installs already place `clauge` on
+`PATH` via the cask formula.
+
 # Help + version
 clauge --help
 clauge --version

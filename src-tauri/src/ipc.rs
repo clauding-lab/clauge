@@ -660,6 +660,75 @@ pub async fn restart_app(state: State<'_, AppState>, app: tauri::AppHandle) -> R
     app.restart();
 }
 
+/// v0.9.4 Phase B.4 — install a `/usr/local/bin/clauge` symlink pointing at
+/// the bundled `Contents/Resources/clauge-cli` wrapper. Returns a human-
+/// readable status string the wizard can display directly.
+///
+/// Idempotent and fails-soft: if the symlink already points at our wrapper,
+/// returns "already installed". If a foreign file occupies the path, returns
+/// an Err with the manual `ln -s` command for the user to run. Permission
+/// errors return an Err suggesting the same manual command via `sudo`.
+#[tauri::command]
+pub fn install_cli_symlink() -> Result<String, String> {
+    let bundle_cli = resolve_bundle_cli_path()
+        .ok_or_else(|| "Could not resolve bundle Resources/clauge-cli path".to_string())?;
+    if !bundle_cli.exists() {
+        return Err(format!(
+            "Bundled CLI wrapper not found at {}. Reinstall Clauge.",
+            bundle_cli.display()
+        ));
+    }
+
+    let target = std::path::PathBuf::from("/usr/local/bin/clauge");
+
+    if let Ok(meta) = std::fs::symlink_metadata(&target) {
+        if meta.file_type().is_symlink() {
+            if let Ok(existing) = std::fs::read_link(&target) {
+                if existing == bundle_cli {
+                    return Ok(format!(
+                        "Already installed: {} -> {}",
+                        target.display(),
+                        existing.display()
+                    ));
+                }
+                return Err(format!(
+                    "/usr/local/bin/clauge already points at {}. \
+                     Remove it first: sudo rm /usr/local/bin/clauge && sudo ln -s {} /usr/local/bin/clauge",
+                    existing.display(),
+                    bundle_cli.display()
+                ));
+            }
+        }
+        return Err(format!(
+            "/usr/local/bin/clauge already exists (not a symlink). \
+             Remove it first: sudo rm /usr/local/bin/clauge && sudo ln -s {} /usr/local/bin/clauge",
+            bundle_cli.display()
+        ));
+    }
+
+    match std::os::unix::fs::symlink(&bundle_cli, &target) {
+        Ok(()) => Ok(format!(
+            "Installed: {} -> {}",
+            target.display(),
+            bundle_cli.display()
+        )),
+        Err(e) => Err(format!(
+            "Could not create symlink ({}). Run manually: sudo ln -s {} /usr/local/bin/clauge",
+            e,
+            bundle_cli.display()
+        )),
+    }
+}
+
+/// Resolve the absolute path to the bundled CLI wrapper. macOS bundle layout:
+///   /Applications/Clauge.app/Contents/MacOS/Clauge           <- current_exe
+///   /Applications/Clauge.app/Contents/Resources/clauge-cli   <- wrapper
+fn resolve_bundle_cli_path() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let contents = exe.parent()?.parent()?;
+    Some(contents.join("Resources").join("clauge-cli"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
