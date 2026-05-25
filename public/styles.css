@@ -86,6 +86,15 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
+/* v0.9.4 Phase C — opaque-vibrancy wash.
+   The Tauri window is `.transparent(true)` and has `apply_vibrancy(HudWindow,
+   FollowsWindowActiveState, 14.0)` on macOS / mica-or-acrylic on Windows.
+   That gives us a real OS vibrancy layer underneath. The wash below blends
+   on top: 0.78-0.82 alpha keeps text legible while letting the wallpaper hue
+   tint faintly through. The brand-orange radial sheen on body::before is the
+   identity touch top-left. */
+html, body { background: transparent; }
+
 body {
   min-height: 100vh;
   font-family: var(--sans);
@@ -95,11 +104,20 @@ body {
   font-feature-settings: var(--tnum);
   -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(50% 40% at 18% 0%, rgba(217, 119, 87, 0.18), transparent 60%),
-    radial-gradient(40% 50% at 92% 18%, rgba(180, 92, 65, 0.10), transparent 60%),
-    radial-gradient(60% 40% at 50% 100%, rgba(60, 40, 80, 0.10), transparent 70%),
-    linear-gradient(180deg, #1a1410 0%, #110d0a 50%, #0d0a08 100%);
+    linear-gradient(180deg, rgba(30, 26, 38, 0.78) 0%, rgba(20, 18, 26, 0.82) 100%);
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
+          backdrop-filter: blur(60px) saturate(180%);
   background-attachment: fixed;
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(80% 50% at 0% 0%, rgba(217, 119, 87, 0.06), transparent 60%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .mono { font-family: var(--mono); font-feature-settings: var(--tnum); }
@@ -110,8 +128,11 @@ body {
    ═══════════════════════════════════════════════════════════ */
 .glass {
   background: var(--glass-1);
-  -webkit-backdrop-filter: blur(40px) saturate(160%);
-          backdrop-filter: blur(40px) saturate(160%);
+  /* v0.9.4 Phase C: bumped from blur(40px) saturate(160%) to match the new
+     window wash's blur(60px) saturate(180%). Cards now read consistently
+     against the heavier translucent body. */
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
+          backdrop-filter: blur(60px) saturate(180%);
   border-radius: var(--r-lg);
   box-shadow:
     inset 0 1px 0 var(--rim-top),
