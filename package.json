@@ -16,7 +16,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.js test/cli/*.test.js",
     "test:sea": "node --test test/sea-smoke.test.js",
     "test:e2e": "tsx --test test/e2e/v3.test.ts",
     "build:sidecar": "node scripts/build-sidecar.mjs",
