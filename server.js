@@ -37,6 +37,16 @@ import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
+import { runCli } from './lib/cli/index.js';
+
+// CLI mode short-circuit. ANY argv past the script name routes through the
+// CLI dispatcher (which prints usage + exit 2 on unknown verbs). This way
+// typos like `clauge confg get` get a clean error instead of a confusing
+// server startup. Plain `node server.js` (no extra args) falls through
+// to the Hono setup below — preserves the legacy npx-clauge entry point.
+if (process.argv.length > 2) {
+  process.exit(await runCli(process.argv.slice(2)));
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
