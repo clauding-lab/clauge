@@ -556,10 +556,48 @@ function renderHeaderSubhead(ingestedAt, healthOk) {
   }
 }
 
-function renderStatusAction(healthOk) {
-  const el = document.getElementById('action-status-label');
-  if (!el) return;
-  el.textContent = healthOk ? 'Status: All systems normal' : 'Status: Offline';
+// v0.9.4: renderStatusAction removed — the status row was retired alongside
+// the rest of the action-items panel. Health state still surfaces through
+// renderHeaderSubhead's "Updated …" line.
+
+// ────────────────────────────────────────────────────────────
+// Activity heatmap (v0.9.4 Phase A)
+// ────────────────────────────────────────────────────────────
+async function refreshHeatmap() {
+  if (!window.ClaugeHeatmap) return;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  try {
+    const data = await fetchJson(`/api/activity?period=180d&tz=${encodeURIComponent(tz)}`);
+    renderPopoverHeatmap(data);
+  } catch (err) {
+    console.error('[Clauge popover] heatmap fetch failed:', err);
+    renderPopoverHeatmap(null);
+  }
+}
+
+function renderPopoverHeatmap(data) {
+  const root = document.getElementById('po-heatmap-root');
+  if (root && window.ClaugeHeatmap) {
+    window.ClaugeHeatmap.render(root, data, { variant: 'popover' });
+  }
+  const activeEl = document.getElementById('po-heatmap-active');
+  const streakEl = document.getElementById('po-heatmap-streak');
+  const longestEl = document.getElementById('po-heatmap-longest');
+  if (activeEl) {
+    activeEl.textContent = data
+      ? `${data.activeDays} active day${data.activeDays === 1 ? '' : 's'}`
+      : '—';
+  }
+  if (streakEl) {
+    streakEl.textContent = data && data.currentStreak > 0
+      ? `Streak: ${data.currentStreak} day${data.currentStreak === 1 ? '' : 's'}`
+      : 'Streak: —';
+  }
+  if (longestEl) {
+    longestEl.textContent = data && data.longestStreak > 0
+      ? `Longest: ${data.longestStreak} day${data.longestStreak === 1 ? '' : 's'}`
+      : 'Longest: —';
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -609,7 +647,6 @@ async function refresh() {
     renderStats({ summary, cache, period30d });
     renderSpendChart(daily30d);
     renderDisclaimer({ topModel: summary?.topModel });
-    renderStatusAction(healthOk);
 
     // Update footer version label.
     const aboutEl = document.getElementById('footer-about-version');
@@ -619,11 +656,13 @@ async function refresh() {
   } catch (err) {
     console.error('[Clauge popover] refresh failed:', err);
     renderHeaderSubhead(null, false);
-    renderStatusAction(false);
   } finally {
     hideLoading();
     resizeToContent();
   }
+  // Heatmap is independent of the main refresh — fire-and-forget so a slow
+  // /api/activity doesn't block the rest of the popover from rendering.
+  refreshHeatmap();
 }
 
 function resizeToContent() {
@@ -671,17 +710,24 @@ function quitApp() {
 // Init
 // ────────────────────────────────────────────────────────────
 async function init() {
+  // v0.9.4 Phase B.1: wait for the copy registry to load before any render
+  // path so t() calls (when callers start migrating to them) never race the
+  // copy.json fetch. Today the registry is wired but no string is yet routed
+  // through t() — the await is a no-op fast-path while the migration
+  // proceeds across follow-up commits.
+  if (typeof window !== 'undefined' && window.__claugeCopyReady) {
+    try { await window.__claugeCopyReady; } catch { /* fallback baked into copy.js */ }
+  }
+
   const locPort = parseInt(window.location.port, 10);
   if (Number.isFinite(locPort) && locPort > 0) serverPort = locPort;
 
-  // Action items
-  document.getElementById('action-add-account')?.addEventListener('click', openSettings);
-  document.getElementById('action-dashboard')?.addEventListener('click', openDashboard);
-  document.getElementById('action-status')?.addEventListener('click', openDashboard);
+  // v0.9.4: the Action items panel (Add Account / Usage Dashboard / Status)
+  // and the footer's Refresh + Settings buttons were retired. Auto-refresh
+  // runs every 10s; Settings is still reachable via the tray's right-click
+  // Preferences menu item (src-tauri/src/menu.rs).
 
   // Footer
-  document.getElementById('footer-refresh')?.addEventListener('click', () => refresh());
-  document.getElementById('footer-settings')?.addEventListener('click', openSettings);
   document.getElementById('footer-about')?.addEventListener('click', () => {
     // Open prefs panel (legacy About flow).
     document.getElementById('prefs')?.removeAttribute('hidden');
@@ -707,21 +753,17 @@ async function init() {
     refresh();
   });
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts. v0.9.4 dropped ⌘R (Refresh button retired — auto-
+  // refresh is the canonical path) and ⌘, (Settings button retired —
+  // Preferences lives on the tray right-click menu).
   document.addEventListener('keydown', (e) => {
     if (!e.metaKey) return;
     if (e.key === 'd' || e.key === 'D') {
       e.preventDefault();
       openDashboard();
-    } else if (e.key === 'r' || e.key === 'R') {
-      e.preventDefault();
-      refresh();
     } else if (e.key === 'q' || e.key === 'Q') {
       e.preventDefault();
       quitApp();
-    } else if (e.key === ',') {
-      e.preventDefault();
-      openSettings();
     }
   });
 

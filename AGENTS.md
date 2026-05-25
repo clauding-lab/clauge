@@ -97,6 +97,49 @@ The tap also runs a daily 04:17 UTC cron as a safety net — even if dispatch an
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, etc.) with optional scope. Imperative mood. **No `Co-Authored-By: Claude` lines** — attribution is disabled globally; do not re-add.
 - **Files:** keep modules focused; ~400 lines typical, 800 max. Split Rust modules when one starts mixing tray + popover + keychain logic.
 
+## Load-bearing conventions (data contract)
+
+The cost math depends on a handful of invariants that aren't obvious from reading any single file. Touch any of these and re-run `test/parser.test.js` + `test/cost-calculator.test.js` + `test/aggregator.test.js`. If a change feels like it conflicts with one of these, raise it as a separate refactor task instead of silently bending the contract.
+
+### 1. JSONL turns are deduped by `requestId`
+
+A single assistant API request emits **three** JSONL lines in `~/.claude/projects/<encoded>/<session>.jsonl` — one per content-block type (`thinking`, `text`, `tool_use`). All three carry the **same** `usage` block, so summing them naively triples the token count.
+
+`lib/parser.js::parseSession` deduplicates by `record.requestId`: the first assistant record for a given requestId becomes the canonical turn; subsequent records for the same requestId merge content blocks into the same turn but do **not** add tokens. Records without `requestId` are dropped (they're orphan content blocks from interrupted streams).
+
+Anything new that traverses JSONL records and accumulates tokens **must** dedup. The safest path is to consume `parser.parseSession`'s output (which is already deduped) instead of reading JSONL directly.
+
+### 2. Cache-tier columns: `ephemeral_5m` vs `ephemeral_1h`
+
+Anthropic's `usage.cache_creation` object has two fields with distinct economics:
+
+- `ephemeral_5m_input_tokens` — 5-minute cache, billed at the higher write rate.
+- `ephemeral_1h_input_tokens` — 1-hour cache, billed at an even higher write rate.
+
+`lib/parser.js::normalizeUsage` lifts these into `cacheCreate5m` and `cacheCreate1h` separately. **Don't collapse them**. `cost-calculator.js::computeTurnCost` reads each at its own rate (`cache_creation_input_token_cost` and `cache_creation_input_token_cost_above_1hr`). Cache *read* tokens (`cache_read_input_tokens`) are a third bucket with a fourth rate — also tracked separately.
+
+The legacy JSONL field name is `cache_creation_input_tokens` (no tier breakdown). It's still emitted by some session files and is **not** what we use. Always prefer `cache_creation.ephemeral_*` over the legacy aggregate.
+
+### 3. Cost is **always** recomputed from rates — never read from `costUSD`
+
+JSONL records sometimes carry a `costUSD` field. **Do not use it.** It's frequently stale (rate changes since the session ran) or outright wrong (intermediate streaming snapshots).
+
+`lib/cost-calculator.js::computeTurnCost` is the canonical path: it reads `usage.{input,output,cache_read,cache_creation.ephemeral_5m,cache_creation.ephemeral_1h}_tokens` and multiplies each by the current `priceTable` entry for the model. The `priceTable` is loaded from LiteLLM's `model_prices_and_context_window.json` (vendored fallback at `lib/litellm-prices.fallback.json`), with optional env-var overrides for models LiteLLM doesn't track yet.
+
+`lib/cost-calculator.js`'s top-of-file comment locks this: `NEVER reads costUSD from JSONL. Cost is always recomputed from token counts and rates.`
+
+### 4. Never compute cost from `total_tokens` or summed totals
+
+Even given a correct dedup, computing `total_tokens × some_unified_rate` produces a wrong cost. The four token classes have **different rates** (input / output / cache_read / cache_creation), and the cache-creation class itself splits by tier. There is no single "average" rate that gives the right answer.
+
+If you find yourself reaching for a `totalTokens(usage) * rate` shortcut, stop. Either call `computeTurnCost(turn, rates)` (correct) or sum the four/five components × their respective rates explicitly. The TokenTracker competitor (`mm7894215/TokenTracker`) shipped a regression around this in early 2026; their CLAUDE.md now documents the same warning.
+
+### 5. Tokens-summary aggregator preserves the same shape
+
+`lib/aggregator.js` and its `aggregateUsage` helper keep the same field names (`inputTokens`, `outputTokens`, `cacheRead`, `cacheCreate5m`, `cacheCreate1h`, `webSearches`, `webFetches`). The dashboard, popover, and CSV/JSON exporter all assume that shape. Adding a new token class means updating all three consumers in lock-step.
+
+`lib/parser.js`'s top-of-file comment cross-references this section. Update both if you change the dedup or normalization rules.
+
 ## Known landmines (read before touching these areas)
 
 ### 1. Tauri 2 IPC needs registration in THREE places
@@ -108,6 +151,8 @@ Adding a new `#[tauri::command]` requires updating:
 3. `src-tauri/capabilities/main.json` — add to the `permissions` array.
 
 Missing any one of the three = silent IPC rejection from JS with no useful error. The browser console may show `Command "foo" not allowed` or just hang.
+
+v0.9.4 added `scripts/validate-ipc-triple-register.cjs` (runs in `npm run check`) which scans `src-tauri/src/*.rs` for `#[tauri::command]` and asserts each one is in `generate_handler![]`, that each `APP_COMMANDS` entry has a matching command + `allow-<kebab>` capability, and that no dead `allow-*` permissions linger. CI fails fast on drift.
 
 ### 2. SEA sidecar has TWO asset manifests — keep them in sync
 
@@ -219,6 +264,37 @@ For real users: ship updates via the Chrome Web Store. The CWS submission flow i
 **CLI Keychain ops are macOS-only:** `set-api-key` and `reset-trial` shell out to `security`. Other platforms get a clean error with exit 2. Windows + Linux Keychain support (`cmdkey` / libsecret, or a Node native binding like `keytar`) tracked for v0.9.4. `set-api-key` passes the key via `-w <key>` which puts it in `security`'s argv for the spawn — small ps-visibility window. v0.9.4 will swap to `keytar` to close this.
 
 **Test discovery:** `npm test` glob is `test/*.test.js test/cli/*.test.js`. New CLI test files go under `test/cli/`. New non-CLI test files at `test/`. If you add a third directory, update the glob in `package.json` — without that, `npm run check` silently skips your tests.
+
+### 15. Activity heatmap (v0.9.4) — data path + popover removals
+
+**Data path** is the same on both surfaces. Don't fork the renderer:
+
+1. `lib/activity.js` — pure helpers (`computeBuckets`, `countActiveDays`, `computeCurrentStreak`, `computeLongestStreak`, `summarizeActivity`, `aggregateDailyActivity`). All side-effect-free, all testable. `today` is always passed in — the lib never reads the clock.
+2. `server.js::GET /api/activity` — thin Hono wrapper. Reads `period` (`180d` | `365d` | `all`) and `tz` query params; returns `{ period, tz, today, rangeStart, totalDays, activeDays, currentStreak, longestStreak, days: [{ date, sessions, tokens, costUSD, claudeAiMessages, intensity }] }`. Also listed in `READ_ONLY_API_PATHS` so the popover's cross-origin fetch from `tauri://localhost` clears the wildcard CORS.
+3. `popover/heatmap.js` — vanilla renderer. Classic script (not ES module) that exposes `window.ClaugeHeatmap.render(rootEl, data, options)`. Loaded by BOTH dashboard (`public/index.html`) and popover (`popover/index.html`) via `<script src="…/popover/heatmap.js" defer></script>`. Same palette on both surfaces (single orange ramp at hue 40); variant only swaps cell size + label visibility.
+4. `popover/heatmap.css` — the orange ramp tokens (`--cell-0` through `--cell-4` in oklch) plus the host scroll wrapper. Loaded by both surfaces too.
+
+`claudeAiMessages` is always `0` in v0.9.4. The `UsageStore` only persists the most recent ingest, so per-day claude.ai history isn't available yet. The field is plumbed through both the API and the renderer so the per-day breakdown can be wired up without a shape change. Wiring this for real is a v0.9.5+ follow-up.
+
+**Popover buttons retired in v0.9.4:** the heatmap pushed two pruning decisions. Five items are GONE from the popover; their IDs / handlers / CSS no longer exist:
+
+- `#action-add-account`, `#action-dashboard`, `#action-status` (+ `#action-status-label`, `renderStatusAction()`) — the whole `sect-actions` panel was retired.
+- `#footer-refresh` + the `⌘R` keyboard shortcut — auto-refresh runs every 10s; the manual button was redundant.
+- `#footer-settings` + the `⌘,` keyboard shortcut — Preferences is reachable via tray right-click (`src-tauri/src/menu.rs`).
+
+**Don't reintroduce.** If a future agent sees a "Refresh" or "Settings" button referenced in screenshots / older code and thinks it's a regression — it isn't, it was a deliberate v0.9.4 removal. Status info still surfaces through `renderHeaderSubhead()`'s "Updated …" subtitle.
+
+**Popover height check** still lives in `native_popover.rs::resizeToContent` (`200..1200`) and is mirrored by `popover/popover.js::resizeToContent`'s same clamp. Heatmap section adds ~120px; the five removed items netted ~170px back, so v0.9.4 popover is shorter than v0.9.3. Plenty of headroom — but if you add another section, check `MAX_POPOVER_HEIGHT` (`native_popover.rs:67`) is still respected.
+
+### 16. Tauri bridge + copy registry (v0.9.4) — both infrastructure is wired, migration is partial
+
+`popover/lib/tauri-bridge.js` is the canonical facade for every `tauri.invoke()` call. **New code should call `window.ClaugeBridge.xxx()` instead of `window.__TAURI__.core.invoke(...)`.** The bridge file enumerates every command in one place — pair it with `scripts/validate-ipc-triple-register.cjs` and you can audit the whole IPC surface from two files.
+
+Existing callsites still use raw `__TAURI__.core.invoke()`. Migration is incremental: `public/connections.js`, `public/app.js`, `public/onboarding/onboarding.js`, and `popover/splash.js` will move to the bridge across follow-up commits. **Don't add new raw invokes.** If you spot one that's safe to migrate while you're touching nearby code, do it as a separate small commit.
+
+`popover/copy.json` + `popover/lib/copy.js` are the parallel story for user-facing strings. **New strings should be added to `copy.json` and called via `window.t('key.path', { params })`.** Validator at `scripts/validate-copy-registry.cjs` (in `npm run check`) catches typos in t() keys and ensures the JSON is well-formed. Same incremental-migration shape: the registry is wired, existing inline strings stay inline until each one is migrated.
+
+Both bridges are loaded as classic scripts (not ES modules) to keep the dashboard's mixed loading model coherent (`app.js` is an ES module but everything else under `public/` is classic-script for compatibility with the popover's WKWebView).
 
 ## Communication & timezone
 

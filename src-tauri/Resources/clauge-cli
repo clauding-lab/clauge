@@ -1,0 +1,34 @@
+#!/bin/sh
+# Clauge CLI wrapper (v0.9.4 Phase B.4).
+#
+# Bundled at `<Clauge.app>/Contents/Resources/clauge-cli` and exposed via the
+# `install_cli_symlink` IPC command, which symlinks /usr/local/bin/clauge ->
+# this script. End users can also call this absolute path directly without the
+# symlink:
+#   /Applications/Clauge.app/Contents/Resources/clauge-cli config get
+#
+# The actual CLI lives inside the Tauri sidecar binary (server.js's argv-
+# dispatch shipped in v0.9.3). This script resolves the architecture-specific
+# sidecar binary in ../MacOS/ and execs it with all passed arguments.
+
+DIR=$(cd "$(dirname "$0")" && pwd)
+ARCH=$(uname -m)
+case "$ARCH" in
+  arm64|aarch64)
+    BIN="$DIR/../MacOS/clauge-server-aarch64-apple-darwin"
+    ;;
+  x86_64)
+    BIN="$DIR/../MacOS/clauge-server-x86_64-apple-darwin"
+    ;;
+  *)
+    printf 'clauge: unsupported architecture %s\n' "$ARCH" >&2
+    exit 1
+    ;;
+esac
+
+if [ ! -x "$BIN" ]; then
+  printf 'clauge: bundled sidecar not found at %s\n' "$BIN" >&2
+  exit 1
+fi
+
+exec "$BIN" "$@"

@@ -243,6 +243,7 @@ pub fn run() {
             ipc::wizard_skip,
             ipc::restart_app,
             ipc::take_pending_focus_connections,
+            ipc::install_cli_symlink,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -102,9 +102,9 @@ function copyPopoverAssets() {
     const src = join(popSrc, f);
     const dst = join(popDst, f);
     const st = statSync(src);
-    if (st.isDirectory() && f === 'fonts') {
+    if (st.isDirectory() && (f === 'fonts' || f === 'lib')) {
       copyDir(src, dst);
-    } else if (st.isFile() && /\.(html|css|js)$/.test(f)) {
+    } else if (st.isFile() && /\.(html|css|js|json)$/.test(f)) {
       copyFileSync(src, dst);
     }
   }

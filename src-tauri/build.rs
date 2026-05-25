@@ -26,6 +26,7 @@ const APP_COMMANDS: &[&str] = &[
     // referenced from capabilities/main.json.
     "get_server_port",
     "take_pending_focus_connections",
+    "install_cli_symlink",
 ];
 
 fn main() {

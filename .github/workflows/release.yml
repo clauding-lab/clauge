@@ -79,6 +79,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      # v0.9.4 Phase B.2: fail fast if the four version sources have drifted.
+      # TokenTracker shipped v0.5.77 once with Info.plist still on v0.5.76;
+      # this step makes the same regression impossible for Clauge. Pulled
+      # via an env var (TAG_NAME) rather than direct expression interpolation
+      # to keep the workflow-injection scanner quiet — github.ref_name is
+      # constrained by on.push.tags' SemVer glob, but belt-and-suspenders.
+      - name: Verify version triple matches tag
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          TAG_VERSION="${TAG_NAME#v}"
+          if ! echo "$TAG_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
+            echo "::error::Tag version '$TAG_VERSION' is not SemVer-shaped"
+            exit 1
+          fi
+          PKG=$(node -p "require('./package.json').version")
+          TAURI=$(jq -r .version src-tauri/tauri.conf.json)
+          CARGO=$(grep -E '^version' src-tauri/Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "tag=$TAG_VERSION  package.json=$PKG  tauri.conf.json=$TAURI  Cargo.toml=$CARGO"
+          for v in "$PKG" "$TAURI" "$CARGO"; do
+            if [ "$v" != "$TAG_VERSION" ]; then
+              echo "::error::Version mismatch: $v != $TAG_VERSION"
+              echo "::error::package.json, tauri.conf.json, Cargo.toml, and the tag must all agree."
+              exit 1
+            fi
+          done
+          echo "Versions agree: $TAG_VERSION"
+
       - name: Set up Node.js 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:

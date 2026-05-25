@@ -159,6 +159,7 @@ This is the architectural elegance: nothing to leak, nothing to rotate, nothing 
 
 - **Per-session tracking** — tokens, cost, model, cache hit, primary task type
 - **Per-project breakdown** — cost · sessions · messages · tools · tokens · hit %
+- **Activity heatmap** *(new in v0.9.4)* — GitHub-style 7-row × variable-column grid of daily usage intensity in the dashboard (range dropdown: 180d / 365d / All) and a compact 180-day grid in the popover. Reports active days, current streak, and longest streak.
 - **Per-model cost split** — Opus / Sonnet / Haiku, each with cache hit rate
 - **Task classification** — Coding / Debugging / Testing / Planning / Git Ops / Build / Exploration / Conversation (heuristic, deterministic)
 - **Cache analytics** — corrected hit-rate formula and **net cache savings** (subtracts cache-write overhead, distinguishes 5-minute vs 1-hour cache tiers)
@@ -255,6 +256,25 @@ echo "$ANTHROPIC_ADMIN_KEY" | clauge config set-api-key --provider anthropic-adm
 # Wipe the trial counter (dev-mode only; three locks)
 CLAUGE_DEV=1 clauge config reset-trial --yes
 
+### Where the `clauge` CLI lives after a DMG install (v0.9.4+)
+
+The `.app` bundle ships the CLI at a stable path inside `Resources/`. You can
+call it directly without any setup:
+
+```bash
+/Applications/Clauge.app/Contents/Resources/clauge-cli config get
+```
+
+To put it on `PATH`, symlink it once:
+
+```bash
+sudo ln -s "/Applications/Clauge.app/Contents/Resources/clauge-cli" /usr/local/bin/clauge
+```
+
+Or use the `install_cli_symlink` Tauri IPC (forward-looking — a one-click
+wizard step will land in v0.9.5). Homebrew installs already place `clauge` on
+`PATH` via the cask formula.
+
 # Help + version
 clauge --help
 clauge --version
@@ -309,6 +329,11 @@ npm run check     # canonical gate: cargo fmt + clippy + cargo test + npm test
 ## Why
 
 Five apps track Claude usage. None provide token-level analytics for Claude Code. None compute subscription value vs API equivalent at observed usage. None tell you what to do about your usage. Clauge does the first two natively, plus pulls claude.ai plan utilisation into the same dashboard so you see Code spend and plan limits side-by-side.
+
+## Contributing & security
+
+- Want to send a patch? See [CONTRIBUTING.md](CONTRIBUTING.md) — short read, covers commit style, `npm run check`, and where issues go.
+- Found a vulnerability? See [SECURITY.md](SECURITY.md). Do **not** file a public issue.
 
 ## License
 

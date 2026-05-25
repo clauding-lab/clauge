@@ -7,6 +7,10 @@
 //! `position_popover_under_tray`) was deleted; only `create_dashboard` remains.
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "windows")]
+use window_vibrancy::{apply_acrylic, apply_mica};
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Idempotent: if "main" window exists already, just return — caller (tray)
@@ -57,7 +61,13 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         .inner_size(1100.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .resizable(true)
-        .visible(true);
+        .visible(true)
+        // v0.9.4 Phase C: transparent window so the OS vibrancy layer
+        // (apply_vibrancy below on macOS, apply_mica/acrylic on Windows) can
+        // paint through. The CSS body wash then blends on top. Without
+        // .transparent(true) the OS paints an opaque system color behind the
+        // page and the wallpaper bleed dies.
+        .transparent(true);
 
     #[cfg(target_os = "macos")]
     {
@@ -123,6 +133,31 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
             tauri::webview::NewWindowResponse::Deny
         })
         .build()?;
+
+    // v0.9.4 Phase C: opaque-vibrancy material. NSVisualEffectMaterial::HudWindow
+    // tints with the wallpaper hue at low saturation; FollowsWindowActiveState
+    // dims it when the window loses focus. 14.0 = window corner radius (must
+    // match the CSS body / #root border-radius). On Windows, prefer Mica
+    // (Win11) and fall through to Acrylic (Win10).
+    #[cfg(target_os = "macos")]
+    if let Err(e) = apply_vibrancy(
+        &win,
+        NSVisualEffectMaterial::HudWindow,
+        Some(NSVisualEffectState::FollowsWindowActiveState),
+        Some(14.0),
+    ) {
+        log::warn!("apply_vibrancy failed on macOS dashboard: {}", e);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Mica is Windows 11+. On Windows 10 it errors out; fall back to acrylic
+        // with a dark RGBA tint matching the body gradient's upper stop.
+        if apply_mica(&win, Some(true)).is_err() {
+            if let Err(e) = apply_acrylic(&win, Some((30, 26, 38, 180))) {
+                log::warn!("apply_acrylic fallback failed on Windows dashboard: {}", e);
+            }
+        }
+    }
 
     // Hide-on-close (macOS) vs let-OS-close (Windows). On macOS the menu-bar
     // popover keeps the app resident, so we hide instead of close to make
