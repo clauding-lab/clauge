@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.5] — 2026-05-26
+
+Cleanup + polish release. One user-visible change in the popover: the activity heatmap now shows day-of-week and month axis labels, and all cells render at uniform sizes (previously the columns under "Jan" / "Feb" / "May" / etc. were silently wider because of HTML table auto-layout). Otherwise the release is engineering hygiene — committing the v0.9.4 landmines that documented the popover transparency stack + Windows Rust portability + workflow shell gotchas, routing scattered Tauri IPC calls through a centralized facade, and routing popover strings through a shared registry so future translations and copy edits become single-file edits.
+
+### Changed
+
+- **Popover activity heatmap now has visible axis labels.** Mon / Wed / Fri row labels on the left, abbreviated month labels (Jan / Feb / Mar / Apr / May / etc.) on top. Cells render at 9 px instead of the previous auto-fit ~11 px to make room for the labels while still filling the popover width. Same 180-day range, same data, same color ramp — just a cleaner read.
+
+### Fixed
+
+- **Heatmap cells now visually uniform across columns.** Previously, columns under month labels ("Jan", "May", etc.) were silently wider than other columns because HTML's default auto table-layout grew the column to fit the 3-character label. Cells in those columns appeared chunkier than the rest, which a careful eye could read as data inconsistency. Fixed via `table-layout: fixed` + explicit width clamp on the month-label `<th>` — labels still display, they just overflow their column's right edge instead of expanding it.
+
+### Engineering
+
+- **`AGENTS.md` landmines.** Updated #11 to document the v0.9.4 4-property WKWebView transparency stack (NSPopover default chrome is opaque dark — the `NSVisualEffectView(HudWindow)` wrap + 4 WKWebView property mutations make the vibrancy work, and dropping any one breaks the effect). New #17 (Windows Rust portability — `std::os::unix` gating pattern + per-platform `#[tauri::command]` shape), #18 (`cargo tauri dev` quirks: `on_navigation` 1430 allowance + sidecar binary refresh after `npm run build:sidecar`), #19 (GitHub Actions workflow steps using bash syntax MUST declare `shell: bash` because `windows-2022` runners default to PowerShell).
+- **ClaugeBridge migration partial.** Raw `window.__TAURI__.core.invoke(...)` callsites migrated to the centralized `window.ClaugeBridge.*` facade (introduced in v0.9.4) in `public/connections.js`, `public/app.js`, and `popover/splash.js` — 20 callsites total, plus removed the orphaned `getTauriInvoke()` helper. `public/onboarding/onboarding.js` intentionally stays on the old shape — it's fully rewritten in the v0.10.0 onboarding redesign so a v0.9.5 migration would be wasted churn.
+- **Copy registry migration partial.** User-facing strings in `popover/popover.js` (49 sites + 10 new dictionary keys covering common dashes / disabled-reason enum / stats disclaimer / sub-headers) and `popover/heatmap.js` (5 sites: tooltip templates + aria-label fallback) now route through the shared `popover/copy.json` registry via `t('key.path', { params })`. Future copy edits + i18n become single-file changes.
+- **`/api/activity`** accepts `period=120d` in addition to existing `180d` / `365d` / `all` (added during smoke-test iteration; the final popover renders `180d`). New integration test under `test/server-activity.test.js`.
+
 ## [0.9.4] — 2026-05-26
 
 The biggest user-visible release since v0.9.1: an **activity heatmap** on both the dashboard and popover, **opaque vibrancy** on both surfaces (wallpaper hue tints faintly through HudWindow material — see screenshots), a **bundled `clauge` CLI** at a stable path inside the .app bundle, and a "**Temporarily gated by Anthropic**" dashboard regression fixed. Plus a quiet engineering layer: SECURITY + CONTRIBUTING docs, four `npm run check` validators that catch architectural drift at lint time, a release-pipeline version-sync gate, and groundwork for i18n (copy registry) and IPC consolidation (single Tauri bridge facade).
