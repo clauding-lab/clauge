@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.8] — 2026-05-26
+
+**Hotfix + prevention release.** v0.9.7 shipped with a dashboard regression: the Activity heatmap card rendered its header and footer but the heatmap grid itself stayed blank, and the heatmap-stats line kept its `—` placeholder instead of showing active-day counts. Same class of bug as the v0.9.5 → v0.9.6 splash regression — different facade.
+
+### Fixed
+
+- **Dashboard activity heatmap now renders.** Root cause: `popover/heatmap.js` is loaded by both the popover (`popover/index.html`) and the dashboard (`public/index.html`). Its `defaultTooltip()` calls `t('heatmap.tooltipSessions', …)` from the shared copy registry per non-empty cell. The popover's HTML already loaded `<script src="lib/copy.js">` (which defines `window.t`); the dashboard's HTML never did. On the first non-empty cell, `defaultTooltip()` threw `ReferenceError: t is not defined` and aborted render — the heatmap area stayed empty and `#heatmap-stats` kept its `—` placeholder. Fix: load `/popover/lib/copy.js` in `public/index.html` before `heatmap.js`. Popover was unaffected (its `index.html` already loaded `lib/copy.js`).
+- **Copy registry now fetches by absolute path.** Secondary cause: `popover/lib/copy.js` fetched the registry with `fetch('copy.json', …)` — a relative URL. From `/popover/index.html` that resolved correctly to `/popover/copy.json`; from `/index.html` it would have 404'd. Switched to `fetch('/popover/copy.json', …)` so the same shared script works from any loading page on the sidecar.
+
+If you're on v0.9.7 and seeing a blank dashboard heatmap: `brew upgrade --cask clauge` will pull v0.9.8, or wait ~1 minute for the in-app auto-updater (or download the DMG from the v0.9.8 GitHub Release page).
+
+### Engineering
+
+- **Facade validator extended to a second facade.** `scripts/validate-html-facade-loads.cjs` (introduced v0.9.7 for `ClaugeBridge`) refactored to a `FACADES` array at the top of the script. Now also enforces the `t()` / `lib/copy.js` rule: any HTML loading a JS file that calls `t('some.key.path', …)` must also load `lib/copy.js` BEFORE it. Adding a future facade is a one-row addition.
+- **Validator test coverage** — two new cases in `test/validators.test.js` mirror the existing ClaugeBridge pattern: failing when HTML loads a t()-using JS without `lib/copy.js`, failing when `lib/copy.js` is loaded AFTER. 11 validator tests total now.
+- **`AGENTS.md` landmine #20 expanded to a two-row facade table.** Cross-references both incidents (v0.9.5 → v0.9.6 for `ClaugeBridge`, v0.9.7 → v0.9.8 for `t()`).
+- **`AGENT_LEARNINGS.md` entry added** documenting the second incident, the same-class-different-facade pattern, and the "narrow guardrails miss the next instance of their own shape" meta-lesson (also promoted to the global rulebook).
+
 ## [0.9.7] — 2026-05-26
 
 Polish release. Closes out the v0.9.5 → v0.9.6 hotfix incident with mechanical guardrails so the same class of bug — an HTML page loading a JS file that depends on a centralized facade, but never loading the facade script itself — can't ship again. Plus a small dashboard vibrancy tweak so the wallpaper doesn't bleed through quite as much at full-window scale.

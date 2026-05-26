@@ -182,7 +182,69 @@ test('validate-html-facade-loads: fails when the bridge is loaded AFTER the faca
     );
     const res = runValidator(SCRIPTS.htmlFacade, { rootOverride: root });
     assert.equal(res.status, 1);
-    assert.match(res.stderr, /BEFORE the bridge/);
+    assert.match(res.stderr, /BEFORE the ClaugeBridge definer/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// v0.9.8: second facade — t() from popover/lib/copy.js. Same shape as the
+// ClaugeBridge rule but a different definer/user pair. Mirrors the
+// v0.9.7 -> v0.9.8 dashboard heatmap regression that motivated the
+// extension (see scripts/validate-html-facade-loads.cjs header comment).
+
+test('validate-html-facade-loads: fails when an HTML loads t()-using JS without lib/copy.js', () => {
+  const root = makeFixture();
+  try {
+    mkdirSync(join(root, 'popover', 'lib'), { recursive: true });
+    // copy.js — defines window.t.
+    writeFileSync(
+      join(root, 'popover', 'lib', 'copy.js'),
+      "window.t = (key) => key;\n",
+    );
+    // heatmap.js — calls t('some.key') per cell.
+    writeFileSync(
+      join(root, 'popover', 'heatmap.js'),
+      "function tooltip() { return t('heatmap.tooltipNoActivity'); }\n",
+    );
+    // HTML loads heatmap.js but NEVER loads copy.js — the dashboard bug.
+    writeFileSync(
+      join(root, 'popover', 'index.html'),
+      '<!DOCTYPE html><html><body><script src="heatmap.js"></script></body></html>',
+    );
+    const res = runValidator(SCRIPTS.htmlFacade, { rootOverride: root });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /index\.html/);
+    assert.match(res.stderr, /t\(\)/);
+    assert.match(res.stderr, /copy\.js is never loaded/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('validate-html-facade-loads: fails when copy.js is loaded AFTER t()-using JS', () => {
+  const root = makeFixture();
+  try {
+    mkdirSync(join(root, 'popover', 'lib'), { recursive: true });
+    writeFileSync(
+      join(root, 'popover', 'lib', 'copy.js'),
+      "window.t = (key) => key;\n",
+    );
+    writeFileSync(
+      join(root, 'popover', 'heatmap.js'),
+      "function tooltip() { return t('heatmap.tooltipNoActivity'); }\n",
+    );
+    // Wrong order: heatmap.js BEFORE lib/copy.js.
+    writeFileSync(
+      join(root, 'popover', 'index.html'),
+      '<!DOCTYPE html><html><body>'
+        + '<script src="heatmap.js"></script>'
+        + '<script src="lib/copy.js"></script>'
+        + '</body></html>',
+    );
+    const res = runValidator(SCRIPTS.htmlFacade, { rootOverride: root });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /BEFORE the t\(\)/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
