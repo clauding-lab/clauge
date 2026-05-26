@@ -4,16 +4,21 @@
     "description": "User-facing strings registry (v0.9.4 Phase B.1). Reference via t('key', { params }) from popover/lib/copy.js. Add new strings here; do not hardcode user-facing text in popover.js / heatmap.js / index.html.",
     "_validator": "scripts/validate-copy-registry.cjs"
   },
+  "common": {
+    "dash": "—"
+  },
   "header": {
     "name": "Clauge",
     "updatedJustNow": "Updated just now",
     "updatedMinutes": "Updated {minutes}m ago",
+    "offline": "Offline",
     "planUnknown": "—",
     "planMax": "Max"
   },
   "session": {
     "label": "Session",
     "elapsedOf5h": "{hours}h {minutes}m of 5h",
+    "elapsedOf5hShort": "{minutes}m of 5h",
     "elapsedEmpty": "— of 5h",
     "resetsIn": "resets in {duration}",
     "resetsInUnknown": "resets in —"
@@ -47,13 +52,20 @@
     "autoReloadOn": "on",
     "autoReloadOff": "off",
     "disabled": "Disabled · {reason}",
-    "noData": "no data"
+    "noData": "no data",
+    "reasonOrgLevelDisabled": "org policy",
+    "reasonPlanLimit": "plan limit",
+    "reasonPaymentRequired": "payment required",
+    "reasonNotEnrolled": "not enrolled",
+    "reasonSuspended": "suspended"
   },
   "stats": {
     "today": "today",
     "last30Days": "last 30 days",
-    "tokensSuffix": " Tokens",
-    "tokensUnknown": "— Tokens"
+    "tokensSuffix": "{count} Tokens",
+    "tokensUnknown": "— Tokens",
+    "topModelDisclaimer": "Top model: {model} · Estimated from local Claude logs",
+    "disclaimerOnly": "Estimated from local Claude logs"
   },
   "footer": {
     "about": "ⓘ About Clauge",

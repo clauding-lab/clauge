@@ -30,15 +30,15 @@
     const datePart = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     const parts = [];
     if (cell.sessions > 0) {
-      parts.push(`${cell.sessions} session${cell.sessions === 1 ? '' : 's'}`);
+      parts.push(t('heatmap.tooltipSessions', { count: cell.sessions, plural: cell.sessions === 1 ? '' : 's' }));
     }
     if (cell.claudeAiMessages > 0) {
-      parts.push(`${cell.claudeAiMessages} claude.ai message${cell.claudeAiMessages === 1 ? '' : 's'}`);
+      parts.push(t('heatmap.tooltipMessages', { count: cell.claudeAiMessages, plural: cell.claudeAiMessages === 1 ? '' : 's' }));
     }
     if (parts.length === 0) {
-      return `${weekday} ${datePart} — No activity`;
+      return t('heatmap.tooltipNoActivity', { weekday, date: datePart });
     }
-    return `${weekday} ${datePart} — ${parts.join(' · ')}`;
+    return t('heatmap.tooltipActivity', { weekday, date: datePart, parts: parts.join(' · ') });
   }
 
   // Bucket the dense day array into Sun..Sat columns. First and last weeks may
@@ -164,7 +164,7 @@
 
     const table = document.createElement('table');
     table.setAttribute('role', 'grid');
-    table.setAttribute('aria-label', opts.ariaLabel || 'Activity heatmap');
+    table.setAttribute('aria-label', opts.ariaLabel || t('heatmap.ariaLabel'));
 
     if (showMonthLabels) {
       table.appendChild(buildMonthLabelRow(weeks, leadingEmptyCols));

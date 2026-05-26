@@ -46,10 +46,10 @@ const A11Y_DOT_LABEL = {
 };
 
 async function refreshConnections() {
-  if (!window.__TAURI__?.core?.invoke) return; // npx-clauge browser surface — Tauri IPC unavailable.
+  if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return; // npx-clauge browser surface — Tauri IPC unavailable.
   let status;
   try {
-    status = await window.__TAURI__.core.invoke('get_connection_status');
+    status = await ClaugeBridge.getConnectionStatus();
   } catch (e) {
     console.warn('[connections] failed to fetch status', e);
     return;
@@ -118,13 +118,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const signinBtn = document.getElementById('signin-claude-ai');
   if (signinBtn) {
     signinBtn.addEventListener('click', async () => {
-      await window.__TAURI__?.core?.invoke?.('open_claude_ai_login');
+      if (window.ClaugeBridge && ClaugeBridge.isTauriAvailable()) {
+        await ClaugeBridge.openClaudeAiLogin();
+      }
     });
   }
   const signoutBtn = document.getElementById('signout-claude-ai');
   if (signoutBtn) {
     signoutBtn.addEventListener('click', async () => {
-      await window.__TAURI__?.core?.invoke?.('signout_claude_ai');
+      if (window.ClaugeBridge && ClaugeBridge.isTauriAvailable()) {
+        await ClaugeBridge.signoutClaudeAi();
+      }
       refreshConnections();
     });
   }
@@ -134,11 +138,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const refreshBtn = document.getElementById('refresh-claude-code');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
-      if (!window.__TAURI__?.core?.invoke) return;
+      if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
       refreshBtn.disabled = true;
       refreshBtn.classList.add('spinning');
       try {
-        await window.__TAURI__.core.invoke('refresh_credentials');
+        await ClaugeBridge.refreshCredentials();
         // The Rust handler emits `connections-updated` on success; the existing
         // event listener (around line 100) will re-fetch and re-render.
       } catch (err) {
@@ -164,9 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (installCta) {
     installCta.addEventListener('click', async function (e) {
       e.preventDefault();
-      if (!window.__TAURI__?.core?.invoke) return;
+      if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
       try {
-        await window.__TAURI__.core.invoke('plugin:shell|open', { path: CLAUGE_SYNC_WEB_STORE });
+        await ClaugeBridge.shellOpen(CLAUGE_SYNC_WEB_STORE);
       } catch (err) {
         console.warn('[connections] failed to open Web Store:', err);
       }

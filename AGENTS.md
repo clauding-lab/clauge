@@ -221,7 +221,12 @@ When running two async tasks in parallel (`tokio::join!`, `try_join!`, `JoinSet`
 In `src-tauri/src/native_popover.rs`:
 
 - **`NSPopoverBehavior::Transient`** (v0.9.2+). Pre-v0.9.2 was `.ApplicationDefined` (sticky — popover never auto-dismissed). Switched to `.Transient` to match macOS menu-bar convention (clicking outside dismisses, like CodexBar / system Wi-Fi / Battery popovers). A future agent might "fix" this back to `.ApplicationDefined` thinking it's more useful — don't.
-- **`webview.setUnderPageBackgroundColor: NSColor.clearColor`** (v0.9.1+). Required for the popover's CSS-side `backdrop-filter` translucency to actually show the OS vibrancy layer underneath. Without this, WKWebView paints a system-appropriate opaque color behind the page and the wallpaper-through-popover effect dies.
+- **WKWebView transparency stack** (v0.9.4 — four properties, all load-bearing):
+  - `setUnderPageBackgroundColor: NSColor.clearColor` (v0.9.1+). Clears the WebView's over/under-scroll fill.
+  - `setValue: NO forKey: "drawsBackground"` (v0.9.4). KVC trick used by Slack / Linear / Notion on macOS 12+; the public setter only landed in macOS 14. Stops the WebView from painting an opaque background BEFORE the page renders.
+  - `setWantsLayer: true` + `layer.setBackgroundColor(NSColor.clearColor.CGColor)` + `layer.setOpaque: NO` (v0.9.4). Clears the host NSView's CALayer fill so the parent NSVisualEffectView shows through.
+  Without ALL FOUR, the popover stack is: dark NSPopover chrome → opaque WKWebView host → page (CSS at any alpha doesn't matter because the WKWebView's own fill blocks the vibrancy material). Took 4 iterations to find this in v0.9.4 smoke — don't drop any of the four "to clean up".
+- **`NSVisualEffectView(HudWindow, BehindWindow, Active)` wrapping the WKWebView** (v0.9.4). NSPopover's default chrome is opaque dark in dark mode — no built-in vibrancy. We replace it by installing our own NSVisualEffectView as the content view's root and adding the WKWebView as a subview with width+height autoresize (mask = 18). HudWindow matches the dashboard's `apply_vibrancy(HudWindow, ...)` material so both surfaces composite the same CSS wash onto the same OS layer.
 - **`POPOVER_WIDTH: f64 = 340.0`** + **`MAX_POPOVER_HEIGHT: f64 = 1200.0`** (v0.9.1+). Mirrored in `popover/popover.js::resizeToContent` height clamp (`200..1200`). If you change one bound you MUST change both — otherwise the JS posts a height the Rust handler refuses.
 
 ### 12. Consumer overage data has TWO sources — keep them separate
@@ -295,6 +300,71 @@ Existing callsites still use raw `__TAURI__.core.invoke()`. Migration is increme
 `popover/copy.json` + `popover/lib/copy.js` are the parallel story for user-facing strings. **New strings should be added to `copy.json` and called via `window.t('key.path', { params })`.** Validator at `scripts/validate-copy-registry.cjs` (in `npm run check`) catches typos in t() keys and ensures the JSON is well-formed. Same incremental-migration shape: the registry is wired, existing inline strings stay inline until each one is migrated.
 
 Both bridges are loaded as classic scripts (not ES modules) to keep the dashboard's mixed loading model coherent (`app.js` is an ES module but everything else under `public/` is classic-script for compatibility with the popover's WKWebView).
+
+### 17. Windows Rust portability — `std::os::unix` doesn't exist on Windows
+
+Any `#[tauri::command]` (or any code in `src-tauri/src/`) that touches Unix-only stdlib paths (`std::os::unix::fs::symlink`, `std::os::unix::prelude::*`, etc.) will fail the Windows half of the release matrix at "Run Rust unit tests" with `error[E0433]: cannot find 'unix' in 'os'`. The macOS half compiles fine because macOS IS unix.
+
+**Pattern: per-platform implementations with the same signature.** Mirrors `native_popover.rs::init` and `reload_for_port`:
+
+```rust
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn install_cli_symlink() -> Result<String, String> {
+    Err("install_cli_symlink is macOS-only in v0.9.4 — Windows + Linux variants ship in v0.9.5+.".to_string())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn install_cli_symlink() -> Result<String, String> {
+    // real implementation using std::os::unix::fs::symlink
+}
+```
+
+Both compile to the same `pub fn` symbol on their respective targets, so `generate_handler![ipc::install_cli_symlink]` in `lib.rs` resolves cleanly on both — no per-platform cfg in lib.rs needed. Any helper function (e.g., `resolve_bundle_cli_path`) used only by the macOS impl should ALSO be `#[cfg(target_os = "macos")]` to avoid unused-function warnings on Windows.
+
+Caught by the B.7 IPC-triple-register validator? **No** — that validator only checks registration consistency, not platform portability. A future v0.9.5+ idea: extend it to grep for `std::os::unix::` outside macOS-cfg blocks.
+
+### 18. `cargo tauri dev` quirks that bit v0.9.4 hard
+
+Two non-obvious behaviors during the v0.9.4 vibrancy iteration cycle:
+
+**a. `on_navigation` fires for the initial URL too.** In production builds `WebviewUrl::App("splash.html")` resolves to `tauri://localhost/splash.html` which the existing allowlist catches. In dev mode it resolves to `http://127.0.0.1:1430/splash.html` (Tauri's dev server) — NOT in the allowlist. The handler blocks the initial nav and the dashboard renders blank. Look for `Blocked dashboard navigation to http://127.0.0.1:1430/splash.html` in the dev log.
+
+The fix already in `windows.rs::on_navigation`:
+
+```rust
+#[cfg(debug_assertions)]
+if u.scheme() == "http"
+    && matches!(host, Some("127.0.0.1") | Some("localhost"))
+    && u.port_or_known_default() == Some(1430)
+{
+    return true;
+}
+```
+
+If you touch `on_navigation`, keep this allowance or `cargo tauri dev` will silently blank-window the dashboard while production builds work fine.
+
+**b. `cargo tauri dev` does NOT auto-pick-up rebuilt sidecar binaries.** It launches `target/debug/clauge-server`, NOT `src-tauri/binaries/clauge-server-<arch>-apple-darwin` (which is what `npm run build:sidecar` writes). After build:sidecar, the running tauri:dev keeps using the OLD binary. Workarounds:
+
+- Copy the new binary into place: `cp src-tauri/binaries/clauge-server-aarch64-apple-darwin src-tauri/target/debug/clauge-server`, then `pkill -9 clauge-server` so the tauri:dev supervisor respawns with the new binary.
+- Or fully restart: `pkill -9 -f "clauge\|cargo run" && npm run tauri:dev` — picks up the binary from `target/debug/clauge-server` which Tauri itself copied from `src-tauri/binaries/` on startup.
+
+Symptom when you forget: changes to popover JS / CSS / HTML don't appear even though `curl http://127.0.0.1:3456/popover/popover.css` shows the new file on disk — because the bundled SEA binary serves embedded assets from its OWN copy, not the disk path.
+
+### 19. Workflow steps using bash syntax MUST declare `shell: bash`
+
+`windows-2022` runners default to PowerShell, NOT bash. Any `run:` block that uses:
+
+- `${VAR#prefix}` / `${VAR%suffix}` (parameter expansion)
+- `pipe | grep | cut` (Unix pipelines)
+- `if ! cmd; then ... fi` (bash conditionals)
+- `for v in ...; do ... done` (bash loops)
+- `[ "$a" = "$b" ]` or `[[ ... ]]` (test expressions)
+
+...will fail with cryptic PowerShell errors unless the step declares `shell: bash` (Git Bash is installed on the windows-2022 image). The B.2 `Verify version triple matches tag` step bit this exactly once in v0.9.4 — fixed by adding `shell: bash` under the `env:` block.
+
+The macOS-14 runner defaults to bash so steps without `shell:` work there silently, hiding the issue from cross-platform testing.
 
 ## Communication & timezone
 
