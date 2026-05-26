@@ -366,6 +366,16 @@ Symptom when you forget: changes to popover JS / CSS / HTML don't appear even th
 
 The macOS-14 runner defaults to bash so steps without `shell:` work there silently, hiding the issue from cross-platform testing.
 
+### 20. HTML pages hosting JS that uses `ClaugeBridge` MUST load `lib/tauri-bridge.js` first
+
+Every HTML page in `popover/` or `public/` that loads a JS file referencing `window.ClaugeBridge` or `ClaugeBridge.*` MUST also include `<script src="lib/tauri-bridge.js">` (or the absolute equivalent `/popover/lib/tauri-bridge.js`) **BEFORE** that JS script tag. Each HTML page is an independent loader — there is NO inheritance from sibling HTML pages.
+
+Shipping an HTML page that loads facade-using JS without the bridge means `ClaugeBridge` is undefined at runtime. Code paths that guard with `if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;` short-circuit silently. Caught by the v0.9.5 → v0.9.6 hotfix incident — `popover/splash.html` was missing the bridge tag after the B.6 migration of `splash.js`. The local server was running fine; the splash just couldn't detect it. Full postmortem in `AGENT_LEARNINGS.md`.
+
+**Enforced at lint time by** `scripts/validate-html-facade-loads.cjs` (v0.9.7). The validator scans all HTML in `popover/` and `public/` (excluding `public/popover/` which is a build mirror), maps each `<script src>` to its on-disk JS file, and asserts: if any loaded JS contains `\bClaugeBridge\b`, the HTML must also load a script whose file contains `window.ClaugeBridge = ...` BEFORE it. Wired into `npm run check`.
+
+**To extend the facade pattern** (e.g., add a new bridge or a new facade-using file), the validator automatically picks it up by AST/regex content scan — no manual list maintenance.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
