@@ -31,6 +31,12 @@
 .heatmap table {
   border-collapse: separate;
   border-spacing: var(--cell-gap);
+  /* Fixed layout — columns are sized by the cell width, not by month-label
+     text content. Without this, a <th> containing "May" / "Jan" / etc.
+     would force its column wider than the data-cell width, and every
+     data cell underneath would inherit that wider column. (User caught
+     this in v0.9.5 smoke testing — May/Mar/Apr columns appeared chunkier.) */
+  table-layout: fixed;
   font-size: 10px;
   line-height: 1;
 }
@@ -74,6 +80,17 @@
   height: var(--cell-size);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+/* Constrain month-label columns to cellSize so text content doesn't expand
+   the column. Text is allowed to overflow visually (white-space: nowrap +
+   overflow: visible) so "May" / "Jan" / etc. read clearly across the
+   right edge of their column into the next column's space. */
+.heatmap__month-label {
+  width: var(--cell-size);
+  max-width: var(--cell-size);
+  white-space: nowrap;
+  overflow: visible;
 }
 
 .heatmap__month-row th {
