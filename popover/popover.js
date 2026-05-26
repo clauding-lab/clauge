@@ -603,7 +603,7 @@ function renderPopoverHeatmap(data) {
       // hitting the 32px cap and produced an overflowing grid with chunky
       // cells. 14px is small enough to fit 17 weeks (120 days) + 40px
       // label column inside the 340px popover with breathing room.
-      cellSize: 13,
+      cellSize: 12,
     });
   }
   const activeEl = document.getElementById('po-heatmap-active');
