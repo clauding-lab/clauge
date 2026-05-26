@@ -73,6 +73,15 @@ describe('GET /api/activity', () => {
     }
   });
 
+  it('supports period=90d', async () => {
+    const res = await fetch(`${BASE}/api/activity?period=90d`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.period, '90d');
+    assert.equal(body.totalDays, 90);
+    assert.equal(body.days.length, 90);
+  });
+
   it('supports period=180d', async () => {
     const res = await fetch(`${BASE}/api/activity?period=180d`);
     assert.equal(res.status, 200);
