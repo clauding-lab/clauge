@@ -20,6 +20,7 @@ const SCRIPTS = {
   ipc: join(REPO_ROOT, 'scripts', 'validate-ipc-triple-register.cjs'),
   consoleLog: join(REPO_ROOT, 'scripts', 'validate-no-console-log.cjs'),
   port: join(REPO_ROOT, 'scripts', 'validate-no-hardcoded-port.cjs'),
+  htmlFacade: join(REPO_ROOT, 'scripts', 'validate-html-facade-loads.cjs'),
 };
 
 function runValidator(scriptPath, opts = {}) {
@@ -117,6 +118,71 @@ test('validate-no-hardcoded-port: fails when :3456 appears in popover/', () => {
     assert.equal(res.status, 1);
     assert.match(res.stderr, /bad\.js/);
     assert.match(res.stderr, /3456/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ─── validate-html-facade-loads (v0.9.7) ──────────────────
+
+test('validate-html-facade-loads: passes against the live tree', () => {
+  const res = runValidator(SCRIPTS.htmlFacade);
+  assert.equal(res.status, 0, `stdout: ${res.stdout}\nstderr: ${res.stderr}`);
+  assert.match(res.stdout, /OK/);
+});
+
+test('validate-html-facade-loads: fails when an HTML loads facade-using JS without lib/tauri-bridge.js', () => {
+  const root = makeFixture();
+  try {
+    mkdirSync(join(root, 'popover', 'lib'), { recursive: true });
+    // The bridge file — defines window.ClaugeBridge.
+    writeFileSync(
+      join(root, 'popover', 'lib', 'tauri-bridge.js'),
+      "window.ClaugeBridge = { isTauriAvailable: () => false };\n",
+    );
+    // A facade-using JS file — references ClaugeBridge.
+    writeFileSync(
+      join(root, 'popover', 'splash.js'),
+      "if (!ClaugeBridge.isTauriAvailable()) console.warn('no bridge');\n",
+    );
+    // HTML that loads splash.js but NOT the bridge — the bug.
+    writeFileSync(
+      join(root, 'popover', 'splash.html'),
+      '<!DOCTYPE html><html><body><script src="splash.js"></script></body></html>',
+    );
+    const res = runValidator(SCRIPTS.htmlFacade, { rootOverride: root });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /splash\.html/);
+    assert.match(res.stderr, /ClaugeBridge/);
+    assert.match(res.stderr, /never loaded/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('validate-html-facade-loads: fails when the bridge is loaded AFTER the facade-using JS', () => {
+  const root = makeFixture();
+  try {
+    mkdirSync(join(root, 'popover', 'lib'), { recursive: true });
+    writeFileSync(
+      join(root, 'popover', 'lib', 'tauri-bridge.js'),
+      "window.ClaugeBridge = { isTauriAvailable: () => false };\n",
+    );
+    writeFileSync(
+      join(root, 'popover', 'splash.js'),
+      "ClaugeBridge.isTauriAvailable();\n",
+    );
+    // Wrong order: splash.js BEFORE tauri-bridge.js. Order matters even with defer.
+    writeFileSync(
+      join(root, 'popover', 'splash.html'),
+      '<!DOCTYPE html><html><body>'
+        + '<script src="splash.js"></script>'
+        + '<script src="lib/tauri-bridge.js"></script>'
+        + '</body></html>',
+    );
+    const res = runValidator(SCRIPTS.htmlFacade, { rootOverride: root });
+    assert.equal(res.status, 1);
+    assert.match(res.stderr, /BEFORE the bridge/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
