@@ -74,7 +74,7 @@
     "versionUnknown": "v—"
   },
   "heatmap": {
-    "title": "Activity · last 120 days",
+    "title": "Activity · last 180 days",
     "ariaLabel": "Activity heatmap",
     "activeDays": "{count} active day{plural}",
     "activeDaysUnknown": "—",

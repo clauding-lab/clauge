@@ -17,7 +17,7 @@
 }
 
 .heatmap--popover {
-  --cell-gap: 2px;
+  --cell-gap: 1px;
   display: block;
 }
 
