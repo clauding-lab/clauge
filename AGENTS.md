@@ -366,15 +366,27 @@ Symptom when you forget: changes to popover JS / CSS / HTML don't appear even th
 
 The macOS-14 runner defaults to bash so steps without `shell:` work there silently, hiding the issue from cross-platform testing.
 
-### 20. HTML pages hosting JS that uses `ClaugeBridge` MUST load `lib/tauri-bridge.js` first
+### 20. HTML pages hosting JS that uses a `popover/lib/` facade MUST load its definer first
 
-Every HTML page in `popover/` or `public/` that loads a JS file referencing `window.ClaugeBridge` or `ClaugeBridge.*` MUST also include `<script src="lib/tauri-bridge.js">` (or the absolute equivalent `/popover/lib/tauri-bridge.js`) **BEFORE** that JS script tag. Each HTML page is an independent loader — there is NO inheritance from sibling HTML pages.
+Two facades currently fall under this rule:
 
-Shipping an HTML page that loads facade-using JS without the bridge means `ClaugeBridge` is undefined at runtime. Code paths that guard with `if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;` short-circuit silently. Caught by the v0.9.5 → v0.9.6 hotfix incident — `popover/splash.html` was missing the bridge tag after the B.6 migration of `splash.js`. The local server was running fine; the splash just couldn't detect it. Full postmortem in `AGENT_LEARNINGS.md`.
+| Facade | Definer file | Caller pattern |
+|---|---|---|
+| `window.ClaugeBridge` | `popover/lib/tauri-bridge.js` | `ClaugeBridge.*` calls |
+| `window.t` (copy registry) | `popover/lib/copy.js` | `t('some.key.path', …)` calls |
 
-**Enforced at lint time by** `scripts/validate-html-facade-loads.cjs` (v0.9.7). The validator scans all HTML in `popover/` and `public/` (excluding `public/popover/` which is a build mirror), maps each `<script src>` to its on-disk JS file, and asserts: if any loaded JS contains `\bClaugeBridge\b`, the HTML must also load a script whose file contains `window.ClaugeBridge = ...` BEFORE it. Wired into `npm run check`.
+Every HTML page in `popover/` or `public/` that loads a JS file referencing either facade MUST also include the definer script tag (e.g. `<script src="lib/tauri-bridge.js">` or the absolute `/popover/lib/copy.js`) **BEFORE** the calling JS. Each HTML page is an independent loader — there is NO inheritance from sibling HTML pages.
 
-**To extend the facade pattern** (e.g., add a new bridge or a new facade-using file), the validator automatically picks it up by AST/regex content scan — no manual list maintenance.
+Shipping an HTML page that loads facade-using JS without the definer means the facade is undefined at runtime:
+
+- **ClaugeBridge missing** → guards like `if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;` short-circuit silently. The local server is running fine; the page just can't detect it. Caught by the **v0.9.5 → v0.9.6 hotfix** (`popover/splash.html` was missing the bridge tag after the B.6 migration of `splash.js`).
+- **t() missing** → first call to `t('some.key', …)` throws `ReferenceError: t is not defined` and aborts whatever render was in progress. Caught by the **v0.9.7 → v0.9.8 hotfix** (`public/index.html` loaded `/popover/heatmap.js` — whose `defaultTooltip()` calls `t()` per non-empty cell — without loading `/popover/lib/copy.js`; the dashboard heatmap stayed blank).
+
+Full postmortems in `AGENT_LEARNINGS.md`.
+
+**Enforced at lint time by** `scripts/validate-html-facade-loads.cjs` (introduced v0.9.7, extended to both facades v0.9.8). The validator scans all HTML in `popover/` and `public/` (excluding `public/popover/` which is a build mirror), maps each `<script src>` to its on-disk JS file, and asserts per facade: if any loaded JS uses the facade, the HTML must also load the definer BEFORE it. Wired into `npm run check`.
+
+**To extend with a new facade**, add an entry to the `FACADES` array at the top of `scripts/validate-html-facade-loads.cjs` (name + definesRe + usesRe + definerLabel). No other code changes needed — the per-facade check is mechanical.
 
 ## Communication & timezone
 

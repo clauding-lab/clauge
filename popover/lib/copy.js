@@ -17,11 +17,14 @@
 //   - {param} placeholders are substituted from the params object. Missing
 //     params render as the literal {param} text (visible failure).
 //
-// Loading model: copy.json is fetched once at script-init via the popover's
-// same-origin path. The popover is served by the local sidecar, so the fetch
-// is fast and synchronous-feeling. Returns a Promise from t() until the
-// fetch settles? No — instead we block the popover render until copy is
-// ready via window.__claugeCopyReady (a Promise that callers await once).
+// Loading model: copy.json is fetched once at script-init via an absolute
+// path so the same script works from any page on the sidecar — popover
+// (/popover/index.html), dashboard (/index.html), onboarding wizard
+// (/onboarding/index.html), etc. The popover is served by the local sidecar,
+// so the fetch is fast and synchronous-feeling. Returns a Promise from t()
+// until the fetch settles? No — instead we block the popover render until
+// copy is ready via window.__claugeCopyReady (a Promise that callers await
+// once).
 
 (function () {
   'use strict';
@@ -31,7 +34,7 @@
 
   function fetchCopy() {
     if (registryPromise) return registryPromise;
-    registryPromise = fetch('copy.json', { cache: 'force-cache' })
+    registryPromise = fetch('/popover/copy.json', { cache: 'force-cache' })
       .then((res) => {
         if (!res.ok) throw new Error('copy.json HTTP ' + res.status);
         return res.json();
