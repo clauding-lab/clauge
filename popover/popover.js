@@ -597,6 +597,13 @@ function renderPopoverHeatmap(data) {
       variant: 'popover',
       showDayLabels: true,
       showMonthLabels: true,
+      // Explicit cellSize overrides auto-fit. The popover container's
+      // clientWidth measures wider than the visual width (due to padding/
+      // scrollbar interaction with .po-heatmap-host), so auto-fit kept
+      // hitting the 32px cap and produced an overflowing grid with chunky
+      // cells. 14px is small enough to fit 17 weeks (120 days) + 40px
+      // label column inside the 340px popover with breathing room.
+      cellSize: 14,
     });
   }
   const activeEl = document.getElementById('po-heatmap-active');
