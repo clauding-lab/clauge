@@ -58,9 +58,9 @@
   // 5 seconds before falling back to polling. With it, we collapse the wait
   // for the already-up case.
   (async function eagerPortCheck() {
-    if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) return;
+    if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
     try {
-      const port = await window.__TAURI__.core.invoke('get_server_port');
+      const port = await ClaugeBridge.getServerPort();
       if (typeof port === 'number') navigateToDashboard(port);
     } catch (_err) {
       // "server port not yet set" — the listener + 5s fallback will handle it.
@@ -72,11 +72,11 @@
   // possible on a slow Windows VM first launch).
   setTimeout(function pollPortFallback() {
     if (navigated) return;
-    if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) return;
+    if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
     pollIntervalId = setInterval(async function () {
       if (navigated) return;
       try {
-        const port = await window.__TAURI__.core.invoke('get_server_port');
+        const port = await ClaugeBridge.getServerPort();
         if (typeof port === 'number') navigateToDashboard(port);
       } catch (_err) {
         // "server port not yet set" — keep waiting.
@@ -89,13 +89,13 @@
     if (!navigated) showError('The local server didn\'t respond within 30 seconds.');
   }, TIMEOUT_MS);
 
-  // Restart button — invokes the existing restart_app IPC.
+  // Restart button — invokes the existing restart_app IPC via ClaugeBridge.
   if (retryBtn) {
     retryBtn.addEventListener('click', async function () {
       retryBtn.disabled = true;
       try {
-        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-          await window.__TAURI__.core.invoke('restart_app');
+        if (window.ClaugeBridge && ClaugeBridge.isTauriAvailable()) {
+          await ClaugeBridge.restartApp();
         }
       } catch (err) {
         console.error('[splash] restart_app failed:', err);
