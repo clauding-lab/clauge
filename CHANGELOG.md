@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.6] — 2026-05-26
+
+**Hotfix release.** v0.9.5 shipped a regression where the dashboard splash screen never advanced past "Starting Clauge…" and showed "Failed to start Clauge / The local server didn't respond within 30 seconds" after 30s. The local server was actually running fine — the splash just couldn't detect it.
+
+### Fixed
+
+- **Dashboard splash now loads correctly.** Root cause: v0.9.5 migrated `popover/splash.js` to use the `window.ClaugeBridge.*` IPC facade, but `popover/splash.html` only loaded `splash.js` — not `lib/tauri-bridge.js`. So `ClaugeBridge` was undefined when `splash.js` ran, both the eager port-check and the polling fallback exited early, and the splash hit its 30s timeout. Fix is one line in `splash.html`: load `lib/tauri-bridge.js` before `splash.js`. Menubar popover was not affected (its `index.html` already loaded the bridge correctly).
+
+If you're on v0.9.5 and seeing the splash error: `brew upgrade --cask clauge` will pull v0.9.6, or wait ~1 minute for the in-app auto-updater to detect it (or download the DMG from the v0.9.6 GitHub Release page).
+
 ## [0.9.5] — 2026-05-26
 
 Cleanup + polish release. One user-visible change in the popover: the activity heatmap now shows day-of-week and month axis labels, and all cells render at uniform sizes (previously the columns under "Jan" / "Feb" / "May" / etc. were silently wider because of HTML table auto-layout). Otherwise the release is engineering hygiene — committing the v0.9.4 landmines that documented the popover transparency stack + Windows Rust portability + workflow shell gotchas, routing scattered Tauri IPC calls through a centralized facade, and routing popover strings through a shared registry so future translations and copy edits become single-file edits.

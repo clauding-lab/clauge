@@ -21,6 +21,11 @@
       <button class="splash-retry-btn" id="splash-retry-btn">Restart Clauge</button>
     </div>
   </main>
+  <!-- ClaugeBridge facade — REQUIRED by splash.js (since v0.9.5's IPC
+       migration). Without this, splash.js calls ClaugeBridge.* against
+       an undefined object and the splash never advances past
+       "Starting Clauge…" — confirmed v0.9.5 regression. -->
+  <script src="lib/tauri-bridge.js"></script>
   <script src="splash.js"></script>
 </body>
 </html>
