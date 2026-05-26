@@ -475,14 +475,14 @@ app.get('/api/activity', async (c) => {
   let periodDays;
   if (periodParam === 'all') {
     periodDays = 'all';
-  } else if (periodParam === '90d') {
-    periodDays = 90;
+  } else if (periodParam === '120d') {
+    periodDays = 120;
   } else if (periodParam === '180d') {
     periodDays = 180;
   } else if (periodParam === '365d') {
     periodDays = 365;
   } else {
-    return c.json({ error: `unsupported period '${periodParam}' — expected 90d, 180d, 365d, or all` }, 400);
+    return c.json({ error: `unsupported period '${periodParam}' — expected 120d, 180d, 365d, or all` }, 400);
   }
 
   const today = new Intl.DateTimeFormat('en-CA', {

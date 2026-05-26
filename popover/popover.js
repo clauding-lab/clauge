@@ -582,7 +582,7 @@ async function refreshHeatmap() {
   if (!window.ClaugeHeatmap) return;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   try {
-    const data = await fetchJson(`/api/activity?period=90d&tz=${encodeURIComponent(tz)}`);
+    const data = await fetchJson(`/api/activity?period=120d&tz=${encodeURIComponent(tz)}`);
     renderPopoverHeatmap(data);
   } catch (err) {
     console.error('[Clauge popover] heatmap fetch failed:', err);
