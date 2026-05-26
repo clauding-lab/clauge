@@ -55,11 +55,11 @@ function fmtCompact(n) {
 function humanizeDisabledReason(reason) {
   if (!reason) return '';
   const map = {
-    org_level_disabled_until: 'org policy',
-    plan_limit_reached: 'plan limit',
-    payment_required: 'payment required',
-    not_enrolled: 'not enrolled',
-    suspended: 'suspended',
+    org_level_disabled_until: t('extra.reasonOrgLevelDisabled'),
+    plan_limit_reached: t('extra.reasonPlanLimit'),
+    payment_required: t('extra.reasonPaymentRequired'),
+    not_enrolled: t('extra.reasonNotEnrolled'),
+    suspended: t('extra.reasonSuspended'),
   };
   return map[reason] ?? reason.replace(/_/g, ' ');
 }
@@ -88,6 +88,10 @@ function fmtRelative(iso, nowMs = Date.now()) {
   if (!iso) return '—';
   const ms = Date.parse(iso) - nowMs;
   if (!Number.isFinite(ms)) return '—';
+  // TODO(b1): duration fragments below (`now`, `Xd Yh`, etc.) are user-visible
+  // micro-format strings flowed into session.resetsIn / sonnet.resets as the
+  // {duration} param. Left inline as atomic time abbreviations — migrate to
+  // copy.json if/when these get localized.
   if (ms <= 0) return 'now';
   const m = Math.floor(ms / 60000);
   const h = Math.floor(m / 60);
@@ -120,24 +124,28 @@ function timeElapsedPct(resetsAtIso, windowMs, nowMs = Date.now()) {
  * Session: "3h 12m of 5h" / Weekly: "Day 5 of 7".
  */
 function formatElapsedCompact(resetsAtIso, windowMs, mode, nowMs = Date.now()) {
-  if (!resetsAtIso) return mode === 'weekly' ? 'Day — of 7' : '— of 5h';
+  if (!resetsAtIso) return mode === 'weekly' ? t('weekly.dayUnknown') : t('session.elapsedEmpty');
   const resetsAt = Date.parse(resetsAtIso);
-  if (!Number.isFinite(resetsAt)) return '—';
+  if (!Number.isFinite(resetsAt)) return t('common.dash');
   const startedAt = resetsAt - windowMs;
   const elapsedMs = Math.max(0, Math.min(windowMs, nowMs - startedAt));
   if (mode === 'weekly') {
     const day = Math.floor(elapsedMs / (24 * 60 * 60 * 1000)) + 1;
-    return `Day ${day} of 7`;
+    return t('weekly.dayOf7', { day });
   }
   const h = Math.floor(elapsedMs / 3600000);
   const m = Math.floor((elapsedMs % 3600000) / 60000);
-  if (h > 0) return `${h}h ${m}m of 5h`;
-  return `${m}m of 5h`;
+  if (h > 0) return t('session.elapsedOf5h', { hours: h, minutes: m });
+  return t('session.elapsedOf5hShort', { minutes: m });
 }
 
 /**
  * Format the "X of Y elapsed" label for the Session/Weekly gauges.
  * Returns "Xh Ym of 5h elapsed" for sessions, "Day X of 7 elapsed" for weekly.
+ *
+ * TODO(b1): dev-console helper only (exposed on window.__clauge for ad-hoc
+ * testing) — not rendered anywhere in the UI. Migrate to copy.json if/when
+ * this becomes a displayed label.
  */
 function formatElapsed(resetsAtIso, windowMs, mode, nowMs = Date.now()) {
   if (!resetsAtIso) return mode === 'weekly' ? 'Day — of 7 elapsed' : '— of 5h elapsed';
@@ -328,7 +336,7 @@ function renderPlanBadge(plan) {
   if (!el) return;
   // Default to Max (most Clauge users); future: surface a real subscription
   // tier field from the server.
-  el.textContent = extra && extra.enabled ? 'Max' : '—';
+  el.textContent = extra && extra.enabled ? t('header.planMax') : t('header.planUnknown');
 }
 
 function renderSession(plan, nowMs) {
@@ -340,11 +348,11 @@ function renderSession(plan, nowMs) {
     elId: 'session-gauge',
     usagePct,
     timeElapsedPctValue: elapsed,
-    label: 'Session',
+    label: t('session.label'),
   });
   // Compact meta for the paired hero gauges: "Xh Ym of 5h" + "resets in Yh Zm".
   document.getElementById('session-elapsed').textContent = formatElapsedCompact(resetsAt, FIVE_HOURS_MS, 'session', nowMs);
-  document.getElementById('session-reset').textContent = `resets in ${fmtRelative(resetsAt, nowMs)}`;
+  document.getElementById('session-reset').textContent = t('session.resetsIn', { duration: fmtRelative(resetsAt, nowMs) });
 }
 
 function renderWeekly(plan, nowMs) {
@@ -356,19 +364,19 @@ function renderWeekly(plan, nowMs) {
     elId: 'weekly-gauge',
     usagePct,
     timeElapsedPctValue: elapsed,
-    label: 'Weekly',
+    label: t('weekly.label'),
   });
   document.getElementById('weekly-elapsed').textContent = formatElapsedCompact(resetsAt, SEVEN_DAYS_MS, 'weekly', nowMs);
-  document.getElementById('weekly-reset').textContent = `resets in ${fmtRelative(resetsAt, nowMs)}`;
+  document.getElementById('weekly-reset').textContent = t('session.resetsIn', { duration: fmtRelative(resetsAt, nowMs) });
 }
 
 function renderSonnet(plan, nowMs) {
   const sonnet = plan?.sevenDaySonnet;
   const pct = sonnet?.pct ?? 0;
   renderSimpleBar({ fillId: 'sonnet-fill', usagePct: pct });
-  document.getElementById('sonnet-pct').textContent = `${Math.round(pct)}% used`;
+  document.getElementById('sonnet-pct').textContent = t('sonnet.percentUsed', { percent: Math.round(pct) });
   document.getElementById('sonnet-reset').textContent = sonnet?.resetsAt
-    ? `resets in ${fmtRelative(sonnet.resetsAt, nowMs)}`
+    ? t('session.resetsIn', { duration: fmtRelative(sonnet.resetsAt, nowMs) })
     : '';
 }
 
@@ -376,9 +384,9 @@ function renderDesign(plan, nowMs) {
   const design = plan?.claudeDesign;
   const pct = design?.pct ?? 0;
   renderSimpleBar({ fillId: 'design-fill', usagePct: pct });
-  document.getElementById('design-pct').textContent = `${Math.round(pct)}% used`;
+  document.getElementById('design-pct').textContent = t('sonnet.percentUsed', { percent: Math.round(pct) });
   document.getElementById('design-reset').textContent = design?.resetsAt
-    ? `resets in ${fmtRelative(design.resetsAt, nowMs)}`
+    ? t('session.resetsIn', { duration: fmtRelative(design.resetsAt, nowMs) })
     : '';
 }
 
@@ -389,9 +397,9 @@ function renderRoutines(plan, nowMs) {
   const pct = r?.pct ?? 0;
   const count = Math.round((pct / 100) * ROUTINES_DAILY_CAP);
   renderSimpleBar({ fillId: 'routines-fill', usagePct: pct });
-  document.getElementById('routines-count').textContent = `${count} of ${ROUTINES_DAILY_CAP} runs today`;
+  document.getElementById('routines-count').textContent = t('routines.runsToday', { count, cap: ROUTINES_DAILY_CAP });
   document.getElementById('routines-reset').textContent = r?.resetsAt
-    ? `resets in ${fmtRelative(r.resetsAt, nowMs)}`
+    ? t('session.resetsIn', { duration: fmtRelative(r.resetsAt, nowMs) })
     : '';
 }
 
@@ -422,10 +430,14 @@ function renderExtra(plan, nowMs) {
       usagePct: pct,
       capPct: 100,
     });
-    const usedStr = used != null ? `$${fmtUSD(used)}` : '—';
-    const limitStr = limit && limit > 0 ? `$${limit.toFixed(0)} limit` : 'no limit';
-    document.getElementById('extra-pct').textContent = `${usedStr} / ${limitStr}`;
-    document.getElementById('extra-pct-used').textContent = pct > 0 ? `${Math.round(pct)}% used` : '';
+    const usedStr = used != null ? fmtUSD(used) : t('common.dash');
+    const extraPctEl = document.getElementById('extra-pct');
+    if (limit && limit > 0) {
+      extraPctEl.textContent = t('extra.spendOverLimit', { used: usedStr, limit: limit.toFixed(0) });
+    } else {
+      extraPctEl.textContent = t('extra.noLimit', { used: usedStr });
+    }
+    document.getElementById('extra-pct-used').textContent = pct > 0 ? t('extra.percentUsedShort', { percent: Math.round(pct) }) : '';
   } else {
     // No OAuth-API extra-usage spend data. The disabledReason field tells
     // us *why* — surface it so the user isn't confused by an empty bar.
@@ -439,9 +451,9 @@ function renderExtra(plan, nowMs) {
     renderSimpleBar({ fillId: 'extra-fill', overflowId: 'extra-overflow', usagePct: 0 });
     const reason = extra?.disabledReason;
     if (reason) {
-      document.getElementById('extra-pct').textContent = `Disabled · ${humanizeDisabledReason(reason)}`;
+      document.getElementById('extra-pct').textContent = t('extra.disabled', { reason: humanizeDisabledReason(reason) });
     } else {
-      document.getElementById('extra-pct').textContent = balance ? '—' : 'no data';
+      document.getElementById('extra-pct').textContent = balance ? t('common.dash') : t('extra.noData');
     }
     document.getElementById('extra-pct-used').textContent = '';
   }
@@ -452,15 +464,18 @@ function renderExtra(plan, nowMs) {
   const balEl = document.getElementById('extra-balance');
   if (balance && Number.isFinite(balance.currentBalance)) {
     const autoOn = balance.autoReloadEnabled === true || balance.autoReload === true;
-    balEl.textContent = `Balance: $${fmtUSD(balance.currentBalance)} · Auto-reload ${autoOn ? 'on' : 'off'}`;
+    balEl.textContent = t('extra.balanceLine', {
+      balance: fmtUSD(balance.currentBalance),
+      state: autoOn ? t('extra.autoReloadOn') : t('extra.autoReloadOff'),
+    });
   } else {
-    balEl.textContent = 'Balance: — · Auto-reload —';
+    balEl.textContent = t('extra.balanceUnknown');
   }
 
   // Extra usage reset (calendar month — use 1st of next month if no signal).
   const resetEl = document.getElementById('extra-reset');
   if (extra?.resetsAt) {
-    resetEl.textContent = `resets ${fmtRelative(extra.resetsAt, nowMs)}`;
+    resetEl.textContent = t('sonnet.resets', { when: fmtRelative(extra.resetsAt, nowMs) });
   } else {
     resetEl.textContent = '';
   }
@@ -471,17 +486,17 @@ function renderStats({ summary, cache, period30d }) {
   // over tokens (smaller). tokens shape has no precomputed .total so we
   // sum input + output + cacheRead + cacheCreate5m + cacheCreate1h.
   document.getElementById('stat-today-cost').textContent =
-    summary?.cost != null ? `$${fmtUSD(summary.cost)}` : '—';
+    summary?.cost != null ? `$${fmtUSD(summary.cost)}` : t('common.dash');
   document.getElementById('stat-30d-cost').textContent =
-    period30d?.cost != null ? `$${fmtUSD(period30d.cost)}` : '—';
+    period30d?.cost != null ? `$${fmtUSD(period30d.cost)}` : t('common.dash');
 
   const tokToday = sumTokens(summary?.tokens);
   document.getElementById('stat-today-tokens').textContent =
-    tokToday != null ? `${fmtCompact(tokToday)} Tokens` : '— Tokens';
+    tokToday != null ? t('stats.tokensSuffix', { count: fmtCompact(tokToday) }) : t('stats.tokensUnknown');
 
   const tok30d = sumTokens(period30d?.tokens);
   document.getElementById('stat-30d-tokens').textContent =
-    tok30d != null ? `${fmtCompact(tok30d)} Tokens` : '— Tokens';
+    tok30d != null ? t('stats.tokensSuffix', { count: fmtCompact(tok30d) }) : t('stats.tokensUnknown');
 }
 
 /**
@@ -530,9 +545,9 @@ function renderDisclaimer({ topModel }) {
   const el = document.getElementById('disclaimer');
   if (!el) return;
   if (topModel) {
-    el.textContent = `Top model: ${escapeHtml(topModel)} · Estimated from local Claude logs`;
+    el.textContent = t('stats.topModelDisclaimer', { model: escapeHtml(topModel) });
   } else {
-    el.textContent = 'Estimated from local Claude logs';
+    el.textContent = t('stats.disclaimerOnly');
   }
 }
 
@@ -540,19 +555,19 @@ function renderHeaderSubhead(ingestedAt, healthOk) {
   const el = document.getElementById('po-subhead');
   if (!el) return;
   if (!healthOk) {
-    el.textContent = 'Offline';
+    el.textContent = t('header.offline');
     return;
   }
   if (!ingestedAt) {
-    el.textContent = 'Updated just now';
+    el.textContent = t('header.updatedJustNow');
     return;
   }
   const ageMs = Date.now() - Date.parse(ingestedAt);
   if (!Number.isFinite(ageMs) || ageMs < 60000) {
-    el.textContent = 'Updated just now';
+    el.textContent = t('header.updatedJustNow');
   } else {
     const minutes = Math.floor(ageMs / 60000);
-    el.textContent = `Updated ${minutes}m ago`;
+    el.textContent = t('header.updatedMinutes', { minutes });
   }
 }
 
@@ -585,18 +600,18 @@ function renderPopoverHeatmap(data) {
   const longestEl = document.getElementById('po-heatmap-longest');
   if (activeEl) {
     activeEl.textContent = data
-      ? `${data.activeDays} active day${data.activeDays === 1 ? '' : 's'}`
-      : '—';
+      ? t('heatmap.activeDays', { count: data.activeDays, plural: data.activeDays === 1 ? '' : 's' })
+      : t('heatmap.activeDaysUnknown');
   }
   if (streakEl) {
     streakEl.textContent = data && data.currentStreak > 0
-      ? `Streak: ${data.currentStreak} day${data.currentStreak === 1 ? '' : 's'}`
-      : 'Streak: —';
+      ? t('heatmap.streak', { count: data.currentStreak, plural: data.currentStreak === 1 ? '' : 's' })
+      : t('heatmap.streakUnknown');
   }
   if (longestEl) {
     longestEl.textContent = data && data.longestStreak > 0
-      ? `Longest: ${data.longestStreak} day${data.longestStreak === 1 ? '' : 's'}`
-      : 'Longest: —';
+      ? t('heatmap.longest', { count: data.longestStreak, plural: data.longestStreak === 1 ? '' : 's' })
+      : t('heatmap.longestUnknown');
   }
 }
 
@@ -650,9 +665,9 @@ async function refresh() {
 
     // Update footer version label.
     const aboutEl = document.getElementById('footer-about-version');
-    if (aboutEl) aboutEl.textContent = `v${serverVersion}`;
+    if (aboutEl) aboutEl.textContent = t('footer.version', { version: serverVersion });
     const aboutEl2 = document.getElementById('about-version');
-    if (aboutEl2) aboutEl2.textContent = `v${serverVersion}`;
+    if (aboutEl2) aboutEl2.textContent = t('footer.version', { version: serverVersion });
   } catch (err) {
     console.error('[Clauge popover] refresh failed:', err);
     renderHeaderSubhead(null, false);
