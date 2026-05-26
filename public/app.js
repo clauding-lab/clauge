@@ -706,22 +706,18 @@ function renderSettings() {
 // `#[tauri::command]` functions are blocked from a non-local origin unless
 // the app declares an AppManifest — v0.7.0 wires this up in build.rs
 // (APP_COMMANDS) and capabilities/main.json (allow-<cmd-kebab>), so
-// connections.js can invoke get_connection_status, open_claude_ai_login,
-// signout_claude_ai, and has_claude_ai_session directly.
-function getTauriInvoke() {
-  return globalThis.__TAURI__?.core?.invoke ?? null;
-}
-
+// connections.js can call get_connection_status, open_claude_ai_login,
+// signout_claude_ai, and has_claude_ai_session through ClaugeBridge.
 let settingsGeneralInitialized = false;
 
 async function initSettingsGeneralControls() {
-  const invoke = getTauriInvoke();
+  const bridgeAvailable = window.ClaugeBridge && ClaugeBridge.isTauriAvailable();
   const autoToggle = document.getElementById('set-autostart-toggle');
   const updatesBtn = document.getElementById('set-check-updates-btn');
   const updatesStatus = document.getElementById('set-updates-status');
   if (!autoToggle || !updatesBtn) return;
 
-  if (!invoke) {
+  if (!bridgeAvailable) {
     // Browser mode (no Tauri host) — disable IPC-backed controls.
     autoToggle.disabled = true;
     autoToggle.title = 'Available in the desktop app';
@@ -732,7 +728,7 @@ async function initSettingsGeneralControls() {
   }
 
   try {
-    autoToggle.checked = !!(await invoke('plugin:autostart|is_enabled'));
+    autoToggle.checked = !!(await ClaugeBridge.autostartIsEnabled());
   } catch (err) {
     console.warn('autostart is_enabled failed; defaulting toggle off:', err);
     autoToggle.checked = false;
@@ -744,7 +740,7 @@ async function initSettingsGeneralControls() {
   autoToggle.addEventListener('change', async () => {
     const desired = autoToggle.checked;
     try {
-      await invoke(desired ? 'plugin:autostart|enable' : 'plugin:autostart|disable');
+      await ClaugeBridge.autostartSetEnabled(desired);
     } catch (err) {
       console.error('autostart toggle failed; reverting:', err);
       autoToggle.checked = !desired;
@@ -766,7 +762,7 @@ async function initSettingsGeneralControls() {
       // The previous handler shipped in v0.7.0 buggy (`update.available`),
       // got patched in v0.7.1 to truthy-check `update`, and is now superseded
       // by the install-on-check flow plus a Restart Now button.
-      const result = await invoke('check_for_updates');
+      const result = await ClaugeBridge.checkForUpdates();
       if (result?.status === 'installed') {
         if (restartBtn) {
           restartBtn.textContent = `↻ Restart Now to apply v${result.version}`;
@@ -791,7 +787,7 @@ async function initSettingsGeneralControls() {
       // Fire-and-forget: the Tauri shell exec()s itself before any response
       // can come back. The .catch is only reached if the IPC layer rejects
       // before the kill (which `app.restart()` shouldn't do — it returns ()).
-      invoke('restart_app').catch((err) => {
+      ClaugeBridge.restartApp().catch((err) => {
         console.error('[updates] restart_app rejected', err);
       });
     });
@@ -851,9 +847,9 @@ function bindSegments() {
   // wizard_complete runs on macOS first-launch — events don't buffer for
   // late subscribers.
   (async function checkPendingFocusConnections() {
-    if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) return;
+    if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
     try {
-      var pending = await window.__TAURI__.core.invoke('take_pending_focus_connections');
+      var pending = await ClaugeBridge.takePendingFocusConnections();
       if (pending) {
         switchTab('settings');
         // Settings sub-nav button for Connections — attribute is data-set="sync"
