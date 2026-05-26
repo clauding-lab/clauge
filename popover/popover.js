@@ -582,7 +582,7 @@ async function refreshHeatmap() {
   if (!window.ClaugeHeatmap) return;
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   try {
-    const data = await fetchJson(`/api/activity?period=180d&tz=${encodeURIComponent(tz)}`);
+    const data = await fetchJson(`/api/activity?period=90d&tz=${encodeURIComponent(tz)}`);
     renderPopoverHeatmap(data);
   } catch (err) {
     console.error('[Clauge popover] heatmap fetch failed:', err);
@@ -593,7 +593,11 @@ async function refreshHeatmap() {
 function renderPopoverHeatmap(data) {
   const root = document.getElementById('po-heatmap-root');
   if (root && window.ClaugeHeatmap) {
-    window.ClaugeHeatmap.render(root, data, { variant: 'popover' });
+    window.ClaugeHeatmap.render(root, data, {
+      variant: 'popover',
+      showDayLabels: true,
+      showMonthLabels: true,
+    });
   }
   const activeEl = document.getElementById('po-heatmap-active');
   const streakEl = document.getElementById('po-heatmap-streak');
