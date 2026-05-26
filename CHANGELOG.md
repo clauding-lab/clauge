@@ -8,6 +8,10 @@ Polish release. Closes out the v0.9.5 → v0.9.6 hotfix incident with mechanical
 
 - **Dashboard background more opaque** — popover and dashboard previously shared the same 0.55–0.60 alpha vibrancy wash. That ratio reads as elegant tinting on the 340 px popover but feels too see-through across the full dashboard window, where empty space (e.g. the Projects tab with only a few rows) lets the wallpaper bleed through prominently. Bumped to 0.80–0.88 on the dashboard only. Popover wash unchanged.
 
+### Fixed
+
+- **Dashboard vibrancy no longer flickers when the window loses focus.** Previously the dashboard's `NSVisualEffectState::FollowsWindowActiveState` dimmed the vibrancy material when the dashboard wasn't the foreground window. Each focus-change caused a visible brightness flicker. Switched to `NSVisualEffectState::Active` (matching the popover) — vibrancy now stays at full intensity regardless of focus.
+
 ### Engineering
 
 - **New validator** `scripts/validate-html-facade-loads.cjs` — wired into `npm run check`. Scans every HTML page in `popover/` and `public/` (the build mirror `public/popover/` is excluded), maps each `<script src>` to its on-disk JS file, and asserts: if any loaded JS contains `\bClaugeBridge\b`, the HTML must also load a script whose file defines `window.ClaugeBridge = ...` BEFORE it. Catches the v0.9.5 regression at lint time. The bridge-defining file and facade-using files are detected by content scan (regex) — no hand-maintained list.

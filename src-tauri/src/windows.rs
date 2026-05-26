@@ -148,15 +148,22 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build()?;
 
-    // v0.9.4 vibrancy. HudWindow tints with wallpaper hue at low saturation;
-    // FollowsWindowActiveState dims when the window loses focus. 14.0 is the
-    // window corner radius. On Windows, prefer Mica (Win11), fall through to
-    // Acrylic (Win10) with a dark RGBA tint matching the upper gradient stop.
+    // v0.9.4 vibrancy. HudWindow tints with wallpaper hue at low saturation.
+    // 14.0 is the window corner radius. On Windows, prefer Mica (Win11), fall
+    // through to Acrylic (Win10) with a dark RGBA tint matching the upper
+    // gradient stop.
+    //
+    // v0.9.7: switched state from FollowsWindowActiveState → Active. The former
+    // dims the vibrancy layer when the dashboard loses focus, producing a
+    // visible flicker as the window moves between active/inactive states (e.g.
+    // when the user clicks back to the app). Active keeps the material at full
+    // intensity regardless of focus, matching the popover (which already uses
+    // Active via NSVisualEffectView in native_popover.rs).
     #[cfg(target_os = "macos")]
     if let Err(e) = apply_vibrancy(
         &win,
         NSVisualEffectMaterial::HudWindow,
-        Some(NSVisualEffectState::FollowsWindowActiveState),
+        Some(NSVisualEffectState::Active),
         Some(14.0),
     ) {
         log::warn!("apply_vibrancy failed on macOS dashboard: {}", e);
