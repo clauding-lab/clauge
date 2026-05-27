@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.9] — 2026-05-27
+
+**Polish release.** Removes the 60-second flicker on the dashboard's plan card. The flicker was a long-standing visual issue (present since v0.9.4 when the auto-refresh interval was wired) — easy to miss as "slight" or "the dashboard breathing," but it was a real per-minute repaint of the plan-hero area and surrounding text. v0.9.8 didn't introduce it; this release just fixes it.
+
+### Fixed
+
+- **Plan card no longer flickers every 60 seconds.** Root cause: the auto-refresh interval re-rendered `#plan-meta` via `innerHTML` assignment every minute, which destroyed and recreated `<span class="dot-live">` (the green sync-status dot). The dot's CSS `@keyframes pulse` animation restarted from frame 0 each tick — visible as a faint brightness snap on the green dot. Same path also rebuilt `#plan-body` (4 SVG rings), `#plan-inline` (19 children in the topbar), and reassigned identical text to 7 finance-side spans every refresh — 38 DOM mutations per minute, most of them noops.
+- **Surgical update split.** `renderPlanCapacity` + `renderFinanceSide` now run in two phases: a structural `innerHTML` build that only fires on shape transitions (placeholder ↔ ingested, balance line appearing/disappearing), and a surgical in-place update path for every other 60s tick. Two new helpers — `setTextIfChanged` and `setAttrIfChanged` — guard writes so identical values are no-ops; `setTextIfChanged` prefers `Text.data` assignment on existing single-text-node children so updates fire `characterData` mutations, not `childList` (which is what was restarting the pulse animation). The `.dot-live` element is now preserved across refreshes — its pulse animation runs continuously instead of resetting every minute.
+
+Verified against a fresh sidecar with `MutationObserver` across three consecutive 60s ticks: 6–7 mutations per tick (all legitimate `characterData` updates on relative-time text like "synced N ago"), zero `childList` mutations on plan-body / plan-meta / plan-inline / plan-status-tag, `.dot-live` element identity preserved.
+
+If you're on v0.9.8 and want the fix: `brew upgrade --cask clauge`, or wait ~1 minute for the in-app auto-updater (or download the DMG from the v0.9.9 GitHub Release page).
+
+### Engineering
+
+- **New `AGENTS.md` landmine #21** — codifies the v0.9.8 → v0.9.8-cargo-lock-followup lesson. Version bumps now have an explicit checklist of 4 files (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.lock`'s `clauge` entry). The `check` workflow uses `cargo test` (no `--locked`); the `Release` workflow uses `cargo test --locked` and refuses to proceed if Cargo.lock would need updating. Verify locally before tagging with `cargo check --locked --manifest-path src-tauri/Cargo.toml`.
+- **`AGENT_LEARNINGS.md` entry added** — documents the plan-card flicker root cause + the generalizable lesson: any auto-refresh path that rebuilds via `innerHTML` will restart CSS animations on the destroyed children. Split structural and surgical updates when the parent contains a long-lived animated element.
+
 ## [0.9.8] — 2026-05-26
 
 **Hotfix + prevention release.** v0.9.7 shipped with a dashboard regression: the Activity heatmap card rendered its header and footer but the heatmap grid itself stayed blank, and the heatmap-stats line kept its `—` placeholder instead of showing active-day counts. Same class of bug as the v0.9.5 → v0.9.6 splash regression — different facade.
