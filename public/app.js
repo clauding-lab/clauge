@@ -1209,8 +1209,57 @@ function bindControls() {
   });
 }
 
+// v1.0.0: "No data sources connected" warning banner.
+// Runs on boot + every time the `connections-updated` Tauri event fires.
+// Stays hidden once the user dismisses it (localStorage flag) — they've
+// seen the message and don't need it nagging on every refresh.
+const NO_SOURCES_DISMISSED_KEY = 'clauge.banner.no-sources.dismissed';
+
+async function evaluateDataSources() {
+  if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
+  const banner = document.getElementById('no-sources-banner');
+  if (!banner) return;
+  try {
+    const status = await ClaugeBridge.getConnectionStatus();
+    const apiKey = await ClaugeBridge.getAnthropicApiKey();
+    const hasClaudeCode = status.claude_code === 'authenticated';
+    const hasClaudeAi = status.claude_ai === 'signed_in';
+    const hasApiKey = !!apiKey;
+    const hasAny = hasClaudeCode || hasClaudeAi || hasApiKey;
+    const dismissed = localStorage.getItem(NO_SOURCES_DISMISSED_KEY) === '1';
+    banner.hidden = hasAny || dismissed;
+  } catch (err) {
+    // Silent fail — banner is nice-to-have, not load-bearing.
+    console.warn('[app] evaluateDataSources failed', err);
+  }
+}
+
+function bindNoSourcesBanner() {
+  const dismissBtn = document.getElementById('banner-dismiss');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => {
+      const banner = document.getElementById('no-sources-banner');
+      if (banner) banner.hidden = true;
+      localStorage.setItem(NO_SOURCES_DISMISSED_KEY, '1');
+    });
+  }
+  const settingsBtn = document.getElementById('banner-open-settings');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      const settingsTab = document.querySelector('[data-tab="settings"]');
+      if (settingsTab) settingsTab.click();
+    });
+  }
+  // Re-evaluate when a connection changes (sign in/out, API key save/clear).
+  if (window.__TAURI__?.event?.listen) {
+    window.__TAURI__.event.listen('connections-updated', () => evaluateDataSources());
+  }
+}
+
 bindSegments();
 bindControls();
+bindNoSourcesBanner();
+evaluateDataSources();
 initialLoad();
 
 // Auto-refresh the plan-usage card every 60s — picks up new bookmarklet/

@@ -58,6 +58,17 @@
 
 <main>
 
+<!-- v1.0.0: Banner shown when NO Claude data sources are connected.
+     Visibility logic + dismissal lives in app.js (evaluateDataSources).
+     Hidden by default; app.js reveals on boot if no source is wired.
+     Dismissal persists via localStorage so the user only sees it once. -->
+<aside id="no-sources-banner" class="banner banner-warning" hidden role="status">
+  <strong>No Claude data sources connected.</strong>
+  Sign in to claude.ai or paste an API key in Settings to see usage data.
+  <button class="banner-action" id="banner-open-settings" type="button">Open Settings</button>
+  <button class="banner-dismiss" id="banner-dismiss" type="button" aria-label="Dismiss">×</button>
+</aside>
+
 <!-- ═══════════════════════════════ OVERVIEW ═══════════════════════════════ -->
 <section data-panel="overview">
 

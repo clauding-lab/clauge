@@ -1390,6 +1390,58 @@ body.loading { cursor: progress; }
   cursor: not-allowed;
 }
 
+/* v1.0.0: "No Claude data sources connected" warning banner at the top of
+   the dashboard <main>. Sticky so it stays visible while scrolling the
+   overview. Tokens derive from --warn (#e8b06a → rgb(232,176,106)) — uses
+   the same palette as .conn-banner from Task 13. Hidden by default; app.js
+   toggles via the [hidden] attribute and persists dismissal in localStorage. */
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  margin: 0 0 0.75rem 0;
+}
+.banner[hidden] { display: none; }
+
+.banner-warning {
+  background: rgba(232, 176, 106, 0.12);
+  border-left: 3px solid var(--warn);
+  color: var(--text);
+}
+.banner-warning strong { color: var(--warn); }
+
+.banner-action {
+  background: rgba(232, 176, 106, 0.2);
+  border: 1px solid rgba(232, 176, 106, 0.4);
+  color: inherit;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: inherit;
+  cursor: pointer;
+}
+.banner-action:hover { background: rgba(232, 176, 106, 0.3); }
+.banner-action:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+
+.banner-dismiss {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+  padding: 0 0.25rem;
+}
+.banner-dismiss:hover { opacity: 1; }
+.banner-dismiss:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+
 .conn-disclosure {
   margin-top: 0.5rem;
   font-size: 0.85rem;
