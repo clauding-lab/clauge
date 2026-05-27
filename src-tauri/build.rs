@@ -27,6 +27,12 @@ const APP_COMMANDS: &[&str] = &[
     "get_server_port",
     "take_pending_focus_connections",
     "install_cli_symlink",
+    // v1.0.0: Anthropic Admin API key management (ToS-clean opt-in data path,
+    // set from Settings → API key panel). Triple-registered per landmine #1.
+    "set_anthropic_api_key",
+    "get_anthropic_api_key",
+    "clear_anthropic_api_key",
+    "test_anthropic_api_key",
 ];
 
 fn main() {

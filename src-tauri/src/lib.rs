@@ -245,6 +245,10 @@ pub fn run() {
             ipc::restart_app,
             ipc::take_pending_focus_connections,
             ipc::install_cli_symlink,
+            ipc::set_anthropic_api_key,
+            ipc::get_anthropic_api_key,
+            ipc::clear_anthropic_api_key,
+            ipc::test_anthropic_api_key,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

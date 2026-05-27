@@ -748,6 +748,132 @@ fn resolve_bundle_cli_path() -> Option<std::path::PathBuf> {
     Some(contents.join("Resources").join("clauge-cli"))
 }
 
+/// Keychain Services service name for the user-pasted Anthropic Admin API key.
+///
+/// Locked by AGENTS.md landmine #14 — the JS CLI (`lib/config-paths.js`'s
+/// `keychainItems.anthropicAdmin`) writes the same string, and a future
+/// migration would have to touch BOTH sides in lockstep. **Don't rename.**
+const ANTHROPIC_API_KEY_KEYCHAIN_SERVICE: &str = "com.clauding.clauge.anthropic-admin-key";
+
+/// Resolve the Windows fallback directory for storing the Anthropic Admin API key.
+///
+/// macOS uses Keychain Services (see set/get/clear_anthropic_api_key), so this
+/// helper only compiles on Windows. The spec calls for `~/.config/clauge/` —
+/// Unix-style hidden dir under `%USERPROFILE%` — to mirror Claude Code's own
+/// `~/.claude/.credentials.json` convention (cross-platform Unix-style paths
+/// rather than `%APPDATA%`). Uses `env::var("USERPROFILE")` directly rather
+/// than pulling in the `dirs` crate; matches the pattern in `port_file.rs` and
+/// `keychain.rs::read_claude_code_credentials` (Windows branch).
+///
+/// **Plaintext-on-disk caveat:** this is a v1.0.0 minimum-viable fallback.
+/// DPAPI-backed encryption (via `windows-rs` Crypt32) is tracked as a future
+/// hardening task. The threat model is the same as Claude Code CLI's own
+/// `.credentials.json` — local-only, no network exposure, file ACL'd to the
+/// user. Acceptable for the v1.0.0 ToS-clean Admin API path.
+#[cfg(target_os = "windows")]
+fn clauge_config_dir() -> Result<std::path::PathBuf, String> {
+    let userprofile =
+        std::env::var("USERPROFILE").map_err(|e| format!("USERPROFILE not set: {}", e))?;
+    let dir = std::path::PathBuf::from(userprofile)
+        .join(".config")
+        .join("clauge");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("create_dir_all {}: {}", dir.display(), e))?;
+    Ok(dir)
+}
+
+/// Store the user-pasted Anthropic Admin API key.
+///
+/// macOS: Keychain Services under service name `com.clauding.clauge.anthropic-admin-key`
+/// (locked by AGENTS.md landmine #14 — JS CLI writes the same name).
+/// Windows: plaintext file at `%USERPROFILE%\.config\clauge\api_key` (see
+/// `clauge_config_dir` docstring for the DPAPI-future caveat).
+///
+/// Validates the format up front (`sk-ant-api03-` prefix + len > 20) so we
+/// never persist a typo or a paste of the wrong key shape.
+#[tauri::command]
+pub fn set_anthropic_api_key(key: String) -> Result<(), String> {
+    crate::anthropic_admin::validate_key_format(&key).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::passwords::set_generic_password;
+        set_generic_password(
+            ANTHROPIC_API_KEY_KEYCHAIN_SERVICE,
+            "default",
+            key.as_bytes(),
+        )
+        .map_err(|e| format!("keychain write failed: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let path = clauge_config_dir()?.join("api_key");
+        std::fs::write(&path, &key).map_err(|e| format!("file write failed: {}", e))?;
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        // Linux: no implementation yet. Returning Err is preferable to silently
+        // dropping the key into /tmp — surfaces the gap to the user.
+        let _ = key;
+        return Err(
+            "Anthropic Admin API key storage is not supported on this platform yet".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Read the persisted Anthropic Admin API key, if any. Returns `None` when
+/// no key is stored (or read failed for any reason — the picker treats
+/// `None` as "fall back to OAuth path").
+#[tauri::command]
+pub fn get_anthropic_api_key() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::passwords::get_generic_password;
+        get_generic_password(ANTHROPIC_API_KEY_KEYCHAIN_SERVICE, "default")
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let path = clauge_config_dir().ok()?.join("api_key");
+        std::fs::read_to_string(&path).ok()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Delete the stored Anthropic Admin API key. Idempotent — returns Ok even
+/// if no key was previously stored (matches `clear_stored_cookie` in
+/// `claude_ai_session.rs`).
+#[tauri::command]
+pub fn clear_anthropic_api_key() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::passwords::delete_generic_password;
+        let _ = delete_generic_password(ANTHROPIC_API_KEY_KEYCHAIN_SERVICE, "default");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(path) = clauge_config_dir().map(|d| d.join("api_key")) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    Ok(())
+}
+
+/// Probe the Anthropic Usage Report endpoint with the given key to verify
+/// authorization. Used by Settings → API key → "Test" before persisting,
+/// so the user sees a "Looks good" / "Invalid key" outcome without committing
+/// a bad key to the Keychain.
+#[tauri::command]
+pub async fn test_anthropic_api_key(key: String) -> Result<(), String> {
+    crate::anthropic_admin::test_api_key(&key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

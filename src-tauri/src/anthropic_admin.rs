@@ -147,16 +147,25 @@ mod tests {
 
     #[test]
     fn validate_key_format_rejects_empty() {
-        assert!(matches!(validate_key_format(""), Err(AnthropicAdminError::InvalidKeyFormat)));
+        assert!(matches!(
+            validate_key_format(""),
+            Err(AnthropicAdminError::InvalidKeyFormat)
+        ));
     }
 
     #[test]
     fn validate_key_format_rejects_short() {
-        assert!(matches!(validate_key_format("sk-ant-api03-"), Err(AnthropicAdminError::InvalidKeyFormat)));
+        assert!(matches!(
+            validate_key_format("sk-ant-api03-"),
+            Err(AnthropicAdminError::InvalidKeyFormat)
+        ));
     }
 
     #[test]
     fn validate_key_format_rejects_wrong_prefix() {
-        assert!(matches!(validate_key_format("sk-proj-fakeopenaikey1234567890"), Err(AnthropicAdminError::InvalidKeyFormat)));
+        assert!(matches!(
+            validate_key_format("sk-proj-fakeopenaikey1234567890"),
+            Err(AnthropicAdminError::InvalidKeyFormat)
+        ));
     }
 }
