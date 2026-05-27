@@ -251,6 +251,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // v1.0.0: one-time migration nudge for existing extension users.
+  // Existing v0.9.x installs with Clauge Sync active should be told the
+  // extension is no longer required. localStorage key is set after the
+  // toast fires (or never, if showToast isn't available yet — in which
+  // case the check re-runs next session and fires once the toast helper
+  // ships). Setting only AFTER showToast prevents losing the nudge.
+  const MIGRATION_KEY = 'clauge.v1.0.0.extension-migration-shown';
+  if (!localStorage.getItem(MIGRATION_KEY)) {
+    // Wait one cycle so initial refresh completes
+    setTimeout(async () => {
+      try {
+        const status = await ClaugeBridge.getConnectionStatus();
+        if (status.extension === 'active' && typeof window.showToast === 'function') {
+          window.showToast(
+            'The Clauge Sync extension is no longer required. You can also sign in directly via "Sign in to claude.ai" above.',
+            'info',
+            { duration: 12000 }
+          );
+          localStorage.setItem(MIGRATION_KEY, '1');
+        }
+      } catch (e) {
+        // Silent fail — toast is nice-to-have
+      }
+    }, 1500);
+  }
+
   refreshConnections();
 });
 
