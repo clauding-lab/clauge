@@ -493,17 +493,26 @@
               </details>
             </section>
 
-            <!-- Row 3: Browser extension -->
+            <!-- Row 3: Browser extension (v1.0.0: demoted to alternative path) -->
             <div class="connection-row" id="conn-extension" data-state="not_detected">
               <span class="conn-dot" aria-hidden="true">●</span>
               <div class="conn-body">
-                <div class="conn-title">Browser extension</div>
+                <div class="conn-title">Browser extension (alternative)</div>
                 <div class="conn-status">Optional. Useful for browser-only setups.</div>
               </div>
               <div class="conn-actions">
                 <a class="conn-cta" href="https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga"
-                   target="_blank" rel="noopener noreferrer">Install Clauge Sync</a>
+                   target="_blank" rel="noopener noreferrer">Install Clauge Sync &rarr;</a>
               </div>
+              <details class="conn-disclosure">
+                <summary>When should I install this?</summary>
+                <p>
+                  Use this if you'd rather sign in to claude.ai inside your existing
+                  browser session (Chrome only) than through Clauge's in-app sign-in
+                  window. Most users don't need the extension &mdash; the in-app sign-in
+                  covers the same data.
+                </p>
+              </details>
             </div>
 
             <!-- Row 4 (Claude Code logs bookmark) is added in v0.7.1 (MAS flavor only). -->
