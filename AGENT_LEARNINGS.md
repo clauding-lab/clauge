@@ -37,6 +37,36 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-05-27 — v0.9.8 → v0.9.9 | Dashboard plan-card flickered every 60 seconds
+
+**Trigger:** Adnan asked "still slight flickering of the dashboard exists. investigate" after v0.9.8 shipped. Reproduced against the user's live sidecar on port 3456 with a Playwright `MutationObserver` covering `#plan-body`, `#plan-meta`, `#plan-status-tag`, `#plan-inline`, and the finance-side spans. Across two 60-second cycles the observer recorded 38 mutations per tick at exact 60s intervals — even when the underlying `/api/usage` payload was byte-identical (e.g. `#claude-balance-val` text replaced `"78.63"` with `"78.63"`).
+
+**What went wrong:** The plan auto-refresh interval at `public/app.js:1069-1077` calls `renderPlanCapacity()` + `renderFinanceSide()` every 60s. Both functions unconditionally rebuilt entire DOM regions by reassigning the `innerHTML` property:
+
+- `#plan-meta` (line 282 pre-fix) — destroyed the `<span class="dot-live">` and created a new one. The dot's CSS `animation: pulse 2s ease-in-out infinite` (styles.css:910) restarted from frame 0 each minute — the dominant user-visible flicker, perceived as a faint brightness snap on the green sync dot.
+- `#plan-body` (line 263 pre-fix) — destroyed and reparsed all 4 SVG ring-cards.
+- `#plan-inline` (line 288 pre-fix) — destroyed 19 children (4 mini SVG rings + separators + numbers).
+- `renderFinanceSide` reassigned `.textContent` on 7 spans regardless of whether the underlying values changed — each assignment replaces the existing text node with a fresh one (Node.textContent setter spec), firing childList mutations and a layout/paint.
+
+The result was a ~30-DOM-mutation churn cycle per minute, perceptible because of the animation restart even when the values stayed identical.
+
+**Lesson:** When an auto-refresh path rebuilds a parent region by reassigning the `innerHTML` property, EVERY child of that region gets destroyed and recreated — including any elements with running CSS animations. Their animations restart at frame 0. If the parent contains a long-lived animated element (live-status dot, spinner, pulsing badge), reassigning `innerHTML` will flicker the animation every refresh. Split the render into a structural phase (innerHTML, only on shape transitions) and a surgical phase (in-place text/attribute writes that fire characterData mutations, not childList).
+
+**Prevention:**
+
+- `public/app.js` now exposes `setTextIfChanged(el, val)` and `setAttrIfChanged(el, name, val)`. The text helper prefers `el.firstChild.data = val` over `el.textContent = val` when the element has exactly one text-node child — `Text.data` assignment fires `characterData` (not `childList`), so siblings stay untouched and their CSS animations are preserved.
+- `renderPlanCapacity` is gated by three module-level flags (`__planCardMode`, `__planStatusTone`, `__planInlineHasBalance`) so the structural rebuild only fires on placeholder ↔ ingested or balance-line-appearing transitions.
+- Three new helpers (`updateBigRings`, `updatePlanMeta`, `updatePlanInline`) walk the existing DOM on every other tick. `updatePlanMeta` walks past `.dot-live` and mutates only the trailing text node's `.data` — the pulse element is never touched again after the first paint.
+
+**Hotfix:** v0.9.9. PR #7 (`fix/dashboard-plan-flicker`) shipped the surgical-update refactor; v0.9.9 packages it with version bumps + this AGENT_LEARNINGS entry + AGENTS.md landmine #21 (the Cargo.lock-in-version-bumps codification from the v0.9.8 retrospective). Verified against fresh sidecar on PORT=3499 with the same MutationObserver: 6–7 mutations per tick across three 60s cycles (all legitimate `characterData` on `synced N ago` / `resets in X` relative-time text), zero `childList` mutations on the plan-card regions, `.dot-live` element identity preserved across all ticks (`dataset.flickertag` survived).
+
+**Cross-references:**
+
+- **AGENTS.md landmine #21** (new, shipped together) — "Version bumps require Cargo.lock too" (different lesson, but bundled in this release because the v0.9.8 → v0.9.8 follow-up Cargo.lock PR existed only because of this gap).
+- **AGENTS.md landmine #22** candidate — "Auto-refreshing render paths must not destroy long-lived animated children" (lesson from this incident; not yet added — would generalize across all `setInterval`-driven re-renders).
+- **Global rulebook** — promoted the meta-lesson "auto-refresh by reassigning innerHTML restarts animations on every destroyed child; split structural + surgical updates" to `~/.claude/AGENT_LEARNINGS.md`.
+- **Auto-memory** — new `project_v0_9_8_v0_9_9_plan_flicker.md` postmortem + new `feedback_innerhtml_animation_restart.md` cross-project rule.
+
 ## 2026-05-26 — v0.9.7 → v0.9.8 hotfix | Dashboard activity heatmap never rendered
 
 **Trigger:** Adnan opened the dashboard on a fresh v0.9.7 install. The Activity card showed its header ("ACTIVITY — Last 365 days") and its footer ("clauge v0.9.7 · health · config"), but the heatmap grid area was completely blank. The `heatmap-stats` span still read the default `—` placeholder, never updating to the active-days/streak summary. Activity API was healthy — `curl http://127.0.0.1:3456/api/activity?period=365d` returned 365 days with 30 active days, 3-day current streak, longest 18-day. So the data path worked; the render path didn't.

@@ -388,6 +388,29 @@ Full postmortems in `AGENT_LEARNINGS.md`.
 
 **To extend with a new facade**, add an entry to the `FACADES` array at the top of `scripts/validate-html-facade-loads.cjs` (name + definesRe + usesRe + definerLabel). No other code changes needed — the per-facade check is mechanical.
 
+### 21. Version bumps require ALL FOUR files in lockstep
+
+Any release tag (`vX.Y.Z`) must come with version-string updates in:
+
+| File | Field |
+|---|---|
+| `package.json` | `"version": "X.Y.Z"` |
+| `src-tauri/Cargo.toml` | `version = "X.Y.Z"` (under `[package]`) |
+| `src-tauri/tauri.conf.json` | `"version": "X.Y.Z"` |
+| `src-tauri/Cargo.lock` | `version = "X.Y.Z"` inside the `[[package]] name = "clauge"` entry |
+
+**Why this is a landmine:** the `check` workflow (PR CI) runs `cargo test --quiet` — NO `--locked`. The `Release` workflow (tag-triggered) runs `cargo test --locked` — Cargo refuses to proceed if Cargo.lock would need updating to match Cargo.toml. So a PR that bumps the first three files but forgets Cargo.lock passes CI cleanly and then **fails the release pipeline at "Run Rust unit tests"** with `cannot update the lock file ... because --locked was passed`. v0.9.8's PR #5 hit this exact path — a follow-up PR #6 had to add the one-line Cargo.lock bump before the release could ship. The retag-and-rerun cycle also surfaced a flaky-runner cancellation.
+
+**Before tagging,** verify locally:
+
+```bash
+cargo check --locked --manifest-path src-tauri/Cargo.toml
+```
+
+If it errors, Cargo.lock still has the previous version and must be bumped before tagging. Pure `cargo check` (no `--locked`) would silently rewrite Cargo.lock — which is fine on PR but only catches the bug AFTER you've already committed.
+
+Alternative auto-fix that's still safe to run from the version-bump PR branch: `cargo check --manifest-path src-tauri/Cargo.toml` once, then commit any Cargo.lock changes. The lock is repo-tracked so it must be committed alongside the other three files.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
