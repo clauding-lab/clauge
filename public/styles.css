@@ -1327,3 +1327,66 @@ body.loading { cursor: progress; }
   color: var(--text-3);
   font-style: italic;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   v1.0.0: Settings → Plan-ring data section.
+   API key paste UI + "Recommended" banner sit between the
+   claude.ai row and the extension row. The fallbacks in
+   var(--color-*) below ensure rendering even before the
+   design system catches up — the spec uses --color-accent,
+   --color-text, --color-amber, --color-green, --color-red,
+   --font-mono which are not currently declared on :root in
+   this file. Inline fallbacks keep the look consistent.
+   ═══════════════════════════════════════════════════════════ */
+.conn-banner {
+  margin: 0.5rem 0 0.75rem 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text, #fff);
+  background: rgba(255, 138, 61, 0.08);
+  border-left: 3px solid var(--color-accent, #ff8a3d);
+  border-radius: 4px;
+}
+
+#api-key-banner[hidden] {
+  display: none;
+}
+
+#conn-api-key .conn-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+#api-key-input {
+  flex: 1;
+  min-width: 240px;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--color-text, #fff);
+}
+
+#api-key-input:focus {
+  outline: none;
+  border-color: var(--color-accent, #ff8a3d);
+}
+
+#conn-api-key[data-state="validating"] .conn-dot { background: var(--color-amber, #ffb300); }
+#conn-api-key[data-state="valid"]      .conn-dot { background: var(--color-green, #4ade80); }
+#conn-api-key[data-state="invalid"]    .conn-dot { background: var(--color-red, #ef4444); }
+#conn-api-key[data-state="not_set"]    .conn-dot { background: rgba(255, 255, 255, 0.2); }
+
+.conn-disclosure {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.conn-disclosure summary {
+  cursor: pointer;
+  user-select: none;
+}

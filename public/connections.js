@@ -176,6 +176,81 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // v1.0.0: API key paste handlers
+  const apiKeyRow = document.getElementById('conn-api-key');
+  const apiKeyInput = document.getElementById('api-key-input');
+  const apiKeySave = document.getElementById('api-key-save');
+  const apiKeyClear = document.getElementById('api-key-clear');
+  const apiKeyStatus = document.getElementById('api-key-status');
+  const apiKeyBanner = document.getElementById('api-key-banner');
+
+  function setApiKeyState(state, message) {
+    if (!apiKeyRow) return;
+    apiKeyRow.setAttribute('data-state', state);
+    if (apiKeyStatus && message) apiKeyStatus.textContent = message;
+    if (apiKeyBanner) apiKeyBanner.hidden = (state === 'valid');
+    const dot = apiKeyRow.querySelector('.conn-dot');
+    if (dot) {
+      const label = state === 'valid' ? 'connected'
+        : state === 'invalid' ? 'expired'
+        : state === 'validating' ? 'connecting'
+        : 'not connected';
+      dot.setAttribute('aria-label', label);
+    }
+  }
+
+  // On load, check if a key is already saved
+  if (window.ClaugeBridge && ClaugeBridge.isTauriAvailable()) {
+    ClaugeBridge.getAnthropicApiKey().then((key) => {
+      if (key) {
+        setApiKeyState('valid', 'API key configured. Plan-ring data flowing.');
+        if (apiKeyInput) apiKeyInput.placeholder = 'sk-ant-api03-•••• (saved)';
+        if (apiKeyClear) apiKeyClear.hidden = false;
+        if (apiKeySave) apiKeySave.textContent = 'Update';
+      } else {
+        setApiKeyState('not_set');
+      }
+    }).catch(() => setApiKeyState('not_set'));
+  }
+
+  if (apiKeySave) {
+    apiKeySave.addEventListener('click', async () => {
+      const key = apiKeyInput.value.trim();
+      if (!key) {
+        setApiKeyState('invalid', 'Paste a key first.');
+        return;
+      }
+      setApiKeyState('validating', 'Validating...');
+      try {
+        await ClaugeBridge.testAnthropicApiKey(key);
+        await ClaugeBridge.setAnthropicApiKey(key);
+        setApiKeyState('valid', 'API key validated and saved.');
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = 'sk-ant-api03-•••• (saved)';
+        if (apiKeyClear) apiKeyClear.hidden = false;
+        apiKeySave.textContent = 'Update';
+        // Trigger dashboard refresh
+        if (window.__TAURI__?.event?.emit) {
+          window.__TAURI__.event.emit('connections-updated');
+        }
+      } catch (err) {
+        setApiKeyState('invalid', String(err));
+      }
+    });
+  }
+
+  if (apiKeyClear) {
+    apiKeyClear.addEventListener('click', async () => {
+      if (!confirm('Clear the saved API key? Plan-ring data will stop.')) return;
+      await ClaugeBridge.clearAnthropicApiKey();
+      setApiKeyState('not_set', 'Paste an Anthropic API key to enable plan-ring data.');
+      apiKeyInput.placeholder = 'sk-ant-api03-...';
+      apiKeyClear.hidden = true;
+      apiKeySave.textContent = 'Save';
+    });
+  }
+
   refreshConnections();
 });
 

@@ -451,6 +451,48 @@
               </div>
             </div>
 
+            <!-- v1.0.0 Recommended banner — nudges users toward the ToS-clean Admin API path.
+                 Hidden once a key is saved (toggled by setApiKeyState in connections.js). -->
+            <aside id="api-key-banner" class="conn-banner" role="status" aria-live="polite">
+              <strong>Recommended:</strong>
+              Paste an Anthropic API key below to fetch plan-ring data through Anthropic's
+              sanctioned Usage API. Without one, Clauge falls back to reading Claude Code's
+              stored OAuth credentials — a path Anthropic's February 2026 policy update
+              flagged as out-of-bounds for third-party apps.
+            </aside>
+
+            <!-- v1.0.0 Row 2.5: Plan-ring data via Anthropic API key (paste path). -->
+            <section class="conn-row" id="conn-api-key" data-state="not_set">
+              <div class="conn-dot" aria-label="not connected"></div>
+              <div class="conn-row-text">
+                <strong>Plan-ring data (optional)</strong>
+                <p class="conn-status" id="api-key-status">Paste an Anthropic API key to enable plan-ring data.</p>
+              </div>
+              <div class="conn-actions">
+                <input
+                  type="password"
+                  id="api-key-input"
+                  placeholder="sk-ant-api03-..."
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="Anthropic API key"
+                />
+                <button id="api-key-save" class="conn-cta">Save</button>
+                <button id="api-key-clear" class="conn-cta" hidden>Clear</button>
+              </div>
+              <details class="conn-disclosure">
+                <summary>Why do I need this?</summary>
+                <p>
+                  Consumer Claude Pro / Max plans don't include API access by default.
+                  Generate a key at <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>
+                  to enable plan-ring usage tracking. This path is Anthropic-sanctioned
+                  (uses the public Usage and Cost API) — no Terms of Service concerns.
+                  Skip this if you don't have API access; Clauge still tracks token spend
+                  from your local Claude Code transcripts.
+                </p>
+              </details>
+            </section>
+
             <!-- Row 3: Browser extension -->
             <div class="connection-row" id="conn-extension" data-state="not_detected">
               <span class="conn-dot" aria-hidden="true">●</span>
