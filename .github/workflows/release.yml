@@ -247,6 +247,31 @@ jobs:
           # locate it on disk.
           includeUpdaterJson: true
 
+      - name: Verify code signature + notarization (macOS only)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DMG=$(find src-tauri/target/*/release/bundle/dmg/*.dmg | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::No DMG produced by tauri-action"
+            exit 1
+          fi
+          echo "Verifying $DMG ..."
+          codesign -dvvv "$DMG" 2>&1 | tee codesign-output.txt
+          # Confirm Team ID is CY4FK9S7X9
+          if ! grep -q "TeamIdentifier=CY4FK9S7X9" codesign-output.txt; then
+            echo "::error::DMG is NOT signed with Team CY4FK9S7X9"
+            exit 1
+          fi
+          # Confirm Gatekeeper accepts it (notarized + stapled)
+          spctl -a -v --type install "$DMG" 2>&1 | tee spctl-output.txt
+          if ! grep -q "accepted" spctl-output.txt; then
+            echo "::error::Gatekeeper does not accept the DMG"
+            exit 1
+          fi
+          echo "DMG signed and notarized correctly"
+
       - name: Find and upload latest.json as artifact
         shell: bash
         env:
