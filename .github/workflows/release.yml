@@ -264,12 +264,18 @@ jobs:
             echo "::error::DMG is NOT signed with Team CY4FK9S7X9"
             exit 1
           fi
-          # Confirm Gatekeeper accepts it (notarized + stapled)
+          # Confirm Gatekeeper accepts a notarized DMG
           spctl -a -v --type install "$DMG" 2>&1 | tee spctl-output.txt
-          if ! grep -q "accepted" spctl-output.txt; then
-            echo "::error::Gatekeeper does not accept the DMG"
+          if ! grep -q "source=Notarized Developer ID" spctl-output.txt; then
+            echo "::error::DMG is not notarized (spctl did not report 'source=Notarized Developer ID' — end users on stock macOS would be blocked by Gatekeeper)"
             exit 1
           fi
+          # Confirm the notarization ticket is stapled to the DMG itself
+          # (otherwise users without internet on first launch hit Gatekeeper failure)
+          xcrun stapler validate "$DMG" || {
+            echo "::error::Notarization ticket is not stapled to the DMG"
+            exit 1
+          }
           echo "DMG signed and notarized correctly"
 
       - name: Find and upload latest.json as artifact
