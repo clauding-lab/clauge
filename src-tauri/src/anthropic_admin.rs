@@ -10,10 +10,42 @@
 //! picker (see ipc.rs Task 11) prefers this module; when unset, OAuth
 //! fallback runs. Per 2026-05-27 pivot.
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
-const ANTHROPIC_API_BASE: &str = "https://api.anthropic.com";
+const ANTHROPIC_API_BASE_DEFAULT: &str = "https://api.anthropic.com";
 const USAGE_REPORT_PATH: &str = "/v1/organizations/usage_report/messages";
+
+/// Shared timeout-configured reqwest client for the Admin API. Mirrors
+/// the OAUTH_CLIENT pattern in anthropic_oauth.rs — bakes in the Clauge
+/// user-agent so Anthropic can attribute requests, and reuses the
+/// underlying connection pool across the dashboard's ~30s polling.
+pub(crate) static ADMIN_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent(concat!("Clauge/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("reqwest::Client::build is infallible without a custom config")
+});
+
+/// Base URL for api.anthropic.com. Overridable via CLAUGE_ANTHROPIC_BASE_URL
+/// so integration tests can substitute a mockito server. Matches the OAuth
+/// module's pattern.
+fn base_url() -> String {
+    std::env::var("CLAUGE_ANTHROPIC_BASE_URL")
+        .unwrap_or_else(|_| ANTHROPIC_API_BASE_DEFAULT.to_string())
+}
+
+fn truncate_body(body: String) -> String {
+    if body.len() > 500 {
+        let mut s = body.chars().take(500).collect::<String>();
+        s.push_str("…[truncated]");
+        s
+    } else {
+        body
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnthropicAdminError {
@@ -37,6 +69,7 @@ pub fn validate_key_format(key: &str) -> Result<(), AnthropicAdminError> {
 pub struct UsageReport {
     /// Daily breakdown rows. Shape per Anthropic API docs:
     /// https://docs.claude.com/en/api/admin-api/usage-cost/messages-usage-report
+    // TODO(task-11): type this once consumed by picker
     pub data: Vec<serde_json::Value>,
     pub has_more: bool,
 }
@@ -46,24 +79,20 @@ pub struct UsageReport {
 /// otherwise.
 pub async fn test_api_key(key: &str) -> Result<(), AnthropicAdminError> {
     validate_key_format(key)?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
     // Use yesterday as the date filter to ensure we have a fast empty response
     // even on new API accounts.
     let yesterday = chrono::Utc::now()
         .checked_sub_signed(chrono::Duration::days(1))
-        .ok_or(AnthropicAdminError::ApiError {
-            status: 0,
-            body: "could not compute yesterday".to_string(),
-        })?
+        .expect("Utc::now() minus 1 day cannot overflow i64")
         .format("%Y-%m-%dT00:00:00Z")
         .to_string();
     let url = format!(
         "{}{}?starting_at={}&limit=1",
-        ANTHROPIC_API_BASE, USAGE_REPORT_PATH, yesterday
+        base_url(),
+        USAGE_REPORT_PATH,
+        yesterday
     );
-    let res = client
+    let res = ADMIN_CLIENT
         .get(&url)
         .header("x-api-key", key)
         .header("anthropic-version", "2023-06-01")
@@ -73,7 +102,7 @@ pub async fn test_api_key(key: &str) -> Result<(), AnthropicAdminError> {
     if status == 200 {
         Ok(())
     } else {
-        let body = res.text().await.unwrap_or_default();
+        let body = truncate_body(res.text().await.unwrap_or_default());
         Err(AnthropicAdminError::ApiError { status, body })
     }
 }
@@ -84,17 +113,16 @@ pub async fn fetch_usage_report(
     ending_at: Option<&str>,
 ) -> Result<UsageReport, AnthropicAdminError> {
     validate_key_format(key)?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()?;
     let mut url = format!(
         "{}{}?starting_at={}",
-        ANTHROPIC_API_BASE, USAGE_REPORT_PATH, starting_at
+        base_url(),
+        USAGE_REPORT_PATH,
+        starting_at
     );
     if let Some(end) = ending_at {
         url.push_str(&format!("&ending_at={}", end));
     }
-    let res = client
+    let res = ADMIN_CLIENT
         .get(&url)
         .header("x-api-key", key)
         .header("anthropic-version", "2023-06-01")
@@ -102,7 +130,7 @@ pub async fn fetch_usage_report(
         .await?;
     let status = res.status().as_u16();
     if status != 200 {
-        let body = res.text().await.unwrap_or_default();
+        let body = truncate_body(res.text().await.unwrap_or_default());
         return Err(AnthropicAdminError::ApiError { status, body });
     }
     Ok(res.json().await?)
