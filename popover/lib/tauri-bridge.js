@@ -54,6 +54,12 @@
     takePendingFocusConnections: () => call('take_pending_focus_connections'),
     installCliSymlink: () => call('install_cli_symlink'),
 
+    // ── API key paste flow (v1.0.0+) ──
+    setAnthropicApiKey: (key) => call('set_anthropic_api_key', { key }),
+    getAnthropicApiKey: () => call('get_anthropic_api_key'),
+    clearAnthropicApiKey: () => call('clear_anthropic_api_key'),
+    testAnthropicApiKey: (key) => call('test_anthropic_api_key', { key }),
+
     // ── Popover-only commands (no APP_COMMANDS entry; tauri:// origin) ──
     openDashboard: () => call('open_dashboard'),
     quitApp: () => call('quit_app'),
