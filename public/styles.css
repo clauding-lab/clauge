@@ -1377,6 +1377,19 @@ body.loading { cursor: progress; }
 #conn-api-key[data-state="invalid"]    .conn-dot { background: var(--crit); }
 #conn-api-key[data-state="not_set"]    .conn-dot { background: rgba(255, 255, 255, 0.2); }
 
+/* v1.0.0: Wrapper for the "Test all connections" health-probe button at the
+   top of the Connections card. Right-aligned so it doesn't compete with the
+   section heading. Reuses .conn-cta for the button itself. */
+.connections-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.25rem 0 0.5rem 0;
+}
+#test-all-connections[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .conn-disclosure {
   margin-top: 0.5rem;
   font-size: 0.85rem;

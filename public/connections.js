@@ -251,6 +251,74 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // v1.0.0: "Test all connections" health-probe button.
+  // One-click sanity check across Claude Code, claude.ai, and API key.
+  // Surfaces a multi-line summary via window.showToast (if shipped) or
+  // alert() as a fallback. Icons are "OK"/"FAIL"/"—" rather than glyphs
+  // to match the global "no emojis in files unless asked" rule.
+  const testAllBtn = document.getElementById('test-all-connections');
+  if (testAllBtn) {
+    testAllBtn.addEventListener('click', async () => {
+      if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return;
+      testAllBtn.disabled = true;
+      const originalLabel = testAllBtn.textContent;
+      testAllBtn.textContent = 'Testing…';
+      const results = [];
+
+      try {
+        const status = await ClaugeBridge.getConnectionStatus();
+        results.push({
+          src: 'Claude Code',
+          ok: status.claude_code === 'authenticated',
+          msg: status.claude_code,
+        });
+      } catch (e) {
+        results.push({ src: 'Claude Code', ok: false, msg: String(e) });
+      }
+
+      try {
+        const hasSession = await ClaugeBridge.hasClaudeAiSession();
+        results.push({
+          src: 'claude.ai',
+          ok: hasSession,
+          msg: hasSession ? 'cookie valid' : 'not signed in',
+        });
+      } catch (e) {
+        results.push({ src: 'claude.ai', ok: false, msg: String(e) });
+      }
+
+      try {
+        const key = await ClaugeBridge.getAnthropicApiKey();
+        if (key) {
+          await ClaugeBridge.testAnthropicApiKey(key);
+          results.push({ src: 'API key', ok: true, msg: 'valid' });
+        } else {
+          results.push({ src: 'API key', ok: null, msg: 'not configured (optional)' });
+        }
+      } catch (e) {
+        results.push({ src: 'API key', ok: false, msg: String(e) });
+      }
+
+      const summary = results.map((r) => {
+        const icon = r.ok === true ? 'OK' : r.ok === false ? 'FAIL' : '—';
+        return `${icon} ${r.src}: ${r.msg}`;
+      }).join('\n');
+
+      const allOk = results.every((r) => r.ok !== false);
+      if (typeof window.showToast === 'function') {
+        window.showToast(summary, allOk ? 'info' : 'error', { duration: 10000 });
+      } else {
+        // window.showToast helper is not shipped yet (known gap from Task 18).
+        // alert() is the documented fallback per the v1.0.0 plan.
+        alert(summary);
+      }
+
+      testAllBtn.disabled = false;
+      testAllBtn.textContent = originalLabel;
+      refreshConnections();
+    });
+  }
+
   // v1.0.0: one-time migration nudge for existing extension users.
   // Existing v0.9.x installs with Clauge Sync active should be told the
   // extension is no longer required. localStorage key is set after the

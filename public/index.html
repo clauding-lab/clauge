@@ -425,6 +425,13 @@
             <h2 style="font-size:14px">Connections</h2>
             <p class="set-desc">Each connection is independent. The dashboard composes data from whichever sources are active.</p>
 
+            <!-- v1.0.0: One-click health probe for all data sources. Results
+                 surface via window.showToast if available, otherwise alert().
+                 Wired in connections.js DOMContentLoaded. -->
+            <div class="connections-actions">
+              <button type="button" id="test-all-connections" class="conn-cta">Test all connections</button>
+            </div>
+
             <!-- Row 1: Claude Code CLI (Architecture B) -->
             <div class="connection-row" id="conn-claude-code" data-state="not_installed">
               <span class="conn-dot" aria-hidden="true">●</span>
