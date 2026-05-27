@@ -429,6 +429,10 @@ When a recurring `setInterval` / `setTimeout` callback rebuilds a DOM region (ty
 - `public/app.js` plan-card auto-refresh (60s) — surgical-update split in v0.9.9 (`renderPlanCapacity`, `renderFinanceSide`; helpers `setTextIfChanged` / `setAttrIfChanged` / `updateBigRings` / `updatePlanMeta` / `updatePlanInline`).
 - `popover/popover.js` popover auto-refresh (10s) — currently rebuilds via `renderPopover()` on every tick. No visible flicker today because the popover surface has no long-lived CSS-animated element, but the same surgical-update pattern applies if a `.dot-live`-style element is ever added.
 
+### References
+
+- **Release runbook** — see `docs/release-runbook.md` for cert generation, API key rotation, notarization debugging, and rollback procedures.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

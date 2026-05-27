@@ -31,6 +31,11 @@
 # TAURI_SIGNING_PRIVATE_KEY_PASSWORD (Tauri 2.x).  The earlier 1.x names
 # (TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD) are NOT recognised by the 2.x
 # updater bundler and would cause silent unsigned-payload failures.
+#
+# Operational docs
+# ----------------
+# For Apple Developer ID cert generation, App Store Connect API key rotation,
+# notarization debugging, and rollback procedures, see docs/release-runbook.md.
 
 name: Release
 
