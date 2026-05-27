@@ -1,3 +1,4 @@
+mod anthropic_admin;
 pub mod anthropic_oauth;
 mod claude_ai_session;
 pub mod connections;
