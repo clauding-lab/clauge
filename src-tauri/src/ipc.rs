@@ -753,17 +753,20 @@ fn resolve_bundle_cli_path() -> Option<std::path::PathBuf> {
 /// Locked by AGENTS.md landmine #14 — the JS CLI (`lib/config-paths.js`'s
 /// `keychainItems.anthropicAdmin`) writes the same string, and a future
 /// migration would have to touch BOTH sides in lockstep. **Don't rename.**
+///
+/// Account is always "default" — fixed by interop with the JS CLI
+/// (lib/cli/config-set-api-key.js) per AGENTS.md landmine #14. Don't change
+/// here without changing the CLI side in lockstep.
 const ANTHROPIC_API_KEY_KEYCHAIN_SERVICE: &str = "com.clauding.clauge.anthropic-admin-key";
 
 /// Resolve the Windows fallback directory for storing the Anthropic Admin API key.
 ///
 /// macOS uses Keychain Services (see set/get/clear_anthropic_api_key), so this
-/// helper only compiles on Windows. The spec calls for `~/.config/clauge/` —
-/// Unix-style hidden dir under `%USERPROFILE%` — to mirror Claude Code's own
-/// `~/.claude/.credentials.json` convention (cross-platform Unix-style paths
-/// rather than `%APPDATA%`). Uses `env::var("USERPROFILE")` directly rather
-/// than pulling in the `dirs` crate; matches the pattern in `port_file.rs` and
-/// `keychain.rs::read_claude_code_credentials` (Windows branch).
+/// helper only compiles on Windows. Uses `%LOCALAPPDATA%\Clauge\` to match
+/// `port_file.rs` (the existing Clauge cache-dir convention on Windows) —
+/// `%LOCALAPPDATA%` is the Windows-native cache location and keeps all Clauge
+/// state under one directory tree rather than scattering it across hidden
+/// Unix-style dirs.
 ///
 /// **Plaintext-on-disk caveat:** this is a v1.0.0 minimum-viable fallback.
 /// DPAPI-backed encryption (via `windows-rs` Crypt32) is tracked as a future
@@ -772,11 +775,9 @@ const ANTHROPIC_API_KEY_KEYCHAIN_SERVICE: &str = "com.clauding.clauge.anthropic-
 /// user. Acceptable for the v1.0.0 ToS-clean Admin API path.
 #[cfg(target_os = "windows")]
 fn clauge_config_dir() -> Result<std::path::PathBuf, String> {
-    let userprofile =
-        std::env::var("USERPROFILE").map_err(|e| format!("USERPROFILE not set: {}", e))?;
-    let dir = std::path::PathBuf::from(userprofile)
-        .join(".config")
-        .join("clauge");
+    let local_appdata =
+        std::env::var("LOCALAPPDATA").map_err(|e| format!("LOCALAPPDATA not set: {}", e))?;
+    let dir = std::path::PathBuf::from(local_appdata).join("Clauge");
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("create_dir_all {}: {}", dir.display(), e))?;
     Ok(dir)
@@ -786,7 +787,7 @@ fn clauge_config_dir() -> Result<std::path::PathBuf, String> {
 ///
 /// macOS: Keychain Services under service name `com.clauding.clauge.anthropic-admin-key`
 /// (locked by AGENTS.md landmine #14 — JS CLI writes the same name).
-/// Windows: plaintext file at `%USERPROFILE%\.config\clauge\api_key` (see
+/// Windows: plaintext file at `%LOCALAPPDATA%\Clauge\api_key` (see
 /// `clauge_config_dir` docstring for the DPAPI-future caveat).
 ///
 /// Validates the format up front (`sk-ant-api03-` prefix + len > 20) so we

@@ -57,12 +57,19 @@ pub enum AnthropicAdminError {
     ApiError { status: u16, body: String },
 }
 
+/// Maximum accepted key length. Mirrors the JS CLI cap
+/// (`lib/cli/config-set-api-key.js::MAX_KEY_LENGTH`) so a multi-MB paste
+/// can't sneak in via the dashboard IPC path while the CLI rejects it.
+const MAX_KEY_LENGTH: usize = 4096;
+
 pub fn validate_key_format(key: &str) -> Result<(), AnthropicAdminError> {
-    if key.starts_with("sk-ant-api03-") && key.len() > 20 {
-        Ok(())
-    } else {
-        Err(AnthropicAdminError::InvalidKeyFormat)
+    if !key.starts_with("sk-ant-api03-") || key.len() <= 20 {
+        return Err(AnthropicAdminError::InvalidKeyFormat);
     }
+    if key.len() > MAX_KEY_LENGTH {
+        return Err(AnthropicAdminError::InvalidKeyFormat);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -165,6 +172,15 @@ mod tests {
     fn validate_key_format_rejects_wrong_prefix() {
         assert!(matches!(
             validate_key_format("sk-proj-fakeopenaikey1234567890"),
+            Err(AnthropicAdminError::InvalidKeyFormat)
+        ));
+    }
+
+    #[test]
+    fn validate_key_format_rejects_oversized() {
+        let huge = format!("sk-ant-api03-{}", "x".repeat(5000));
+        assert!(matches!(
+            validate_key_format(&huge),
             Err(AnthropicAdminError::InvalidKeyFormat)
         ));
     }

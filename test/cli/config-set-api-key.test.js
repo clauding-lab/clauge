@@ -99,10 +99,12 @@ describe('config set-api-key — happy path (mocked security)', () => {
     );
     assert.equal(code, 0);
     const args = io.securityArgs();
+    // account is the literal "default" — matches the Rust IPC reader.
+    // See AGENTS.md landmine #14.
     assert.deepEqual(args, [
       'add-generic-password',
       '-s', 'com.clauding.clauge.anthropic-admin-key',
-      '-a', process.env.USER || 'clauge',
+      '-a', 'default',
       '-w', 'sk-ant-test-key',
       '-U',
     ]);
