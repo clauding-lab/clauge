@@ -140,6 +140,31 @@ function escapeHtml(s) {
     .replaceAll("'", '&#039;');
 }
 
+// Surgical DOM helpers — mutate only when the value actually changed. Used by
+// the auto-refreshing plan/finance render path so a 60s tick with unchanged
+// data does NOT churn nodes (which would restart the .dot-live pulse animation
+// in #plan-meta and add a one-frame paint gap on the SVG rings).
+function setTextIfChanged(el, val) {
+  if (!el) return;
+  const next = String(val);
+  // Prefer mutating an existing single text-node's `data` over reassigning
+  // textContent — textContent always replaces all children with a *new* text
+  // node, which fires childList mutations even when the text didn't change.
+  if (el.childNodes.length === 1 && el.firstChild.nodeType === Node.TEXT_NODE) {
+    if (el.firstChild.data !== next) el.firstChild.data = next;
+    return;
+  }
+  if (el.textContent !== next) el.textContent = next;
+}
+function setAttrIfChanged(el, name, val) {
+  if (!el) return;
+  const next = val == null ? null : String(val);
+  if (el.getAttribute(name) !== next) {
+    if (next == null) el.removeAttribute(name);
+    else el.setAttribute(name, next);
+  }
+}
+
 function modelClass(model) {
   if (!model) return '';
   if (model.includes('opus')) return 'opus';
@@ -216,6 +241,18 @@ function inlineMiniRingHtml({ pct, label }) {
 // ═══════════════════════════════════════════════════════════
 //  Refresh: plan capacity + finance
 // ═══════════════════════════════════════════════════════════
+//
+// The plan card auto-refreshes every 60s (see the boot section). The render
+// is split into two phases to avoid flicker: a structural build runs only on
+// shape transitions (placeholder ↔ ingested, balance line appearing), and a
+// surgical update path mutates only the values that changed every other tick.
+// Previously every tick rebuilt #plan-meta via assignment to .innerHTML, which
+// re-created the <span class="dot-live"> child and restarted its CSS pulse
+// animation from frame 0 — visible as a faint brightness snap.
+let __planCardMode = null;          // 'placeholder' | 'ingested' | null
+let __planStatusTone = null;        // 'crit' | 'amber' | 'healthy' | 'idle'
+let __planInlineHasBalance = null;  // true if the bal line is rendered
+
 function renderPlanCapacity() {
   const usage = state.data.usage;
   const planMeta = document.getElementById('plan-meta');
@@ -224,32 +261,39 @@ function renderPlanCapacity() {
   const inline = document.getElementById('plan-inline');
 
   if (!usage || !usage.ingested) {
-    planMeta.innerHTML = `<span class="dot-live" style="background:var(--text-3);box-shadow:none;animation:none"></span>not synced`;
-    planTag.textContent = '○ Awaiting sync';
-    planTag.style.background = 'var(--glass-2)';
-    planTag.style.color = 'var(--text-3)';
-    // Empty-state: render 4 placeholder rings (so layout doesn't collapse)
-    // PLUS an inline walkthrough explaining how to get the rings to populate.
-    // Plan-ring data lives behind two paths in v0.8.0:
-    //  - claude.ai signed-in (Architecture A — Mac only in v0.8.0)
-    //  - Clauge Sync browser extension (cross-platform, only path on Windows)
-    const isWindows = /windows/i.test(navigator.userAgent || '');
-    const placeholders = ['Session', 'Weekly', 'Sonnet', 'Design']
-      .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
-      .join('');
-    const walkthrough = `
-      <div class="plan-empty-hint">
-        <p class="plan-empty-hint-title">No plan data yet${isWindows ? ' (install Clauge Sync)' : ''}</p>
-        <ol class="plan-empty-hint-steps">
-          <li>Install <a href="https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga" target="_blank" rel="noopener noreferrer">Clauge Sync</a> from the Chrome Web Store.</li>
-          <li>Open <a href="https://claude.ai" target="_blank" rel="noopener noreferrer">claude.ai</a> in your browser and sign in (Edge users: extensions install from the Chrome Web Store too).</li>
-          <li>The rings above populate within ~30 seconds — the extension posts usage snapshots back to this app.</li>
-        </ol>
-        ${isWindows ? '<p class="plan-empty-hint-aside">claude.ai sign-in inside Clauge is not yet supported on Windows — the browser extension is currently the only path.</p>' : '<p class="plan-empty-hint-aside">Alternative: sign in to claude.ai from Settings → Connections to pull plan data directly without the extension.</p>'}
-      </div>
-    `;
-    body.innerHTML = placeholders + walkthrough;
-    inline.hidden = true;
+    if (__planCardMode !== 'placeholder') {
+      planMeta.innerHTML = `<span class="dot-live" style="background:var(--text-3);box-shadow:none;animation:none"></span>not synced`;
+      // Empty-state: render 4 placeholder rings (so layout doesn't collapse)
+      // PLUS an inline walkthrough explaining how to get the rings to populate.
+      // Plan-ring data lives behind two paths in v0.8.0:
+      //  - claude.ai signed-in (Architecture A — Mac only in v0.8.0)
+      //  - Clauge Sync browser extension (cross-platform, only path on Windows)
+      const isWindows = /windows/i.test(navigator.userAgent || '');
+      const placeholders = ['Session', 'Weekly', 'Sonnet', 'Design']
+        .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
+        .join('');
+      const walkthrough = `
+        <div class="plan-empty-hint">
+          <p class="plan-empty-hint-title">No plan data yet${isWindows ? ' (install Clauge Sync)' : ''}</p>
+          <ol class="plan-empty-hint-steps">
+            <li>Install <a href="https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga" target="_blank" rel="noopener noreferrer">Clauge Sync</a> from the Chrome Web Store.</li>
+            <li>Open <a href="https://claude.ai" target="_blank" rel="noopener noreferrer">claude.ai</a> in your browser and sign in (Edge users: extensions install from the Chrome Web Store too).</li>
+            <li>The rings above populate within ~30 seconds — the extension posts usage snapshots back to this app.</li>
+          </ol>
+          ${isWindows ? '<p class="plan-empty-hint-aside">claude.ai sign-in inside Clauge is not yet supported on Windows — the browser extension is currently the only path.</p>' : '<p class="plan-empty-hint-aside">Alternative: sign in to claude.ai from Settings → Connections to pull plan data directly without the extension.</p>'}
+        </div>
+      `;
+      body.innerHTML = placeholders + walkthrough;
+      inline.hidden = true;
+      __planCardMode = 'placeholder';
+      __planInlineHasBalance = null;
+    }
+    if (__planStatusTone !== 'idle') {
+      planTag.textContent = '○ Awaiting sync';
+      planTag.style.background = 'var(--glass-2)';
+      planTag.style.color = 'var(--text-3)';
+      __planStatusTone = 'idle';
+    }
     return;
   }
 
@@ -260,41 +304,59 @@ function renderPlanCapacity() {
     { label: 'Sonnet',     sub: '7d', metric: plan.sevenDaySonnet },
     { label: 'Design',     sub: '7d', metric: plan.sevenDayOmelette },
   ];
-  body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
-
-  // Status tag based on the highest pct.
-  const maxPct = Math.max(...gauges.map((g) => g.metric?.pct ?? 0));
-  if (maxPct >= 85) {
-    planTag.textContent = '● Critical';
-    planTag.style.background = 'rgba(224,123,110,0.14)';
-    planTag.style.color = 'var(--crit)';
-  } else if (maxPct >= 60) {
-    planTag.textContent = '● Warming';
-    planTag.style.background = 'var(--warn-tint)';
-    planTag.style.color = 'var(--warn)';
+  if (__planCardMode !== 'ingested') {
+    body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
+    __planCardMode = 'ingested';
   } else {
-    planTag.textContent = '● Healthy';
-    planTag.style.background = 'var(--ok-tint)';
-    planTag.style.color = 'var(--ok)';
+    updateBigRings(body, gauges);
   }
 
-  // Sync line
-  planMeta.innerHTML = `<span class="dot-live"></span>synced ${escapeHtml(fmtAgo(usage.ingestedAt))} · auto-refresh 60s`;
+  // Status tag based on the highest pct. Only restyle when the tier actually
+  // changes — saves a textContent + 2 style writes per 60s tick.
+  const maxPct = Math.max(...gauges.map((g) => g.metric?.pct ?? 0));
+  const newTone = maxPct >= 85 ? 'crit' : maxPct >= 60 ? 'amber' : 'healthy';
+  if (newTone !== __planStatusTone) {
+    if (newTone === 'crit') {
+      planTag.textContent = '● Critical';
+      planTag.style.background = 'rgba(224,123,110,0.14)';
+      planTag.style.color = 'var(--crit)';
+    } else if (newTone === 'amber') {
+      planTag.textContent = '● Warming';
+      planTag.style.background = 'var(--warn-tint)';
+      planTag.style.color = 'var(--warn)';
+    } else {
+      planTag.textContent = '● Healthy';
+      planTag.style.background = 'var(--ok-tint)';
+      planTag.style.color = 'var(--ok)';
+    }
+    __planStatusTone = newTone;
+  }
 
-  // Topbar inline plan summary
+  // Sync line — preserve the .dot-live element so its CSS pulse animation
+  // (styles.css: @keyframes pulse) doesn't restart at frame 0 every 60s.
+  updatePlanMeta(planMeta, fmtAgo(usage.ingestedAt));
+
+  // Topbar inline plan summary — rebuild only when the balance line appears
+  // or disappears; otherwise update values in place.
   const sevenDayCost = state.data.summary?.cost;
   const balance = plan.claudeBalance?.currentBalance;
+  const hasBalance = balance != null;
   inline.hidden = false;
-  inline.innerHTML = `
-    ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
-    ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
-    ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
-    ${inlineMiniRingHtml({ pct: plan.sevenDayOmelette?.pct, label: 'Design' })}
-    <span class="sep"></span>
-    <span class="num-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
-    <span class="num">${escapeHtml(sevenDayCost != null ? fmtUSD(sevenDayCost) : '—')}</span>
-    ${balance != null ? `<span class="sep"></span><span class="num-lbl">bal</span><span class="num">${escapeHtml(fmtUSD(balance))}</span>` : ''}
-  `;
+  if (__planInlineHasBalance !== hasBalance) {
+    inline.innerHTML = `
+      ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
+      ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
+      ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
+      ${inlineMiniRingHtml({ pct: plan.sevenDayOmelette?.pct, label: 'Design' })}
+      <span class="sep"></span>
+      <span class="num-lbl" data-role="period-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
+      <span class="num" data-role="period-cost">${escapeHtml(sevenDayCost != null ? fmtUSD(sevenDayCost) : '—')}</span>
+      ${hasBalance ? `<span class="sep"></span><span class="num-lbl">bal</span><span class="num" data-role="bal-num">${escapeHtml(fmtUSD(balance))}</span>` : ''}
+    `;
+    __planInlineHasBalance = hasBalance;
+  } else {
+    updatePlanInline(inline, gauges, sevenDayCost, balance);
+  }
 }
 
 function renderFinanceSide() {
@@ -308,22 +370,31 @@ function renderFinanceSide() {
   const pctEl = document.getElementById('extra-pct');
   const currEl = document.getElementById('extra-currency');
 
+  const setBarWidth = (w) => {
+    if (barEl && barEl.style.width !== w) barEl.style.width = w;
+  };
+  const setGated = (gated) => {
+    if (!barEl) return;
+    if (gated && !barEl.classList.contains('bar-fill--gated')) barEl.classList.add('bar-fill--gated');
+    else if (!gated && barEl.classList.contains('bar-fill--gated')) barEl.classList.remove('bar-fill--gated');
+  };
+
   // Render the spend layout for either source. consumerOverage and extraUsage
   // share { usedDollars, limitDollars, pct, currency } — see lib/usage-store.js.
   const renderSpend = (source) => {
     const used = source.usedDollars ?? 0;
     const limit = source.limitDollars ?? 0;
-    usedEl.textContent = used.toFixed(2);
-    capEl.textContent = limit > 0 ? `/ $${limit.toFixed(2)}` : '';
+    setTextIfChanged(usedEl, used.toFixed(2));
+    setTextIfChanged(capEl, limit > 0 ? `/ $${limit.toFixed(2)}` : '');
     let pct = source.pct;
     if ((pct == null || !Number.isFinite(pct)) && limit > 0) pct = (used / limit) * 100;
     pct = Math.max(0, pct ?? 0);
     // Bar represents "of cap" — clamp to 100. Label shows the true pct so an
     // over-cap reading (e.g. 196%) stays visible (matches popover.js).
-    barEl.style.width = `${Math.min(100, pct).toFixed(1)}%`;
-    pctEl.textContent = `${pct.toFixed(1)}% of cap`;
-    currEl.textContent = source.currency || 'USD';
-    barEl.classList.remove('bar-fill--gated');
+    setBarWidth(`${Math.min(100, pct).toFixed(1)}%`);
+    setTextIfChanged(pctEl, `${pct.toFixed(1)}% of cap`);
+    setTextIfChanged(currEl, source.currency || 'USD');
+    setGated(false);
   };
 
   // Prefer plan.consumerOverage (claude.ai /overage_spend_limit — the usage
@@ -342,19 +413,19 @@ function renderFinanceSide() {
   } else if (extra && !extra.enabled && extra.disabledReason) {
     // v0.8.2: gated state — Anthropic disabled the feature at the org level.
     // Only reached when consumerOverage has no data either.
-    usedEl.textContent = '—';
-    capEl.textContent = '';
-    barEl.style.width = '100%';
-    barEl.classList.add('bar-fill--gated');
-    pctEl.textContent = disabledReasonText(extra.disabledReason);
-    currEl.textContent = extra.currency || 'USD';
+    setTextIfChanged(usedEl, '—');
+    setTextIfChanged(capEl, '');
+    setBarWidth('100%');
+    setGated(true);
+    setTextIfChanged(pctEl, disabledReasonText(extra.disabledReason));
+    setTextIfChanged(currEl, extra.currency || 'USD');
   } else {
-    usedEl.textContent = '0.00';
-    capEl.textContent = '';
-    barEl.style.width = '0%';
-    barEl.classList.remove('bar-fill--gated');
-    pctEl.textContent = 'not configured';
-    currEl.textContent = 'USD';
+    setTextIfChanged(usedEl, '0.00');
+    setTextIfChanged(capEl, '');
+    setBarWidth('0%');
+    setGated(false);
+    setTextIfChanged(pctEl, 'not configured');
+    setTextIfChanged(currEl, 'USD');
   }
 
   // claude.ai balance side card
@@ -363,13 +434,91 @@ function renderFinanceSide() {
   const ccyEl = document.getElementById('claude-balance-currency');
   const footEl = document.getElementById('claude-balance-foot');
   if (bal && Number.isFinite(bal.currentBalance)) {
-    valEl.textContent = bal.currentBalance.toFixed(2);
-    ccyEl.textContent = bal.currency || 'USD';
-    footEl.textContent = usage?.ingestedAt ? `refreshed ${fmtAgo(usage.ingestedAt)}` : '';
+    setTextIfChanged(valEl, bal.currentBalance.toFixed(2));
+    setTextIfChanged(ccyEl, bal.currency || 'USD');
+    setTextIfChanged(footEl, usage?.ingestedAt ? `refreshed ${fmtAgo(usage.ingestedAt)}` : '');
   } else {
-    valEl.textContent = '—';
-    ccyEl.textContent = 'USD';
-    footEl.textContent = 'sync to view';
+    setTextIfChanged(valEl, '—');
+    setTextIfChanged(ccyEl, 'USD');
+    setTextIfChanged(footEl, 'sync to view');
+  }
+}
+
+// ─── Plan-card surgical update helpers ─────────────────────
+// These ONLY run after the first innerHTML build has populated the structure.
+// They walk the existing DOM and update individual values; they do not
+// add/remove children, so they don't restart CSS animations on siblings (the
+// .dot-live pulse in #plan-meta) or trigger paint gaps on the SVG rings.
+
+function updateBigRings(body, gauges) {
+  const cards = body.querySelectorAll('.ring-card');
+  for (let i = 0; i < gauges.length && i < cards.length; i++) {
+    const g = gauges[i];
+    const card = cards[i];
+    const metric = g.metric;
+    const r = 56;
+    const c = 2 * Math.PI * r;
+    const pctFrac = metric?.pct == null ? 0 : Math.max(0, Math.min(100, metric.pct)) / 100;
+    const offset = c - pctFrac * c;
+    const tone = pctFrac >= 0.85 ? 'crit'
+               : pctFrac >= 0.6  ? 'amber'
+               : pctFrac >= 0.05 ? 'healthy'
+               : 'cool';
+    const pctNum = metric?.pct == null ? '—' : String(Math.round(metric.pct));
+    const reset = fmtRelative(metric?.resetsAt);
+
+    const bigRing = card.querySelector('.big-ring');
+    if (bigRing && !bigRing.classList.contains(tone)) {
+      bigRing.classList.remove('amber', 'healthy', 'cool', 'crit');
+      bigRing.classList.add(tone);
+    }
+    // Second <circle> (index 1) is the progress arc; the first is the track.
+    const progressCircle = bigRing ? bigRing.querySelectorAll('circle')[1] : null;
+    setAttrIfChanged(progressCircle, 'stroke-dashoffset', offset.toFixed(2));
+    setTextIfChanged(card.querySelector('.ring-pct .big'), pctNum);
+    setTextIfChanged(card.querySelector('.ring-reset'), `resets in ${reset}`);
+  }
+}
+
+function updatePlanMeta(planMeta, agoText) {
+  // Preserve the existing .dot-live element so the @keyframes pulse animation
+  // in styles.css doesn't restart at frame 0 each tick. Mutate only the
+  // trailing text node's .data — characterData mutation, not childList, so
+  // neighbouring elements are untouched.
+  const dot = planMeta.querySelector('.dot-live');
+  if (!dot) {
+    planMeta.innerHTML = `<span class="dot-live"></span>synced ${escapeHtml(agoText)} · auto-refresh 60s`;
+    return;
+  }
+  const newText = `synced ${agoText} · auto-refresh 60s`;
+  let textNode = dot.nextSibling;
+  while (textNode && textNode.nodeType !== Node.TEXT_NODE) textNode = textNode.nextSibling;
+  if (textNode) {
+    if (textNode.data !== newText) textNode.data = newText;
+  } else {
+    planMeta.appendChild(document.createTextNode(newText));
+  }
+}
+
+function updatePlanInline(inline, gauges, sevenDayCost, balance) {
+  const rings = inline.querySelectorAll('.mini-ring');
+  for (let i = 0; i < gauges.length && i < rings.length; i++) {
+    const miniRing = rings[i];
+    const pct = gauges[i].metric?.pct;
+    const num = pct == null ? '—' : String(Math.round(pct));
+    const r = 8.5;
+    const c = 2 * Math.PI * r;
+    const pctFrac = pct == null ? 0 : Math.max(0, Math.min(100, pct)) / 100;
+    const offset = c - pctFrac * c;
+    const progress = miniRing.querySelectorAll('circle')[1];
+    setAttrIfChanged(progress, 'stroke-dashoffset', offset.toFixed(2));
+    setTextIfChanged(miniRing.querySelector('.lbl'), num);
+    setAttrIfChanged(miniRing, 'title', `${gauges[i].label} ${num}%`);
+  }
+  setTextIfChanged(inline.querySelector('[data-role="period-lbl"]'), PERIOD_LABELS[state.period] ?? state.period);
+  setTextIfChanged(inline.querySelector('[data-role="period-cost"]'), sevenDayCost != null ? fmtUSD(sevenDayCost) : '—');
+  if (balance != null) {
+    setTextIfChanged(inline.querySelector('[data-role="bal-num"]'), fmtUSD(balance));
   }
 }
 
