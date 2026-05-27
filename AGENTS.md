@@ -411,6 +411,24 @@ If it errors, Cargo.lock still has the previous version and must be bumped befor
 
 Alternative auto-fix that's still safe to run from the version-bump PR branch: `cargo check --manifest-path src-tauri/Cargo.toml` once, then commit any Cargo.lock changes. The lock is repo-tracked so it must be committed alongside the other three files.
 
+### 22. Auto-refresh paths must NOT destroy long-lived animated children
+
+When a recurring `setInterval` / `setTimeout` callback rebuilds a DOM region (typically `el.innerHTML = template(data)` or `el.replaceChildren(...)`), EVERY child of that region is destroyed and recreated — including descendants whose CSS keyframe animation is mid-cycle. The animation restarts at frame 0 on each tick. With a 60-second cadence and a 2-second `pulse`, the user perceives a subtle brightness/scale snap once a minute. v0.9.4 → v0.9.8 shipped exactly this regression for `<span class="dot-live">` inside `#plan-meta`, caught and fixed in v0.9.9 (full postmortem in `AGENT_LEARNINGS.md`).
+
+**Pattern: split the render into two phases.**
+
+1. **Structural phase** — runs only on **shape transitions** (placeholder → ingested, healthy → degraded, balance-line absent → present, etc.). Reassign `innerHTML` here. Track each distinction with a module-level flag so the rebuild can be skipped when the shape hasn't changed (see `__planCardMode`, `__planStatusTone`, `__planInlineHasBalance` in `public/app.js`).
+2. **Surgical phase** — runs on every tick. Walks the existing DOM and mutates only the leaf text/attribute values. Use `setTextIfChanged(el, val)` (defined in `public/app.js`) — it prefers `el.firstChild.data = val` on single-text-node children, which fires `characterData` mutations (NOT `childList`), so siblings and their animations are untouched. Fall back to `el.textContent` only when the element has mixed children.
+
+`Node.textContent = val` is also UNSAFE for the surgical phase — its setter spec ALWAYS replaces all children with a fresh text node, even when the new value equals the old. That fires `childList` mutations and can restart sibling animations through layout interplay. Prefer `Text.data` writes via the `setTextIfChanged` helper.
+
+**Verifying:** A Playwright `MutationObserver` against the auto-refresh region should record only `characterData` mutations across cycles when the underlying data is unchanged — **zero `childList` mutations** on the region root. Tag a long-lived animated child with `dataset.flickertag = 'A'` after installing the observer; if the tag survives all refresh cycles, element identity is preserved and the animation isn't restarting. v0.9.9's verification did exactly this on PORT=3499 across three 60s cycles.
+
+**Existing auto-refresh paths to mind** (touch these and re-read this landmine):
+
+- `public/app.js` plan-card auto-refresh (60s) — surgical-update split in v0.9.9 (`renderPlanCapacity`, `renderFinanceSide`; helpers `setTextIfChanged` / `setAttrIfChanged` / `updateBigRings` / `updatePlanMeta` / `updatePlanInline`).
+- `popover/popover.js` popover auto-refresh (10s) — currently rebuilds via `renderPopover()` on every tick. No visible flicker today because the popover surface has no long-lived CSS-animated element, but the same surgical-update pattern applies if a `.dot-live`-style element is ever added.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

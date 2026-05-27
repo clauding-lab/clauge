@@ -63,7 +63,7 @@ The result was a ~30-DOM-mutation churn cycle per minute, perceptible because of
 **Cross-references:**
 
 - **AGENTS.md landmine #21** (new, shipped together) — "Version bumps require Cargo.lock too" (different lesson, but bundled in this release because the v0.9.8 → v0.9.8 follow-up Cargo.lock PR existed only because of this gap).
-- **AGENTS.md landmine #22** candidate — "Auto-refreshing render paths must not destroy long-lived animated children" (lesson from this incident; not yet added — would generalize across all `setInterval`-driven re-renders).
+- **AGENTS.md landmine #22** (shipped) — "Auto-refresh paths must NOT destroy long-lived animated children" — generalizes the lesson across all `setInterval`-driven re-renders, with the two-phase structural/surgical render pattern + verification recipe codified.
 - **Global rulebook** — promoted the meta-lesson "auto-refresh by reassigning innerHTML restarts animations on every destroyed child; split structural + surgical updates" to `~/.claude/AGENT_LEARNINGS.md`.
 - **Auto-memory** — new `project_v0_9_8_v0_9_9_plan_flicker.md` postmortem + new `feedback_innerhtml_animation_restart.md` cross-project rule.
 
