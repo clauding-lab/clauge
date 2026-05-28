@@ -11,23 +11,49 @@
          Transporter 90885 (nested executable profile mismatch) fires.
          Standard MAS practice: sign helpers/sidecars with minimal entitlements
          (no app-id, no team-id) so they don't trip nested-executable profile
-         checks. The main bundle keeps the full entitlements + embedded profile. -->
-    <!-- app-sandbox: required; sidecar inherits parent sandbox. -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
+         checks. The main bundle keeps the full entitlements + embedded profile.
+
+         v0.9.10 (Apple Issue 2 fix): com.apple.security.app-sandbox is
+         REMOVED from this list. clauge-server is a standalone Mach-O
+         binary (no .app bundle wrapper) and therefore has NO embedded
+         Info.plist with `CFBundleIdentifier`. When the binary launches
+         WITH the app-sandbox entitlement, libsystem_secinit.dylib's
+         `_libsecinit_appsandbox` tries to set up a per-bundle sandbox
+         container, fails to find a bundle identifier via
+         `kCFBundleIdentifierKey`, and the binary SIGTRAPs during dyld
+         initializer execution — BEFORE any of our Rust/Node code runs.
+         This was the actual root cause of Apple's v0.9.0 build 3 rejection
+         under Guideline 2.1(a) ("app does not load its content after
+         launch"); the wizard race fix is necessary but not sufficient.
+
+         Without the app-sandbox entitlement, secinitd skips per-bundle
+         setup for this binary and the kernel applies the parent's sandbox
+         via process-tree inheritance. Verified locally 2026-05-28: sidecar
+         spawned, bound 127.0.0.1:3456, /api/health returned with
+         claudeDir resolved to the parent's container path
+         (~/Library/Containers/com.clauding.clauge/Data/.claude). The
+         security posture is unchanged — the sidecar is still sandboxed,
+         just inheriting rather than declaring its own container.
+
+         The remaining keys are runtime-hardening / non-sandbox flags:
+         cs.allow-jit is required for V8 JIT in the SEA Node binary, and
+         the network + files entitlements are kept for defense-in-depth
+         (harmless under inherited sandbox; would matter if Apple later
+         requires per-binary entitlement declarations). -->
     <!-- network.client: outbound HTTPS to api.anthropic.com (the actual caller). -->
     <key>com.apple.security.network.client</key>
     <true/>
     <!-- network.server: listens on 127.0.0.1:3456 for the Tauri main process. -->
     <key>com.apple.security.network.server</key>
     <true/>
-    <!-- cs.allow-jit: matches main binary; harmless on a non-JIT process. -->
+    <!-- cs.allow-jit: required for the SEA Node binary's V8 JIT. NOT a sandbox
+         entitlement — it's a code-signing hardening flag. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <!-- files.user-selected.read-only: needed if sidecar reads bookmarked path. -->
+    <!-- files.user-selected.read-only: harmless under inherited sandbox. -->
     <key>com.apple.security.files.user-selected.read-only</key>
     <true/>
-    <!-- files.bookmarks.app-scope: needed if sidecar resolves app-scope bookmarks. -->
+    <!-- files.bookmarks.app-scope: harmless under inherited sandbox. -->
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
 </dict>

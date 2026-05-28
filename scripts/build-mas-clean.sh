@@ -16,18 +16,33 @@
 # new signature.
 #
 # Usage:
-#   ./scripts/build-mas-clean.sh          # production build (signed PKG for Transporter)
-#   ./scripts/build-mas-clean.sh --ad-hoc # ad-hoc-signed .app for local sandbox testing
-#                                         # (no cert needed; skips productbuild + productsign)
+#   ./scripts/build-mas-clean.sh             # production build (signed PKG for Transporter)
+#   ./scripts/build-mas-clean.sh --local-test # launchable .app for local sandbox testing
+#                                            # (uses real cert but stripped entitlements +
+#                                            #  removes embedded.provisionprofile so macOS
+#                                            #  doesn't reject the Production-only profile
+#                                            #  for direct launch)
 #
 # Output:
-#   Production: /tmp/Clauge-MAS-<VERSION>.pkg
-#   Ad-hoc:     ad-hoc signed .app at $APP_PATH (path printed at end)
+#   Production:  /tmp/Clauge-MAS-<VERSION>.pkg
+#   Local-test:  re-signed .app at $APP_PATH (path printed at end)
+#
+# Why local-test mode exists: a MAS-built .app signed with a Production
+# provisioning profile cannot be double-clicked on the dev machine — macOS
+# refuses to install Production profiles for direct launch (it accepts only
+# Development profiles for that). To verify the sandbox-runtime behavior
+# (wizard race fix + sidecar entitlement fix) before paying the round-trip
+# cost of a Transporter upload + Apple Review, the script strips restricted
+# entitlements and removes the embedded profile. The sandbox still activates
+# at runtime because app-sandbox stays in the entitlements; the
+# Production-specific restrictions are simply skipped.
 set -euo pipefail
 
 MODE="production"
-if [[ "${1:-}" == "--ad-hoc" ]]; then
-  MODE="ad-hoc"
+# Backward-compatible alias: --ad-hoc was the original (misleading) name for
+# the same flow; new name is --local-test. Accept both.
+if [[ "${1:-}" == "--local-test" || "${1:-}" == "--ad-hoc" ]]; then
+  MODE="local-test"
 fi
 
 # Resolve repo root from the script's own location so this works regardless
@@ -100,25 +115,44 @@ cd "$SRC_TAURI"
 cargo tauri build --features mas --config tauri.mas.conf.json \
   --bundles app --target universal-apple-darwin
 
-# Pick the signing identity for the re-sign steps. Production uses the real
-# Apple Developer cert; ad-hoc uses "-" (the codesign convention for an
-# ad-hoc / unsigned-but-with-entitlements signature, which is enough to
-# activate the App Sandbox at runtime locally).
+# Always use the real Apple Developer cert. Ad-hoc signing (identity="-")
+# was tried during v0.9.10 sandbox-test work and rejected by AMFI with code
+# -424 ("file is adhoc signed but contains restricted entitlements"): the
+# main app's `com.apple.application-identifier` + `team-identifier` keys
+# require a real cert + matching provisioning profile, even just to launch.
+# So the cert is needed regardless of mode; what changes between modes is
+# the ENTITLEMENTS file used for the main app (full vs stripped) and
+# whether we keep the embedded provisioning profile.
+SIGN_IDENTITY="$APP_CERT_SHA1"
+
+# Main-app entitlements file: production uses the full file with restricted
+# keys + keeps embedded.provisionprofile; local-test uses the stripped
+# variant and removes the profile so macOS doesn't reject the Production
+# profile for direct launch.
 if [[ "$MODE" == "production" ]]; then
-  SIGN_IDENTITY="$APP_CERT_SHA1"
+  MAIN_ENTITLEMENTS="$SRC_TAURI/entitlements.mas.plist"
 else
-  SIGN_IDENTITY="-"
+  MAIN_ENTITLEMENTS="$SRC_TAURI/entitlements.local-test.plist"
+  if [[ -f "$APP_PATH/Contents/embedded.provisionprofile" ]]; then
+    echo "==> Removing embedded.provisionprofile (rejected for direct launch in local-test mode)..."
+    rm -f "$APP_PATH/Contents/embedded.provisionprofile"
+  fi
 fi
 
-echo "==> Re-signing sidecar with sidecar entitlements (no app-id; identity=$SIGN_IDENTITY)..."
+echo "==> Re-signing sidecar with sidecar entitlements (no app-id, no app-sandbox)..."
+# v0.9.10 (Apple Issue 2 actual root cause): entitlements-sidecar.mas.plist
+# no longer declares com.apple.security.app-sandbox — the sidecar inherits
+# the parent's sandbox via process tree. Standalone Mach-O binaries without
+# embedded Info.plist crash during libsystem_secinit's per-binary container
+# setup if they declare app-sandbox themselves. See AGENT_LEARNINGS.md.
 codesign --force --options runtime \
   --entitlements "$SRC_TAURI/entitlements-sidecar.mas.plist" \
   --sign "$SIGN_IDENTITY" \
   "$SIDECAR_PATH"
 
-echo "==> Re-signing main .app bundle to re-seal..."
+echo "==> Re-signing main .app bundle (entitlements=$(basename "$MAIN_ENTITLEMENTS"))..."
 codesign --force --options runtime \
-  --entitlements "$SRC_TAURI/entitlements.mas.plist" \
+  --entitlements "$MAIN_ENTITLEMENTS" \
   --sign "$SIGN_IDENTITY" \
   "$APP_PATH"
 
@@ -129,22 +163,32 @@ codesign -d --entitlements - --xml "$APP_PATH" 2>/dev/null | plutil -convert xml
 echo "Sidecar entitlements (should NOT include application-identifier):"
 codesign -d --entitlements - --xml "$SIDECAR_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10
 
-if [[ "$MODE" == "ad-hoc" ]]; then
+if [[ "$MODE" == "local-test" ]]; then
   echo
-  echo "==> DONE (ad-hoc mode). Ad-hoc-signed .app at:"
+  echo "==> DONE (local-test mode). Re-signed .app at:"
   echo "    $APP_PATH"
   echo
-  echo "    To test the wizard race fix in sandbox-equivalent context:"
-  echo "      1. Create a fresh macOS user account (System Settings → Users & Groups → +),"
-  echo "         OR temporarily move ~/.claude/ aside to simulate a clean install."
-  echo "      2. Copy $APP_PATH into /Applications/ in that account."
-  echo "      3. Launch from /Applications/Clauge.app. Observe:"
-  echo "           - Welcome wizard window appears WITH content (not blank)"
-  echo "           - Click Grant Access → NSOpenPanel opens → pick ~/.claude/"
-  echo "           - Dashboard populates with usage data"
-  echo "      4. Quit, relaunch. Wizard should NOT reappear (bookmark persisted)."
-  echo "      5. Console.app — predicate \"process == 'Clauge'\" — should show no"
-  echo "         sandbox denials on ~/.claude/.credentials.json reads."
+  echo "    To verify the sandbox-runtime behavior before Transporter upload:"
+  echo "      1. (Optional) Stop any production Clauge first:"
+  echo "           pkill -TERM -f '/Applications/Clauge.app/Contents/MacOS/clauge'"
+  echo "      2. (Optional) Reset the sandbox container for a true fresh-launch state:"
+  echo "           rm -rf ~/Library/Containers/com.clauding.clauge"
+  echo "      3. Launch the local-test .app directly:"
+  echo "           open $APP_PATH"
+  echo "      4. Observe — within ~1–8 seconds the welcome wizard should appear"
+  echo "         WITH visible content (heading 'Welcome to Clauge', step 1 body)."
+  echo "      5. Click Grant Access → NSOpenPanel opens → pick your real ~/.claude/."
+  echo "         The bookmark persists; sidecar respawns with CLAUDE_DIR populated."
+  echo "      6. Walk through wizard steps; the dashboard should populate from data."
+  echo "      7. Quit and relaunch — the wizard should NOT reappear (bookmark"
+  echo "         persisted in the sandbox container)."
+  echo
+  echo "    Console diagnostic predicates (Console.app or 'log show'):"
+  echo "      process == 'clauge' OR process == 'clauge-server'"
+  echo "    Watch for:"
+  echo "      - 'CLAUGE_BOUND_PORT=' (sidecar bound, sidecar-ready about to fire)"
+  echo "      - 'Welcome to Clauge' window-open event (~1-8 s post-launch)"
+  echo "      - any 'Sandbox: ... deny' lines (would indicate a remaining issue)"
   exit 0
 fi
 
