@@ -86,11 +86,16 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
-/* v0.9.4: window is .transparent(true) with apply_vibrancy on top, so html
-   + body's own background slot stays transparent. The wash below at low
-   alpha lets the OS vibrancy material (wallpaper-tinted) bleed through;
-   the brand-orange sheen on body::before is the identity touch top-left. */
-html, body { background: transparent; }
+/* v0.9.10: solid opaque background.
+   v0.9.4 → v0.9.9 used `html, body { background: transparent }` so the
+   apply_vibrancy NSVisualEffectView underneath could tint the dashboard
+   with the wallpaper. Every auto-refresh tick recomposited that vibrancy
+   layer, producing a visible flicker on the wallpaper showthrough. Kill
+   the transparency: solid dark bg here means there's nothing for the
+   effect view to composite. apply_vibrancy is also removed from
+   src-tauri/src/windows.rs in this release. The brand-orange sheen on
+   body::before stays as the identity touch top-left. */
+html, body { background: #14121a; }
 
 body {
   min-height: 100vh;
@@ -100,16 +105,10 @@ body {
   color: var(--text);
   font-feature-settings: var(--tnum);
   -webkit-font-smoothing: antialiased;
-  /* Dashboard surface is much larger than the popover (340 px wide). At the
-     popover's 0.55→0.60 alpha the wallpaper bleed reads as elegant tinting;
-     at full-window dashboard scale the same alpha makes the surface feel
-     "see-through" with too much wallpaper showing. Bumping to 0.80→0.88
-     keeps a touch of vibrancy without bleeding through. Popover wash in
-     popover/popover.css stays at 0.55→0.60 — that surface stays elegant. */
+  /* Solid opaque gradient — same end-stops as the prior alpha version,
+     but at full opacity now that there's no vibrancy behind. */
   background:
-    linear-gradient(180deg, rgba(30, 26, 38, 0.80) 0%, rgba(20, 18, 26, 0.88) 100%);
-  -webkit-backdrop-filter: blur(80px) saturate(180%);
-          backdrop-filter: blur(80px) saturate(180%);
+    linear-gradient(180deg, #1e1a26 0%, #14121a 100%);
   background-attachment: fixed;
   position: relative;
 }

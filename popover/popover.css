@@ -46,7 +46,13 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
-  background: transparent;
+  /* v0.9.10: solid opaque background. v0.9.4 → v0.9.9 used `transparent`
+     here so the NSVisualEffectView in native_popover.rs could tint the
+     popover with the wallpaper. Every 10 s refresh tick recomposited the
+     vibrancy material and produced a visible flicker on the wallpaper
+     showthrough. Solid bg = nothing for the effect view to composite,
+     no flicker. */
+  background: #14121a;
   color: var(--text);
   font-family: var(--sans);
   font-size: 13px;
@@ -64,23 +70,16 @@ html, body {
 }
 
 /* ── Root popover surface ──────────────────────────────────── */
-/* v0.9.4 — popover vibrancy wash.
- *
- * Goal: visible wallpaper-hue bleed through a tinted overlay (macOS HUD-style
- * vibrancy via CSS). Dashboard kept its v0.9.3 wash — `.transparent(true)` +
- * `apply_vibrancy(HudWindow, ...)` broke the dashboard render during smoke,
- * so single-surface vibrancy ships here.
- *
- * Tuning history (v0.9.1 .22 → too see-through; v0.9.4 .93 → too flat).
- * Settled on .55-.60 alpha with 80px blur — wallpaper colors visible through
- * a tinted overlay; text on top stays legible on bright backgrounds.
- */
+/* v0.9.10 — solid opaque popover surface.
+ * v0.9.4 → v0.9.9 used a semi-transparent gradient + backdrop-filter so
+ * the NSVisualEffectView underneath bled wallpaper colors through. Killed
+ * here per the flicker fix — the vibrancy recomposite was the visible
+ * flash every 10 s refresh tick. End-stops kept at the same hues; just
+ * full opacity now. */
 #root {
   width: 340px;
   background:
-    linear-gradient(180deg, rgba(30, 26, 38, 0.55) 0%, rgba(20, 18, 26, 0.60) 100%);
-  -webkit-backdrop-filter: blur(80px) saturate(180%);
-          backdrop-filter: blur(80px) saturate(180%);
+    linear-gradient(180deg, #1e1a26 0%, #14121a 100%);
   border-radius: 14px;
   box-shadow:
     inset 0 1px 0 rgba(244, 236, 228, 0.10),

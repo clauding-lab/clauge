@@ -7,10 +7,10 @@
 //! `position_popover_under_tray`) was deleted; only `create_dashboard` remains.
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
-#[cfg(target_os = "windows")]
-use window_vibrancy::{apply_acrylic, apply_mica};
-#[cfg(target_os = "macos")]
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+// v0.9.10: window_vibrancy imports removed alongside the apply_vibrancy /
+// apply_mica / apply_acrylic calls. The `window-vibrancy` crate stays in
+// Cargo.toml because future flavors may want it back (and it's harmless
+// when unused), but no current code path imports it.
 
 pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Idempotent: if "main" window exists already, just return — caller (tray)
@@ -148,34 +148,17 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build()?;
 
-    // v0.9.4 vibrancy. HudWindow tints with wallpaper hue at low saturation.
-    // 14.0 is the window corner radius. On Windows, prefer Mica (Win11), fall
-    // through to Acrylic (Win10) with a dark RGBA tint matching the upper
-    // gradient stop.
-    //
-    // v0.9.7: switched state from FollowsWindowActiveState → Active. The former
-    // dims the vibrancy layer when the dashboard loses focus, producing a
-    // visible flicker as the window moves between active/inactive states (e.g.
-    // when the user clicks back to the app). Active keeps the material at full
-    // intensity regardless of focus, matching the popover (which already uses
-    // Active via NSVisualEffectView in native_popover.rs).
-    #[cfg(target_os = "macos")]
-    if let Err(e) = apply_vibrancy(
-        &win,
-        NSVisualEffectMaterial::HudWindow,
-        Some(NSVisualEffectState::Active),
-        Some(14.0),
-    ) {
-        log::warn!("apply_vibrancy failed on macOS dashboard: {}", e);
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if apply_mica(&win, Some(true)).is_err() {
-            if let Err(e) = apply_acrylic(&win, Some((30, 26, 38, 160))) {
-                log::warn!("apply_acrylic fallback failed on Windows dashboard: {}", e);
-            }
-        }
-    }
+    // v0.9.10: vibrancy/Mica/Acrylic removed. v0.9.4 → v0.9.9 applied
+    // NSVisualEffectMaterial::HudWindow (macOS) or Mica/Acrylic (Windows)
+    // for wallpaper-hue tinting through a transparent body bg. Every
+    // auto-refresh tick (60 s on the dashboard) caused the effect view
+    // to recomposite the wallpaper showthrough, producing a visible
+    // flicker. The CSS body bg is now solid opaque
+    // (public/styles.css#html,body), so there's nothing to composite
+    // through anyway — removing the Rust-side call frees the GPU compute.
+    // .transparent(true) on the WebviewWindow stays for the macOS
+    // TitleBarStyle::Overlay + hidden_title combo; it's a no-op for
+    // user-visible effect now that the body fills the window opaquely.
 
     // Hide-on-close (macOS) vs let-OS-close (Windows). On macOS the menu-bar
     // popover keeps the app resident, so we hide instead of close to make

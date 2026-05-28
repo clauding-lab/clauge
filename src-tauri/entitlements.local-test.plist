@@ -2,31 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- MAS LOCAL-TEST ONLY: main app entitlements for `build-mas-clean.sh
-         --local-test`. Same as `entitlements.mas.plist` MINUS the
-         `com.apple.application-identifier` and
-         `com.apple.developer.team-identifier` keys.
+    <!-- MAS local-test only. Same as entitlements.mas.plist MINUS the
+         application-identifier + team-identifier keys.
 
-         Why: those two keys are "restricted entitlements" that require a
-         matching provisioning profile. The MAS provisioning profile is a
-         PRODUCTION profile (App Store distribution), and macOS refuses to
-         install Production profiles for direct launch — it accepts only
-         Development profiles for that. So a Production-profile-bound .app
-         can't be double-clicked on the dev machine for sandbox-equivalent
-         testing; the kernel rejects with AMFI error -413 ("No matching
-         profile found") at launch.
+         Those two keys are restricted entitlements that require a matching
+         provisioning profile. The MAS provisioning profile is a PRODUCTION
+         profile (App Store distribution), and macOS refuses to install
+         Production profiles for direct launch (only Development profiles
+         work for that). A Production-profile-bound .app cannot be
+         double-clicked on the dev machine for sandbox-equivalent testing;
+         the kernel rejects with AMFI error -413 ("No matching profile
+         found") at launch.
 
-         This stripped variant — combined with removing
-         Contents/embedded.provisionprofile from the .app and re-signing
-         with the real cert — lets the App Sandbox initialize without
-         demanding a Development profile, so the wizard race fix and
-         sidecar entitlement fix can be verified locally before paying
-         the round-trip cost of a Transporter upload + Apple Review.
+         This stripped variant, combined with removing
+         Contents/embedded.provisionprofile and re-signing with the real
+         cert, lets the App Sandbox initialize without demanding a
+         Development profile. The wizard race fix and sidecar entitlement
+         fix can then be verified locally before paying the round-trip
+         cost of a Transporter upload + Apple Review.
 
-         NOT for Transporter upload. The script flow:
-           --local-test → entitlements.local-test.plist (this file) + strip
-                          Contents/embedded.provisionprofile
-           production   → entitlements.mas.plist (full) + keep profile -->
+         NOT for Transporter upload. See scripts/build-mas-clean.sh for
+         the two-mode flow. -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
     <key>com.apple.security.files.user-selected.read-only</key>
