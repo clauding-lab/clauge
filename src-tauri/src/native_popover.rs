@@ -514,11 +514,20 @@ fn create_popover(
     // WKWebView opaque — its host NSView was drawing on top of the effect
     // view. With drawsBackground=NO + setOpaque(false) + clear layer
     // backgroundColor above, the WKWebView is now fully transparent and
-    // the effect view's vibrancy material (same HudWindow the dashboard
-    // uses via apply_vibrancy) shows through correctly. BehindWindow
-    // blending mode pulls the wallpaper behind the NSPopover window through.
+    // the effect view's vibrancy material shows through correctly.
+    // BehindWindow blending mode pulls the wallpaper behind the NSPopover
+    // window through.
+    //
+    // v0.9.10: material switched HUDWindow → Popover. HUDWindow is
+    // Apple's material for floating utility palettes, with more
+    // aggressive continuous compositing of the wallpaper behind. Popover
+    // is the material Apple ships specifically for NSPopover content,
+    // with a less dynamic compositor. Reduces (though doesn't fully
+    // eliminate) the slight repaint flicker on the 10 s auto-refresh
+    // cycle that's inherent to a transparent WKWebView CALayer being
+    // re-blended onto a vibrancy backdrop on each DOM update.
     let effect_view = NSVisualEffectView::initWithFrame(mtm.alloc(), frame);
-    effect_view.setMaterial(NSVisualEffectMaterial::HUDWindow);
+    effect_view.setMaterial(NSVisualEffectMaterial::Popover);
     effect_view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
     effect_view.setState(NSVisualEffectState::Active);
     effect_view.addSubview(&webview);

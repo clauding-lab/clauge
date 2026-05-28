@@ -86,16 +86,20 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
-/* v0.9.10: solid opaque background.
-   v0.9.4 → v0.9.9 used `html, body { background: transparent }` so the
-   apply_vibrancy NSVisualEffectView underneath could tint the dashboard
-   with the wallpaper. Every auto-refresh tick recomposited that vibrancy
-   layer, producing a visible flicker on the wallpaper showthrough. Kill
-   the transparency: solid dark bg here means there's nothing for the
-   effect view to composite. apply_vibrancy is also removed from
-   src-tauri/src/windows.rs in this release. The brand-orange sheen on
-   body::before stays as the identity touch top-left. */
-html, body { background: #14121a; }
+/* v0.9.10: transparent body so the macOS NSVisualEffectView (HudWindow
+   material, applied via apply_vibrancy in src-tauri/src/windows.rs)
+   tints the dashboard with the wallpaper.
+
+   v0.9.10 mid-cycle correction (the original v0.9.10 attempt at
+   "kill transparency entirely" worked but Adnan called the solid
+   dashboard visually flat). The actual flicker root cause was the
+   CSS `backdrop-filter` running concurrently with the native vibrancy
+   — two compositors (WebKit + Core Animation) on independent frame
+   clocks, going out of sync on every auto-refresh tick. Removing JUST
+   the CSS backdrop-filter (keeping the native vibrancy) collapses
+   to one compositor → no cross-process frame sync → no flicker.
+   The wallpaper showthrough still happens via the native vibrancy. */
+html, body { background: transparent; }
 
 body {
   min-height: 100vh;
@@ -105,10 +109,15 @@ body {
   color: var(--text);
   font-feature-settings: var(--tnum);
   -webkit-font-smoothing: antialiased;
-  /* Solid opaque gradient — same end-stops as the prior alpha version,
-     but at full opacity now that there's no vibrancy behind. */
+  /* Semi-transparent gradient overlays the native vibrancy with the
+     brand-tinted wash. v0.9.4 → v0.9.9 also had `backdrop-filter:
+     blur(80px) saturate(180%)` here — removed in v0.9.10 because that
+     was the WebKit-side compositor racing the native NSVisualEffectView,
+     producing the visible 60 s / 10 s refresh flicker. The native
+     vibrancy already provides the blur; the CSS only needs to add the
+     tint. */
   background:
-    linear-gradient(180deg, #1e1a26 0%, #14121a 100%);
+    linear-gradient(180deg, rgba(30, 26, 38, 0.80) 0%, rgba(20, 18, 26, 0.88) 100%);
   background-attachment: fixed;
   position: relative;
 }

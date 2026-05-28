@@ -7,10 +7,10 @@
 //! `position_popover_under_tray`) was deleted; only `create_dashboard` remains.
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
-// v0.9.10: window_vibrancy imports removed alongside the apply_vibrancy /
-// apply_mica / apply_acrylic calls. The `window-vibrancy` crate stays in
-// Cargo.toml because future flavors may want it back (and it's harmless
-// when unused), but no current code path imports it.
+#[cfg(target_os = "windows")]
+use window_vibrancy::{apply_acrylic, apply_mica};
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Idempotent: if "main" window exists already, just return — caller (tray)
@@ -148,17 +148,47 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build()?;
 
-    // v0.9.10: vibrancy/Mica/Acrylic removed. v0.9.4 → v0.9.9 applied
-    // NSVisualEffectMaterial::HudWindow (macOS) or Mica/Acrylic (Windows)
-    // for wallpaper-hue tinting through a transparent body bg. Every
-    // auto-refresh tick (60 s on the dashboard) caused the effect view
-    // to recomposite the wallpaper showthrough, producing a visible
-    // flicker. The CSS body bg is now solid opaque
-    // (public/styles.css#html,body), so there's nothing to composite
-    // through anyway — removing the Rust-side call frees the GPU compute.
-    // .transparent(true) on the WebviewWindow stays for the macOS
-    // TitleBarStyle::Overlay + hidden_title combo; it's a no-op for
-    // user-visible effect now that the body fills the window opaquely.
+    // v0.9.10: native vibrancy restored, CSS-side `backdrop-filter`
+    // removed (see public/styles.css + popover/popover.css). The
+    // mid-v0.9.10 "kill transparency entirely" attempt verified that
+    // a single-compositor render pipeline doesn't flicker; the
+    // long-standing flicker since v0.9.4 was from the WebKit CSS
+    // backdrop-filter racing the Core Animation vibrancy — two
+    // compositors on independent frame clocks going out of sync on
+    // every auto-refresh tick. Keeping the native vibrancy and
+    // dropping the CSS backdrop-filter collapses to a single
+    // compositor (CA) doing the blur, with the WebKit body simply
+    // overlaying a semi-transparent gradient tint on top. No frame
+    // mismatch → no flicker.
+    //
+    // 14.0 is the window corner radius. NSVisualEffectState::Active
+    // keeps the material at full intensity regardless of focus
+    // (v0.9.7 lesson: FollowsWindowActiveState caused a focus-change
+    // flicker as the material dimmed/brightened on app activation).
+    // v0.9.10: HudWindow → WindowBackground. HudWindow is Apple's
+    // material for floating utility palettes (HUD-style), with a more
+    // dynamic continuous-sampling compositor. WindowBackground is the
+    // material specifically intended for full window backgrounds —
+    // less aggressive recompositing on layer updates, which translates
+    // to less visible flicker when the WKWebView repaints on
+    // auto-refresh.
+    #[cfg(target_os = "macos")]
+    if let Err(e) = apply_vibrancy(
+        &win,
+        NSVisualEffectMaterial::WindowBackground,
+        Some(NSVisualEffectState::Active),
+        Some(14.0),
+    ) {
+        log::warn!("apply_vibrancy failed on macOS dashboard: {}", e);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if apply_mica(&win, Some(true)).is_err() {
+            if let Err(e) = apply_acrylic(&win, Some((30, 26, 38, 160))) {
+                log::warn!("apply_acrylic fallback failed on Windows dashboard: {}", e);
+            }
+        }
+    }
 
     // Hide-on-close (macOS) vs let-OS-close (Windows). On macOS the menu-bar
     // popover keeps the app resident, so we hide instead of close to make
