@@ -24,6 +24,48 @@ mod windows;
 
 use tauri::Manager;
 
+/// v0.9.10 (Apple Issue 2 fix): build the first-launch onboarding WebviewWindow
+/// at most once. The setup() block registers TWO ways to trigger this — a
+/// `sidecar-ready` event listener AND a 30 s timeout fallback — and races
+/// them via the `spawned` `AtomicBool`. Whichever fires first wins; the loser
+/// observes `swap(true)` returning true and bails out.
+///
+/// Build failures here are logged but do NOT flip `onboarding_completed=true`
+/// (the prior implementation did, which turned a transient build error into a
+/// permanent dead state — see commit history and AGENT_LEARNINGS.md).
+fn spawn_wizard_window_once(
+    app: &tauri::AppHandle,
+    port: u16,
+    spawned: &std::sync::atomic::AtomicBool,
+) {
+    if spawned.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let url_str = format!("http://127.0.0.1:{}/onboarding/index.html", port);
+    let url = match url_str.parse() {
+        Ok(u) => tauri::WebviewUrl::External(u),
+        Err(e) => {
+            log::error!("Failed to parse wizard URL '{}': {}", url_str, e);
+            return;
+        }
+    };
+    let result = tauri::WebviewWindowBuilder::new(app, "onboarding", url)
+        .title("Welcome to Clauge")
+        .inner_size(560.0, 640.0)
+        .resizable(false)
+        .center()
+        .visible(true)
+        .build();
+    if let Err(e) = result {
+        // Intentionally NOT setting onboarding_completed=true here: a
+        // transient build failure (resource race during cold launch, etc.)
+        // should be retried on next launch, not turned into a permanent
+        // "no-wizard-ever" state. The user's next launch goes through the
+        // same code path and tries again.
+        log::error!("Failed to spawn onboarding wizard window: {}", e);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize the `log` crate backend; without this every log::* call
@@ -134,13 +176,23 @@ pub fn run() {
             // v0.7.2: first-launch onboarding wizard. Gated by a SEPARATE flag
             // (`onboarding_completed`) so a future "Re-run setup" feature can
             // reset it without flipping the autostart flag.
-            // The wizard window is spawned even before sidecar port discovery
-            // completes — the URL it loads uses port 3456 (the default sidecar
-            // bind) which the port_discovery::SpawnAt branch reserves. If the
-            // user has an external clauge-server on a non-default port, the
-            // wizard's URL would fall through to a 404; for v0.7.2 we accept
-            // this edge case since external-clauge-server users are typically
-            // power users who've already onboarded.
+            //
+            // v0.9.10 (Apple Issue 2 fix): the wizard window URL points at
+            // the sidecar's HTTP server (http://127.0.0.1:PORT/onboarding/...).
+            // The sidecar takes 1–8 s to bind on cold launch in sandbox
+            // (loadPriceTable HTTP fetch + serveStatic setup + listenWithRetry).
+            // The prior implementation opened the wizard at T+500ms with no
+            // listener for sidecar-ready → webview showed ERR_CONNECTION_REFUSED
+            // → reviewer saw a blank "Welcome to Clauge" window → Apple
+            // rejected under Guideline 2.1(a).
+            //
+            // Fix: wait for the `sidecar-ready` event (emitted by sidecar.rs
+            // when PORT_MARKER is captured AND by the External-discovery
+            // branch below) before building the window. A 30 s timeout
+            // fallback opens the window anyway if the event never fires —
+            // better to show a window with an error page than to appear
+            // completely unresponsive (if the timeout path fires, the
+            // sidecar is genuinely broken and a relaunch is needed).
             {
                 use tauri_plugin_store::StoreExt;
                 let store = app.store("settings.json").map_err(|e| {
@@ -148,37 +200,41 @@ pub fn run() {
                     e
                 })?;
                 if store.get("onboarding_completed").is_none() {
-                    log::info!("First-launch wizard not yet completed; spawning onboarding window");
-                    let app_handle = app.handle().clone();
-                    // Spawn into the async runtime so we don't block setup.
-                    // The wizard window uses URL http://127.0.0.1:3456/onboarding/index.html
-                    // which will be available once the sidecar starts (the spawn
-                    // below races with port_discovery, but Tauri's WebviewWindow
-                    // handles a temporarily-404 load gracefully by retrying when
-                    // the user clicks).
+                    log::info!(
+                        "First-launch wizard not yet completed; deferring spawn until sidecar-ready"
+                    );
+
+                    // Coordination: build the wizard window AT MOST ONCE,
+                    // whichever fires first — the sidecar-ready event listener
+                    // (preferred) OR the 30-second fallback timeout.
+                    let wizard_spawned =
+                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+                    // Preferred path: sidecar-ready event from sidecar.rs.
+                    let app_for_listen = app.handle().clone();
+                    let spawned_for_listen = wizard_spawned.clone();
+                    use tauri::Listener;
+                    app.listen("sidecar-ready", move |event| {
+                        let port = serde_json::from_str::<serde_json::Value>(event.payload())
+                            .ok()
+                            .and_then(|v| v.get("port").and_then(|p| p.as_u64()))
+                            .map(|p| p as u16)
+                            .unwrap_or(3456);
+                        spawn_wizard_window_once(&app_for_listen, port, &spawned_for_listen);
+                    });
+
+                    // Fallback path: open after 30 s no matter what so the
+                    // user isn't staring at a menu-bar icon for half a minute
+                    // wondering if the app launched.
+                    let app_for_timeout = app.handle().clone();
+                    let spawned_for_timeout = wizard_spawned.clone();
                     tauri::async_runtime::spawn(async move {
-                        // Brief delay so port_discovery has a chance to bind.
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        let url = tauri::WebviewUrl::External(
-                            "http://127.0.0.1:3456/onboarding/index.html"
-                                .parse()
-                                .unwrap(),
-                        );
-                        let result =
-                            tauri::WebviewWindowBuilder::new(&app_handle, "onboarding", url)
-                                .title("Welcome to Clauge")
-                                .inner_size(560.0, 640.0)
-                                .resizable(false)
-                                .center()
-                                .visible(true)
-                                .build();
-                        if let Err(e) = result {
-                            log::error!("Failed to spawn onboarding wizard window: {}", e);
-                            // Mark the flag so we don't loop on a broken wizard.
-                            if let Ok(store) = app_handle.store("settings.json") {
-                                store.set("onboarding_completed", serde_json::Value::Bool(true));
-                                let _ = store.save();
-                            }
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        if !spawned_for_timeout.load(std::sync::atomic::Ordering::SeqCst) {
+                            log::warn!(
+                                "sidecar-ready event hasn't fired in 30 s; opening wizard with fallback port 3456 — webview will show ECONNREFUSED if sidecar is still down. Relaunch will retry."
+                            );
+                            spawn_wizard_window_once(&app_for_timeout, 3456, &spawned_for_timeout);
                         }
                     });
                 } else {
@@ -237,6 +293,20 @@ pub fn run() {
                                 log::error!("Failed to record external server port: {}", e);
                             }
                             crate::native_popover::reload_for_port(&app_handle, port);
+                        }
+                        // v0.9.10 (Apple Issue 2 fix): emit sidecar-ready so the
+                        // wizard listener fires for the External-discovery path
+                        // too. Without this, users with a pre-running clauge
+                        // server would never see the wizard build (the wizard
+                        // would hit its 30 s timeout fallback instead).
+                        use tauri::Emitter;
+                        if let Err(e) =
+                            app_handle.emit("sidecar-ready", serde_json::json!({ "port": port }))
+                        {
+                            log::warn!(
+                                "Failed to emit sidecar-ready event (External branch): {}",
+                                e
+                            );
                         }
                     }
                     port_discovery::DiscoveryResult::SpawnAt(_start) => {
