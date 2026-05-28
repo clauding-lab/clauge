@@ -159,9 +159,19 @@ codesign --force --options runtime \
 echo "==> Verifying signatures..."
 codesign --verify --deep --strict "$APP_PATH"
 echo "Main app entitlements (should include application-identifier in production):"
-codesign -d --entitlements - --xml "$APP_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10
+# Trailing `|| true` because grep returning no matches exits 1, which `set -e`
+# + pipefail (at the top of this script) would interpret as a fatal error
+# and kill the script silently before reaching productbuild. The grep is
+# diagnostic-only — we want to PRINT whatever it matches, not gate the
+# build on the result.
+codesign -d --entitlements - --xml "$APP_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10 || true
 echo "Sidecar entitlements (should NOT include application-identifier):"
-codesign -d --entitlements - --xml "$SIDECAR_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10
+# This grep correctly returns NO matches (sidecar deliberately omits all
+# three of those keys per the v0.9.10 fix), so `|| true` is load-bearing
+# here — without it the script silently dies before productbuild and you
+# get a re-signed .app but no .pkg. See AGENT_LEARNINGS.md 2026-05-28.
+codesign -d --entitlements - --xml "$SIDECAR_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10 || true
+echo "  (empty match above on the sidecar is correct: app-sandbox + restricted entitlements are intentionally absent)"
 
 if [[ "$MODE" == "local-test" ]]; then
   echo
