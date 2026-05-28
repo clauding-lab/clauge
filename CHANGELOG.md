@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.9.10] — 2026-05-28
+
+**Mac App Store resubmission release.** Two changes ship together: (1) the entire MAS flavor plumbing (~38 commits of v0.9.0 work) rebased onto current main so MAS users get v0.9.9's polish + flicker fix + landmines #21/#22 alongside the sandboxed flavor, and (2) the actual fix for Apple's Guideline 2.1(a) rejection of v0.9.0 build 3 — a wizard race condition where the first-launch welcome window opened before the sidecar HTTP server bound its port.
+
+DMG users are unaffected by either change (the MAS plumbing is `#[cfg(feature = "mas")]`-gated; the wizard fix improves robustness on cold launches but doesn't change behavior in practice).
+
+### Fixed (Apple Mac App Store rejection)
+
+- **First-launch wizard no longer races the sidecar.** Apple rejected v0.9.0 build 3 under Guideline 2.1(a) — "the app does not load its content after launch" — on a clean MacBook Pro 14" running macOS 26.5. Root cause: the wizard `WebviewWindow` opened 500 ms after launch with URL `http://127.0.0.1:3456/onboarding/index.html`, but the Node SEA sidecar takes 1–8 s to bind that port in sandbox (loadPriceTable HTTP fetch with 8 s timeout in `lib/cost-calculator.js:80`, then `usageStore.load()`, then serveStatic + Hono routes, then `listenWithRetry` at `server.js:678`). The wizard's webview got `ERR_CONNECTION_REFUSED` and stayed in error state — no retry, no listener for `sidecar-ready` — while Apple's reviewer saw a blank "Welcome to Clauge" window. Worse: if `build()` itself errored at 500 ms, the handler set `onboarding_completed=true` permanently, so the wizard would never appear on relaunch. Fix: wait for the `sidecar-ready` event before building the wizard window. A 30 s timeout fallback opens the window anyway if the event never fires — if that fires the sidecar is genuinely broken and the user needs to relaunch, but they at least see something instead of staring at a menu-bar icon. Build failures no longer flip `onboarding_completed=true`. The dashboard window has used this `sidecar-ready` pattern via bundled `splash.html` since v0.8.1; the wizard now matches.
+- **External-discovery branch now emits `sidecar-ready`.** Without this, users running an external `clauge-server` (npx-clauge developer scenario) would only hit the 30 s wizard timeout fallback. The SpawnAt branch already emitted it via `sidecar.rs`; External branch in `lib.rs::run::setup` now does too.
+
+### Added (Mac App Store flavor)
+
+This is the v0.9.0 work, rebased. None of it is wired in the DMG flavor — every change is gated by `#[cfg(feature = "mas")]` on the Rust side and `body.is-flavor-mas` (driven by the `is_mas_flavor` IPC) on the frontend.
+
+- **Sandboxed Mac App Store flavor.** App Sandbox with security-scoped bookmark for read-only access to `~/.claude/`. Wizard step 2 swaps macOS Keychain prompt copy for "Grant access to your Claude Code logs" with an NSOpenPanel folder picker. Wizard step 5 swaps Keychain Connect copy for bookmark-read copy.
+- **Settings → Connections gets a 4th row.** Surfaces Claude Code logs grant state (granted / not granted) with a "Re-select folder" button. Only renders when `body.is-flavor-mas`.
+- **Settings → Updates routes to the App Store.** On MAS the "Check Now" button relabels to "Get latest version on the App Store" and opens `macappstore://apps.apple.com/app/clauge/id6770303247` — Apple's policy forbids in-app self-updates. The Restart Now button is hidden (no in-app install to restart into). DMG/NSIS keep the existing latest.json poll + xattr-strip path.
+- **Sandbox-safe `kill_pid_on_port` on macOS.** Replaces the `lsof -i :PORT -t` + `kill -9` shell-out (blocked by App Sandbox; would silently no-op on MAS and leave orphan sidecars on port 3456) with an in-process libproc walk: `pids_by_type(All)` → `listpidinfo::<ListFDs>` → `pidfdinfo::<SocketFDInfo>` → `libc::kill(pid, SIGKILL)`. DMG users on macOS also benefit (no subprocess spawn cost). Other Unix (Linux, BSD) keeps the legacy lsof path.
+- **Three new IPCs.** `is_mas_flavor`, `grant_claude_dir_access`, `has_claude_dir_bookmark`. Registered on both flavors so the frontend can probe shape without branching on a build-time constant.
+- **`keychain.rs` flavor-split.** MAS variant tries `~/.claude/.credentials.json` first (via the bookmark), falls back to Keychain Services. DMG variant is Keychain-only as before. The Mac CLI doesn't write the filesystem mirror, so MAS users land on the Keychain fallback in practice and click "Always Allow" once.
+- **`claude_ai_session` module cfg-gated out on MAS.** The direct webview-cookie flow would trigger a Keychain prompt every 30 s polling cycle on MAS (sandbox identity doesn't inherit the ACL the non-sandboxed CLI wrote). The Clauge Sync browser extension is the recommended path on MAS, surfaced via wizard step 4.
+
+### Engineering
+
+- **New `AGENTS.md` landmine #23** — codifies the wizard race lesson as a stable rule: any `WebviewWindow` that loads from `http://127.0.0.1:PORT/...` (sidecar HTTP origin) MUST gate its `build()` on a `sidecar-ready` event listener, NOT on a fixed `tokio::sleep` delay. Use the dashboard's `splash.html` pattern (windows.rs:27) as the reference.
+- **`AGENT_LEARNINGS.md` entry added** — documents the Apple rejection root cause + the generalizable lesson: race conditions between frontend window opening and backend HTTP readiness in dev-time tooling can produce blank UI that gets misdiagnosed as "app broken" by external reviewers (Apple's App Review in this case).
+- **`bundleVersion` bumped 3 → 4** in `tauri.mas.conf.json` (CFBundleVersion must monotonically increase per Apple's submission rules; build 3 was rejected, so the next upload is build 4).
+
 ## [0.9.9] — 2026-05-27
 
 **Polish release.** Removes the 60-second flicker on the dashboard's plan card. The flicker was a long-standing visual issue (present since v0.9.4 when the auto-refresh interval was wired) — easy to miss as "slight" or "the dashboard breathing," but it was a real per-minute repaint of the plan-hero area and surrounding text. v0.9.8 didn't introduce it; this release just fixes it.

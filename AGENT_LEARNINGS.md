@@ -37,6 +37,43 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-05-28 — v0.9.0 → v0.9.10 | Apple Mac App Store rejection — wizard race condition
+
+**Trigger:** Apple App Review rejected v0.9.0 build 3 (in review since 2026-05-19, response 2026-05-28 02:51 BDT) under two guidelines:
+
+- **Guideline 2.4.5(i):** justification needed for `com.apple.security.network.server` entitlement. Paperwork — replied in App Store Connect explaining the loopback-only TCP listener for the Tauri webview ↔ Node sidecar IPC channel. No binary change needed.
+- **Guideline 2.1(a):** "the app does not load its content after launch." Showstopper. Tested on a clean MacBook Pro 14" running macOS 26.5. No screenshot or screen recording attached.
+
+**What went wrong:** The first-launch onboarding wizard `WebviewWindow` opens 500 ms after `tauri::Builder::setup()` runs (`lib.rs:159` pre-fix), with URL `http://127.0.0.1:3456/onboarding/index.html`. This URL is served by the Node SEA sidecar, which at module top-level in `server.js:79,84` `await`s `loadPriceTable()` (8 s timeout HTTP fetch to raw.githubusercontent.com via `lib/cost-calculator.js:80`, with bundled fallback) AND `usageStore.load()` BEFORE `listenWithRetry(PORT)` at `server.js:678` actually binds the port. On cold launch in sandbox the sidecar takes **1–8 seconds** to bind — far longer than the 500 ms wizard delay.
+
+The wizard webview hit `ERR_CONNECTION_REFUSED` and stayed in error state. No retry, no listener for the `sidecar-ready` event (which sidecar.rs emits when PORT_MARKER is captured). Apple's reviewer saw a blank "Welcome to Clauge" window and rejected.
+
+Compounding bug at `lib.rs:178-181` pre-fix: if `WebviewWindowBuilder::build()` itself errored (rather than just the webview's initial load failing), the handler stored `onboarding_completed=true` permanently — meaning the wizard would never appear on any subsequent launch either, even after the bug was fixed at the source. A transient race got promoted into a permanent dead state.
+
+The dashboard window doesn't have this race — it uses bundled `splash.html` via `WebviewUrl::App("splash.html")` (windows.rs:27), and the splash JS listens for `sidecar-ready` before navigating to the sidecar URL. The pattern existed in the codebase for the dashboard since v0.8.1; it just hadn't been extended to the wizard.
+
+**Lesson (project-specific):** Any `WebviewWindow` that loads from the sidecar HTTP origin (`http://127.0.0.1:PORT/...`) MUST gate its `build()` call on a `sidecar-ready` event listener, NOT on a fixed `tokio::sleep` delay. The sidecar's cold-start latency in sandbox is variable (1–8 s) and the 500 ms / 1 s / 2 s margins look fine in dev but break under App Review's first-launch conditions. Build failures during the wizard spawn must NEVER permanently disable the wizard — log and let the next launch retry.
+
+**Lesson (generalizable):** Race conditions between the frontend window opening and backend HTTP readiness in dev-time tooling produce blank UI that gets misdiagnosed as "app broken" by external reviewers (Apple's App Review, App Store testers, novice users) — they don't know to wait, click again, or reload. Either gate the window open on a backend-ready signal, OR open the window pointing at a bundled wait-screen that polls the backend, NEVER trust a sleep timer.
+
+**Prevention:**
+
+1. Codified as AGENTS.md landmine #23 — "WebviewWindow URLs pointing at the sidecar HTTP origin MUST listen for `sidecar-ready` before opening."
+2. The `spawn_wizard_window_once` helper at `src-tauri/src/lib.rs:27-69` is the canonical pattern: takes `&AppHandle`, `port`, and an `AtomicBool` race-guard; called from a `sidecar-ready` event listener AND a 30 s timeout fallback; on `build()` error, logs only — never mutates the `onboarding_completed` flag.
+3. External-discovery branch (`port_discovery::DiscoveryResult::External`) now also emits `sidecar-ready` so users with a pre-running clauge-server hit the same listener path.
+
+**Hotfix:** v0.9.10 shipping for App Store resubmission (build 4). The MAS plumbing port from `clauding-lab/mas-implement-session` onto current main + the wizard race fix are bundled in one release rather than landing v0.9.0 separately, so MAS users get v0.9.9's polish + flicker fix + landmines #21/#22 alongside the sandboxed flavor.
+
+**Cross-references:**
+
+- Project landmine: `AGENTS.md` § 23 (wizard race rule).
+- Global: `~/.claude/AGENT_LEARNINGS.md` (the generalizable lesson about frontend-window-vs-backend-readiness races).
+- Auto-memory: `project_v0_9_10_apple_issue_2_wizard_race.md` (point-in-time observations) + `feedback_webview_sidecar_race.md` (cross-project rule).
+- Commits: `329fa30` (fix), TBD (release prep).
+- PR: #11 (draft, feat/mas-on-v0.9.9 → main).
+
+---
+
 ## 2026-05-27 — v0.9.8 → v0.9.9 | Dashboard plan-card flickered every 60 seconds
 
 **Trigger:** Adnan asked "still slight flickering of the dashboard exists. investigate" after v0.9.8 shipped. Reproduced against the user's live sidecar on port 3456 with a Playwright `MutationObserver` covering `#plan-body`, `#plan-meta`, `#plan-status-tag`, `#plan-inline`, and the finance-side spans. Across two 60-second cycles the observer recorded 38 mutations per tick at exact 60s intervals — even when the underlying `/api/usage` payload was byte-identical (e.g. `#claude-balance-val` text replaced `"78.63"` with `"78.63"`).

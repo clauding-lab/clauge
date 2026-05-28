@@ -429,6 +429,30 @@ When a recurring `setInterval` / `setTimeout` callback rebuilds a DOM region (ty
 - `public/app.js` plan-card auto-refresh (60s) — surgical-update split in v0.9.9 (`renderPlanCapacity`, `renderFinanceSide`; helpers `setTextIfChanged` / `setAttrIfChanged` / `updateBigRings` / `updatePlanMeta` / `updatePlanInline`).
 - `popover/popover.js` popover auto-refresh (10s) — currently rebuilds via `renderPopover()` on every tick. No visible flicker today because the popover surface has no long-lived CSS-animated element, but the same surgical-update pattern applies if a `.dot-live`-style element is ever added.
 
+### 23. WebviewWindow URLs pointing at the sidecar HTTP origin MUST listen for `sidecar-ready`
+
+If `tauri::WebviewWindowBuilder::new(..., WebviewUrl::External(http://127.0.0.1:PORT/...))` is called BEFORE the sidecar has bound `PORT`, the resulting webview gets `ERR_CONNECTION_REFUSED` on its initial load and STAYS in error state. Tauri's `WebviewWindow` doesn't auto-retry; there's no built-in reload-on-failure. This shipped as the v0.9.0 Apple App Store rejection (Guideline 2.1(a)): the first-launch wizard opened at `T+500ms` while the sidecar took 1–8 s to bind (loadPriceTable HTTP fetch + serveStatic setup + listenWithRetry). The reviewer saw a blank "Welcome to Clauge" window and rejected. Full postmortem in `AGENT_LEARNINGS.md`.
+
+**Rule:** never gate a sidecar-URL `WebviewWindow` on a fixed `tokio::sleep` delay. The sidecar's cold-start latency in sandbox is variable (1–8 s) and the 500 ms / 1 s / 2 s margins look fine in dev but break under App Review or fresh-install conditions. Use the `sidecar-ready` event listener pattern instead.
+
+**Pattern (the canonical implementation lives at `src-tauri/src/lib.rs::spawn_wizard_window_once`):**
+
+1. **Helper function** — takes `&AppHandle`, `port: u16`, and a `&std::sync::atomic::AtomicBool` race-guard. Calls `swap(true, SeqCst)`; if it returns true, bail (another caller already won). Otherwise builds the `WebviewWindow`. On `build()` error: log only — NEVER mutate a persistent flag like `onboarding_completed` to permanently disable the window (a transient race must not become a permanent dead state).
+2. **Primary trigger** — `app.listen("sidecar-ready", |event| { let port = parse_payload(event); spawn_window_once(&app, port, &guard); })`. The event payload is `{"port": <u16>}`.
+3. **Timeout fallback** — `tauri::async_runtime::spawn(async move { tokio::time::sleep(30s).await; spawn_window_once(&app, 3456, &guard); })`. If `sidecar-ready` never fires (sidecar genuinely broken), at least show a window with an error page rather than appear completely unresponsive. 30 s is the order of magnitude where a user would assume the app launch failed and force-quit.
+
+**Both spawn paths MUST emit `sidecar-ready`:**
+
+- SpawnAt (sidecar.rs `spawn_one` captures PORT_MARKER): already emits.
+- External (lib.rs `DiscoveryResult::External`): added in v0.9.10. Without this, npx-clauge users running an external server would only hit the 30 s wizard timeout fallback.
+
+**Alternative when the bundled-asset path is acceptable:** use `WebviewUrl::App(<bundled-html>)` (loads from `frontendDist`) instead of `WebviewUrl::External`. The dashboard does this with `windows.rs:27` → `splash.html`, then splash.js listens for `sidecar-ready` and navigates to `http://127.0.0.1:PORT/`. This is more robust than the listener-gate-then-open pattern (window appears immediately with content), but requires the HTML/JS/CSS to be bundled into `popover/` (Tauri's `frontendDist`). For the wizard we chose listener-gate-then-open because the wizard's HTML lives in `public/onboarding/` and migrating it to `popover/` would touch ~10 files.
+
+**Existing sidecar-URL WebviewWindow surfaces to mind:**
+
+- First-launch wizard (`lib.rs::run::setup` onboarding block) — protected since v0.9.10 (the post-Apple-rejection fix).
+- Native popover WKWebView (`native_popover.rs::create_popover`) — protected by `reload_for_port` auto-recovery (it loads against a default port at init, then reloads when sidecar binds). DIFFERENT pattern; works because the popover is hidden until clicked, so the user typically clicks AFTER sidecar is ready.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
