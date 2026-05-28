@@ -499,27 +499,96 @@ The Tauri `externalBin` mechanism copies the sidecar binary to `Contents/MacOS/`
 
 **Runtime responsibility (`src-tauri/src/sidecar.rs`):**
 
-Tauri's default sidecar plugin (`app.shell().sidecar("clauge-server")`) constructs `<bundle>/Contents/MacOS/<name>` on macOS. With the helper in `Contents/Helpers/`, the plugin can't find it. The MAS-flavor spawn path must manually construct the path via `tauri::api::path::resource_dir()` (or equivalent) and use `std::process::Command::new(...)` directly. Gate the new path resolution on `#[cfg(feature = "mas")]`; the DMG flavor's `Contents/MacOS/clauge-server` path stays unchanged.
+Tauri's default sidecar plugin (`app.shell().sidecar("clauge-server")`) hardcodes `<bundle>/Contents/MacOS/<name>` on macOS. With the helper in `Contents/Helpers/`, the plugin can't find it. The MAS-flavor spawn path bypasses the shell plugin entirely:
 
-**Bookmark + sandbox container sharing (open question per session 2026-05-28):**
+- Resolve the helper path at runtime via `app.path().resource_dir()` → parent → `Helpers/Clauge Helper.app/Contents/MacOS/clauge-server`. The helper function is `resolve_helper_path(app)` in `sidecar.rs`.
+- Spawn via `tokio::process::Command::new(helper_path)` with `kill_on_drop(true)` for panic-safety, stderr piped (for parsing the `CLAUGE_BOUND_PORT=` marker), stdout/stdin nulled.
+- Use `libc::kill(pid, SIGTERM)` for kill — avoids the `&mut self` constraint on `tokio::process::Child::kill()` that would otherwise force a Mutex-or-oneshot dance between the supervisor's quit path and the wait-task that owns the Child.
 
-The helper gets its own sandbox container at `~/Library/Containers/com.clauding.clauge.helper/Data/`, separate from the main app's `~/Library/Containers/com.clauding.clauge/Data/`. The security-scoped bookmark (granting access to `~/.claude/`) is stored in the main app's container. Two possibilities for transferring scope to the helper:
+Type unification (so the supervisor loop is single-path across flavors):
 
-- **First, test process-tree inheritance.** Apple's `posix_spawn` from a sandboxed parent should make the child inherit the parent's security scope WITHOUT needing the child to explicitly hold the bookmark. If a quick wizard walkthrough on the helper.app build shows the dashboard populating with data, no further work is needed.
-- **If inheritance doesn't carry the bookmark**, add `com.apple.security.application-groups` entitlement to both the main app and the helper (e.g. `group.com.clauding.clauge`), migrate bookmark blob storage from the Tauri store (main container) to the app-group container at `~/Library/Group Containers/group.com.clauding.clauge/`, and update `security_scoped_bookmark.rs` to read/write from the group path on MAS. The helper then resolves the bookmark itself.
+- `SidecarChild` enum wraps either `tauri_plugin_shell::process::CommandChild` (DMG) or `NativeChild` (MAS). API surface: `pid() -> u32`, `kill(self) -> io::Result<()>`. `AppState::children` stores `Vec<SidecarChild>` regardless of flavor.
+- `SidecarEvent` enum mirrors the subset of `CommandEvent` we use: `Stderr(Vec<u8>)` and `Terminated { code, signal }`. Both flavors produce `UnboundedReceiver<SidecarEvent>` from `spawn_helper_process(app)`. The DMG path adds a small tokio forwarding task that translates `CommandEvent` → `SidecarEvent`; the MAS path emits SidecarEvent directly from its stderr-reader and wait tasks.
+- Cfg-gate imports of `CommandChild` + `CommandEvent` from `tauri_plugin_shell` with `#[cfg(not(feature = "mas"))]` so the MAS build doesn't warn on dead imports.
+
+Cfg-gate the path resolution + native spawn helpers on `#[cfg(feature = "mas")]`. The DMG flavor's spawn path stays unchanged (still uses `app.shell().sidecar("clauge-server")`).
+
+**See landmine #25 for the env-variable propagation pitfall when refactoring spawn paths.**
+
+**Helper entitlements — `com.apple.security.inherit=true` is LOAD-BEARING:**
+
+The helper's `entitlements-sidecar.mas.plist` MUST contain:
+
+- `com.apple.security.app-sandbox=true` — satisfies Transporter's static "every Mach-O must declare app-sandbox" check.
+- `com.apple.security.inherit=true` — **THIS** is what makes the helper.app pattern actually work at runtime. Tells the kernel "attach this helper to the parent's existing sandbox container; do NOT create a fresh per-binary container." With `inherit`, the helper:
+  - Bypasses `libsystem_secinit`'s per-binary container setup (no `_libsecinit_appsandbox.cold.9` SIGTRAP — that fires when secinitd tries to apply a fresh sandbox profile via SYSCALL_SET_USERLAND_PROFILE and the kernel rejects it).
+  - Runs in the parent's `~/Library/Containers/com.clauding.clauge/` container; no separate `~/Library/Containers/com.clauding.clauge.helper/` is created.
+  - **Inherits the parent's `startAccessingSecurityScopedResource` grant** on `~/.claude/` via process-tree sandbox state sharing. No `application-groups` entitlement needed. No bookmark blob migration to a group container needed.
+- `com.apple.security.cs.allow-jit=true` — required for the SEA Node binary's V8 JIT. Not a sandbox entitlement; a code-signing hardened-runtime flag, not affected by `inherit`. Has to be on the helper's own signature because the JIT permission check runs per-binary.
+
+The helper MUST NOT declare any other entitlements (network, files, etc.). With `inherit`, those are picked up from the parent's full set in `entitlements.mas.plist`. Listing them on the helper too is redundant at best and a potential conflict signal to App Review at worst. Reference: Apple Technical Note TN2206; Chrome's `Google Chrome Helper.app` and Electron renderer helpers use this exact pattern.
+
+**Empirically validated 2026-05-28 (session `2026-05-28-helper-inherit-env-passthrough-bug-session.md`):** with the inherit entitlement, the helper boots cleanly, the dashboard renders fully, and Apple's Guideline 2.1(a) "app doesn't load content after launch" is demonstrably resolved. The mid-cycle hypothesis that app-groups would be needed turned out to be wrong — inherit handles the bookmark sharing.
+
+**First-spawn-after-entitlement-change transient:** Immediately after rebuilding with new helper entitlements (e.g. adding `inherit`), the FIRST spawn attempt sometimes still SIGTRAPs in `_libsecinit_appsandbox.cold.9`. CrashBreaker's silent respawn (first crash = silent) handles it transparently; the second-and-subsequent spawns work cleanly. Cause is likely secinitd's profile cache not invalidating immediately. Production users won't see this because they install once and don't change entitlements between launches. Don't add workaround code — the existing CrashBreaker logic is the right behavior.
 
 **Anti-patterns to NEVER ship for the MAS flavor:**
 
-- Sidecar binary at `Contents/MacOS/clauge-server` with `app-sandbox` entitlement — runtime SIGTRAP (this session, v0.9.10 pre-helper).
-- Sidecar binary at `Contents/MacOS/clauge-server` WITHOUT `app-sandbox` entitlement — Transporter rejects (this session, v0.9.10 post-cd83087).
-- Ad-hoc signing (`codesign --sign -`) of a binary with restricted entitlements (`application-identifier`, `team-identifier`) — AMFI -424 at launch (this session, first local-test attempt).
-- Real-cert signing with embedded Production provisioning profile for direct dev-machine launch — taskgated-helper CPProfileManager -215 (this session, second local-test attempt). Only Development profiles can be installed for direct launch; MAS uses Production profiles. The `--local-test` mode in the build script strips this for sandbox-equivalent verification.
+- Sidecar binary at `Contents/MacOS/clauge-server` with `app-sandbox` entitlement — runtime SIGTRAP (v0.9.10 pre-helper, `_libsecinit_appsandbox.cold.6`, no kCFBundleIdentifierKey).
+- Sidecar binary at `Contents/MacOS/clauge-server` WITHOUT `app-sandbox` entitlement — Transporter rejects (v0.9.10 commit cd83087, HTTP 409).
+- Helper bundle WITHOUT `com.apple.security.inherit=true` — runtime SIGTRAP (v0.9.10 first helper.app attempt, `_libsecinit_appsandbox.cold.9`, SYSCALL_SET_USERLAND_PROFILE rejection).
+- Helper bundle with `application-groups` entitlement added "for safety" — redundant with `inherit`, signals architectural hedging to App Review.
+- Ad-hoc signing (`codesign --sign -`) of a binary with restricted entitlements (`application-identifier`, `team-identifier`) — AMFI -424 at launch.
+- Real-cert signing with embedded Production provisioning profile for direct dev-machine launch — taskgated-helper CPProfileManager -215. Only Development profiles can be installed for direct launch; MAS uses Production profiles. The `--local-test` mode in the build script strips this for sandbox-equivalent verification.
 
 **Cross-references:**
 
-- Full session postmortem: `~/Projects/claude-second-brain/01_Projects/Clauge/2026-05-28-mas-blocked-helperapp-needed-session.md`.
-- `AGENT_LEARNINGS.md` 2026-05-28 entry (when added — currently the wizard-race-framed entry is stale and needs amending).
-- Apple's official doc: `developer.apple.com/documentation/security/app_sandbox`.
+- Full session postmortems:
+  - `~/Projects/claude-second-brain/01_Projects/Clauge/2026-05-28-mas-blocked-helperapp-needed-session.md` (architectural pivot)
+  - `~/Projects/claude-second-brain/01_Projects/Clauge/2026-05-28-helper-inherit-env-passthrough-bug-session.md` (inherit-entitlement validation + env-passthrough bug discovery)
+- `AGENT_LEARNINGS.md` 2026-05-28 entry (currently the wizard-race-framed entry is stale and needs amending — the actual fix is helper.app + inherit + env-passthrough, not the wizard race).
+- Apple docs:
+  - `developer.apple.com/documentation/security/app_sandbox` (sandbox model + helper pattern)
+  - Apple Technical Note TN2206 — Code Signing — On Bundle Format
+  - `developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_inherit` (inherit entitlement reference)
+
+### 25. When the MAS spawn path bypasses Tauri's shell plugin, env vars must be forwarded EXPLICITLY
+
+Discovered 2026-05-28, session `2026-05-28-helper-inherit-env-passthrough-bug-session.md`. The DMG flavor's `app.shell().sidecar("clauge-server").env("NO_OPEN", "1").spawn()` chain implicitly inherits the parent process's full environment in addition to the keys passed via `.env()`. The MAS flavor's `tokio::process::Command::new(helper_path).env("NO_OPEN", "1").spawn()` ALSO inherits the parent's environment by default — but the parent process's environment doesn't have `CLAUDE_DIR` set on it. In the MAS flavor, the bookmark-resolved path lives in a Rust `OnceLock<PathBuf>` (`security_scoped_bookmark::MAS_CLAUDE_DIR`), NOT in the OS-level env. The supervisor must explicitly bridge that OnceLock to the spawn-time env.
+
+**The rule:** when spawning the helper in MAS mode, read `MAS_CLAUDE_DIR.get()` AT SPAWN TIME (not cached, not at supervisor-startup-time) and forward it as `CLAUDE_DIR` on the spawned process. The OnceLock can be populated AFTER the supervisor's first spawn (via `grant_claude_dir_access` IPC on first-launch wizard grant), and the helper respawn must pick up the new value.
+
+**Where this lives in code:**
+
+```rust
+// In src-tauri/src/sidecar.rs, inside spawn_native_helper, BEFORE cmd.spawn():
+#[cfg(feature = "mas")]
+{
+    if let Some(claude_dir) = crate::security_scoped_bookmark::MAS_CLAUDE_DIR.get() {
+        cmd.env("CLAUDE_DIR", claude_dir);
+    }
+}
+```
+
+**Symptom of the bug (so future readers can recognize it):**
+
+- Wizard grant completes successfully (the user picks `~/.claude/`, NSOpenPanel dismisses, bookmark blob persists in `settings.json`).
+- Connections panel shows "Granted at /Users/adnanrashid/.claude" with a green dot.
+- BUT the dashboard's Overview tab stays empty ("No plan data yet").
+- `curl http://127.0.0.1:<port>/api/health` returns `claudeDir: /Users/adnanrashid/Library/Containers/com.clauding.clauge/Data/.claude` — the sandbox-redirected fake path, NOT the user's real `/Users/adnanrashid/.claude`.
+
+**The DMG flavor doesn't have this issue** because DMG runs in a non-sandboxed parent that has direct access to `$HOME/.claude/`. The helper inherits `$HOME` from the parent's env and resolves `.claude/` from there. The MAS flavor's parent process has `$HOME` sandbox-redirected, so `$HOME/.claude/` is the empty redirect path — only an explicit `CLAUDE_DIR` env (or a Rust-side path override) routes the helper to the real bookmark-resolved path.
+
+**Other env vars to check** if the SEA Node `server.js` reads them:
+
+- `CLAUDE_DIR` — the bookmark-resolved Claude data dir (this session's bug)
+- `CLAUDE_PROJECTS_DIR` — overrides `$CLAUDE_DIR/projects/`
+- `CLAUDE_CONFIG_DIR` — overrides `$CLAUDE_DIR/`
+- `NO_OPEN` — already wired correctly
+
+When adding new env-driven config in the future, **always check both the DMG path (auto-inherits) AND the MAS path (must explicitly forward).** The MAS path's `tokio::process::Command` is the test for whether the env is actually propagating.
+
+**Anti-pattern:** Setting `std::env::set_var("CLAUDE_DIR", path)` in the parent process so subsequent spawns inherit it. This pollutes the parent's env (visible to other libraries / future code that reads `CLAUDE_DIR`), is non-thread-safe (mutating env is a documented data race in Rust as of 2024), and obscures the actual data flow. The explicit `cmd.env("CLAUDE_DIR", path)` per-spawn is the right pattern.
 
 ## Communication & timezone
 
