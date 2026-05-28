@@ -6,6 +6,25 @@ authors = ["clauding-lab"]
 edition = "2021"
 rust-version = "1.77.2"
 
+[features]
+default = []
+# v0.9.0: Mac App Store sandboxed flavor. When enabled:
+#  - keychain.rs MAS branch reads ~/.claude/.credentials.json via filesystem
+#    (zero-arg signature; reads path from MAS_CLAUDE_DIR OnceLock populated by
+#    the supervisor on acquire_scoped_path)
+#  - security_scoped_bookmark.rs module compiles in
+#  - tauri_plugin_updater is NOT registered (App Store owns updates)
+#  - check_for_updates IPC opens macappstore:// instead of polling latest.json
+#  - is_mas_flavor IPC returns true
+#
+# Note: objc2 + objc2-foundation are NOT optional Cargo deps — native_popover.rs
+# uses them unconditionally on macOS for the NSStatusItem / NSPopover surface
+# (both flavors), so making them optional would break the DMG build. The MAS
+# feature is purely a source-code cfg gate; the bookmark module's reach into
+# objc2-foundation reuses the base-line deps and just enables additional
+# features (NSError, NSArray) on the existing `objc2-foundation` entry.
+mas = []
+
 [lib]
 name = "clauge_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -29,6 +48,11 @@ tauri-plugin-updater = "2.0"
 tauri-plugin-notification = "2.0"
 tauri-plugin-window-state = "2.0"
 tauri-plugin-store = "2.0"
+# v0.9.0: dialog plugin is used by the MAS-flavor security-scoped bookmark
+# module to present NSOpenPanel for the user-granted ~/.claude/ read access.
+# Registered unconditionally to keep the builder chain simple — dormant if no
+# code calls it; ACL gates frontend access (none granted in main.json).
+tauri-plugin-dialog = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -45,8 +69,19 @@ objc2 = "0.6"
 security-framework = "2.11"
 objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSView", "NSPanel", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "NSEvent", "NSPopover", "NSViewController", "NSApplication", "NSControl", "NSButton", "NSCell"] }
 objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
-objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL", "NSURLRequest", "NSValue", "NSData", "NSDictionary"] }
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL", "NSURLRequest", "NSValue", "NSData", "NSDictionary", "NSError", "NSArray"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKUserContentController", "WKScriptMessage", "WKScriptMessageHandler", "WKNavigation", "WKNavigationDelegate"] }
+# v0.9.0: libproc + libc replace the lsof + kill shell-out in
+# port_discovery::kill_pid_on_port_unix on macOS. Apple's App Sandbox
+# blocks /usr/sbin/lsof (it needs proc_info/sysctl calls the sandbox
+# denies), so the previous shell-out silently no-op'd inside the MAS
+# build and orphan sidecars on port 3456 survived launch, hijacking
+# /api/health and /api/usage/ingest. libproc walks user-owned PIDs and
+# their FDs in-process via proc_listpids + proc_pidfdinfo (no subprocess
+# spawn, no entitlement change), and libc::kill issues SIGKILL directly.
+# DMG (non-MAS) on macOS also benefits — faster, no Command spawn cost.
+libproc = "0.14"
+libc = "0.2"
 
 [dev-dependencies]
 tokio-test = "0.4"

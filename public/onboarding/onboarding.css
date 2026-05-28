@@ -229,6 +229,17 @@ body {
 body.is-windows .platform-mac { display: none; }
 body.is-windows .platform-win { display: block; }
 
+/* v0.9.0: flavor-level gating. Mirrors .platform-mac / .platform-win
+ * pattern but discriminates DMG/NSIS vs MAS at the Cargo feature level.
+ * Default (DMG/NSIS) hides .flavor-mas; body.is-flavor-mas flips: hides
+ * .flavor-dmg-nsis, shows .flavor-mas. Set in onboarding.js's
+ * initFlavorGate via the is_mas_flavor IPC at load time. The CSS-without-
+ * the-class default means DMG/NSIS users see the right copy even if the
+ * IPC fails or hasn't completed yet. */
+.flavor-mas { display: none; }
+body.is-flavor-mas .flavor-dmg-nsis { display: none; }
+body.is-flavor-mas .flavor-mas { display: block; }
+
 /* Windows credentials path mock — visual analog to the Mac dialog-mock. */
 .path-mock {
   background: #f4f4f5;

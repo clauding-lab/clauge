@@ -17,6 +17,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "DeveloperTool",
     "createUpdaterArtifacts": true,
     "targets": ["app", "dmg", "nsis"],
     "externalBin": ["binaries/clauge-server"],

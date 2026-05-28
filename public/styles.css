@@ -1327,3 +1327,8 @@ body.loading { cursor: progress; }
   color: var(--text-3);
   font-style: italic;
 }
+
+/* v0.9.0 MAS flavor gate: hide MAS-only content by default; show only when body has .is-flavor-mas */
+.flavor-mas { display: none; }
+body.is-flavor-mas .flavor-mas { display: revert; }
+body.is-flavor-mas .flavor-dmg-nsis { display: none; }

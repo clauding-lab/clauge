@@ -91,6 +91,50 @@ use tauri_plugin_shell::ShellExt;
 
 const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
 
+/// v0.9.0 MAS (Task 12b): kill the current sidecar PID so the supervisor's
+/// loop respawns it with the now-populated `MAS_CLAUDE_DIR` (`CLAUDE_DIR`
+/// env). Called from `grant_claude_dir_access` IPC after first-launch
+/// bookmark grant.
+///
+/// Sandbox-safe kill: route through AppState::take_all_children() +
+/// CommandChild::kill() (same primitive `ipc::restart_app` uses). The
+/// earlier port_discovery::kill_pid_on_port path shelled out to
+/// /usr/sbin/lsof + /bin/kill — the App Sandbox blocks lsof (it needs
+/// proc_info/sysctl calls the sandbox denies), making the kill a silent
+/// no-op. CommandChild::kill() → SharedChild::kill() → libc::kill(), with
+/// no external binary spawn and no entitlement change needed.
+///
+/// Supervisor (spawn_and_supervise) observes the child's Terminated event,
+/// loops back to spawn_one, and the new sidecar inherits CLAUDE_DIR from
+/// the now-populated MAS_CLAUDE_DIR.
+#[cfg(feature = "mas")]
+pub async fn kill_current_sidecar_for_respawn(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<crate::ipc::AppState>() else {
+        log::warn!("kill_current_sidecar_for_respawn: AppState missing");
+        return;
+    };
+    let children = state.take_all_children();
+    if children.is_empty() {
+        log::warn!("kill_current_sidecar_for_respawn: no registered sidecar children");
+        return;
+    }
+    for child in children {
+        let pid = child.pid();
+        if let Err(e) = child.kill() {
+            log::warn!(
+                "kill_current_sidecar_for_respawn: kill pid={} failed: {}",
+                pid,
+                e
+            );
+        } else {
+            log::info!(
+                "kill_current_sidecar_for_respawn: killed pid={}; supervisor will respawn with fresh CLAUDE_DIR",
+                pid
+            );
+        }
+    }
+}
+
 /// Continuously runs the sidecar process, restarting on crash with exponential backoff.
 /// On 3rd crash within 60s, emits a one-shot user notification.
 ///
@@ -144,6 +188,59 @@ pub async fn spawn_and_supervise(app: AppHandle) {
             .map(|s| s.is_shutting_down())
             .unwrap_or(false)
     }
+
+    // v0.9.0 MAS flavor: resolve the user-granted security-scoped bookmark to
+    // ~/.claude (or wherever they pointed the picker) ONCE, before the spawn
+    // loop. Hold the resulting `ScopedHandle` in a function-local for as long
+    // as this function runs — when `spawn_and_supervise` returns on app exit,
+    // `_mas_scope_guard` drops and `stopAccessingSecurityScopedResource` fires.
+    //
+    // Resolving once rather than per-spawn matters because:
+    //   1. The bookmark blob doesn't change across crash-respawn cycles.
+    //   2. Repeated `start...` calls without intervening `stop...` are not
+    //      documented as additive — Apple's behavior is "the URL is in scope
+    //      from start until stop"; second start may or may not be a no-op.
+    //   3. The sidecar inherits the parent's security-scoped sandbox grant
+    //      through the process tree (Apple's sandbox model), so as long as
+    //      the parent holds the scope, every child it spawns inherits it.
+    //
+    // Critical lifetime contract: this binding MUST live for the entire
+    // supervisor function — moving it inside the loop would drop the scope
+    // between iterations and orphan in-flight sidecar reads. The leading `_`
+    // silences "unused" warnings when the bookmark is absent (None case).
+    //
+    // If the bookmark is missing or stale (user hasn't completed the wizard's
+    // grant step yet, or the persisted blob no longer resolves), we log and
+    // proceed. The sidecar will see filesystem ENOENT/EPERM when it reads
+    // JSONL inside the sandbox and surface empty data; the wizard's grant
+    // step is the recovery path.
+    #[cfg(feature = "mas")]
+    let _mas_scope_guard = {
+        use crate::security_scoped_bookmark::{acquire_scoped_path, MAS_CLAUDE_DIR};
+        match acquire_scoped_path(&app) {
+            Ok((path, guard)) => {
+                // Populate MAS_CLAUDE_DIR so keychain.rs's MAS branch can find
+                // .credentials.json without `&AppHandle` in its zero-arg
+                // signature. `OnceLock::set` is idempotent — `Err` here means
+                // another caller raced and won, which we don't care about
+                // because both code paths resolve to the same bookmark blob
+                // and would set identical values.
+                let _ = MAS_CLAUDE_DIR.set(std::path::PathBuf::from(&path));
+                log::info!(
+                    "MAS flavor: security-scoped CLAUDE_DIR resolved at {}",
+                    path
+                );
+                Some(guard)
+            }
+            Err(e) => {
+                log::warn!(
+                    "MAS bookmark not yet granted: {}. Sidecar will start with CLAUDE_DIR=$HOME/.claude (sandbox-redirected to container subfolder, expected to be empty); user must grant via wizard step 2 or Settings → Connections.",
+                    e
+                );
+                None
+            }
+        }
+    };
 
     loop {
         // Level-triggered guard: covers the case where ExitRequested fired

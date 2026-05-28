@@ -53,6 +53,9 @@
     checkForUpdates: () => call('check_for_updates'),
     takePendingFocusConnections: () => call('take_pending_focus_connections'),
     installCliSymlink: () => call('install_cli_symlink'),
+    isMasFlavor: () => call('is_mas_flavor'),
+    grantClaudeDirAccess: () => call('grant_claude_dir_access'),
+    hasClaudeDirBookmark: () => call('has_claude_dir_bookmark'),
 
     // ── Popover-only commands (no APP_COMMANDS entry; tauri:// origin) ──
     openDashboard: () => call('open_dashboard'),

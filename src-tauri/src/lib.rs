@@ -1,4 +1,9 @@
 pub mod anthropic_oauth;
+// v0.9.0 MAS (Task 12b): cfg-gate claude_ai_session on MAS. The module
+// reads/writes a Keychain entry the non-sandboxed DMG wrote. The MAS sandbox
+// identity doesn't auto-grant access, so the IPC polling path triggers a
+// Keychain prompt every cycle. Clauge Sync browser extension is the MAS path.
+#[cfg(not(feature = "mas"))]
 mod claude_ai_session;
 pub mod connections;
 mod ipc;
@@ -8,6 +13,11 @@ mod menu;
 mod native_popover;
 mod port_discovery;
 mod port_file;
+// v0.9.0 MAS flavor only: NSURL security-scoped bookmark wrapper for the
+// user-granted read access to ~/.claude/. DMG flavor reads the filesystem
+// directly and does not compile this module.
+#[cfg(feature = "mas")]
+mod security_scoped_bookmark;
 mod sidecar;
 mod tray;
 mod windows;
@@ -22,7 +32,14 @@ pub fn run() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .try_init();
 
-    let app = tauri::Builder::default()
+    // v0.9.0 MAS flavor: the updater plugin is cfg-gated below so it is
+    // ABSENT from MAS binaries (Apple App Store policy forbids in-app updates).
+    // The cfg attribute can't gate a single `.plugin(...)` mid-chain in a
+    // fluent builder expression, so we split the chain into a let-binding,
+    // conditionally rebind it with the updater plugin attached for non-MAS
+    // builds, then continue the chain. tauri.mas.conf.json also sets
+    // `plugins.updater: null` (belt + suspenders).
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // Second-launch attempt (spec §6.7): show the dashboard. The
@@ -34,12 +51,22 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
-        ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        ));
+
+    #[cfg(not(feature = "mas"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    let app = builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         // TODO(T18): configure store path/migration when popover settings handler lands.
         .plugin(tauri_plugin_store::Builder::default().build())
+        // v0.9.0: dialog plugin is consumed by the MAS-flavor
+        // security-scoped bookmark module to present NSOpenPanel for the
+        // user-granted ~/.claude/ read access. Registered unconditionally
+        // because the cost is dormant on DMG (no code calls into it) and
+        // ACL on main.json gates any frontend access (none granted).
+        .plugin(tauri_plugin_dialog::init())
         .manage(ipc::AppState::default())
         .setup(|app| {
             // macOS: boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The
@@ -218,12 +245,20 @@ pub fn run() {
                 }
             });
 
-            let app_handle_updater = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::ipc::check_for_updates(app_handle_updater).await {
-                    log::warn!("Updater check on launch failed: {}", e);
-                }
-            });
+            // v0.9.0 MAS flavor: skip the launch-time updater poll. The
+            // `ipc::check_for_updates` FUNCTION stays defined (the Settings
+            // → Updates button still calls it on DMG; the MAS variant opens
+            // the App Store storefront). Only the cold-start auto-check
+            // is gated here — App Store policy forbids in-app updates.
+            #[cfg(not(feature = "mas"))]
+            {
+                let app_handle_updater = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::ipc::check_for_updates(app_handle_updater).await {
+                        log::warn!("Updater check on launch failed: {}", e);
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -244,6 +279,9 @@ pub fn run() {
             ipc::restart_app,
             ipc::take_pending_focus_connections,
             ipc::install_cli_symlink,
+            ipc::is_mas_flavor,
+            ipc::grant_claude_dir_access,
+            ipc::has_claude_dir_bookmark,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -27,6 +27,12 @@ const APP_COMMANDS: &[&str] = &[
     "get_server_port",
     "take_pending_focus_connections",
     "install_cli_symlink",
+    // v0.9.0 Mac App Store flavor: three new IPCs gated by the cfg feature
+    // flag. Listed unconditionally so DMG builds still register the no-op
+    // variants (the frontend may probe is_mas_flavor on any build to gate UI).
+    "is_mas_flavor",
+    "grant_claude_dir_access",
+    "has_claude_dir_bookmark",
 ];
 
 fn main() {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-mas-flavor"
+description = "Enables the is_mas_flavor command without any pre-configured scope."
+commands.allow = ["is_mas_flavor"]
+
+[[permission]]
+identifier = "deny-is-mas-flavor"
+description = "Denies the is_mas_flavor command without any pre-configured scope."
+commands.deny = ["is_mas_flavor"]

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- MAS flavor: sandboxed; consumed by tauri.mas.conf.json::bundle.macOS.entitlements. -->
+    <!-- App Sandbox is enabled; reads ~/.claude/ via a user-granted security-scoped
+         bookmark (Grant Access wizard, NSOpenPanel). Deliberately NO
+         keychain-access-groups: credentials come from ~/.claude/.credentials.json via
+         the filesystem reader, NOT Keychain Services. This is the architectural pivot
+         vs. the abandoned v0.8.0 MAS spec — avoids cross-team keychain access, which is
+         a high-risk Apple Review surface. Per-entitlement rationale below. -->
+    <!-- app-sandbox: required for MAS submission. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- files.user-selected.read-only: wizard's Grant Access NSOpenPanel result. -->
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+    <!-- files.bookmarks.app-scope: persists the bookmark across launches. -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <!-- network.client: outbound HTTPS to api.anthropic.com. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- network.server: local sidecar on 127.0.0.1:3456. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <!-- cs.allow-jit: Tauri 2.x WebKit JIT. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- application-identifier: must match the embedded provisioning profile's
+         entitlement of the same name. Apple injects this when minting MAS
+         profiles; codesign must embed it too or Transporter raises 90886
+         (TestFlight signature/profile mismatch). -->
+    <key>com.apple.application-identifier</key>
+    <string>CY4FK9S7X9.com.clauding.clauge</string>
+    <!-- developer.team-identifier: belt-and-suspenders match to the profile's
+         team-identifier entitlement. -->
+    <key>com.apple.developer.team-identifier</key>
+    <string>CY4FK9S7X9</string>
+</dict>
+</plist>

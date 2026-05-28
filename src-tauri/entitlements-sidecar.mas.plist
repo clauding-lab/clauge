@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- MAS flavor: sidecar binary (clauge-server) entitlements. Applied via
+         post-build codesign re-sign in scripts/build-mas-clean.sh.
+         Tauri 2 signs every binary in the bundle with the same entitlements
+         file by default. After commit db51ce5 added application-identifier +
+         team-identifier to entitlements.mas.plist, the sidecar inherited them
+         too — but the sidecar has no per-binary provisioning profile, so
+         Transporter 90885 (nested executable profile mismatch) fires.
+         Standard MAS practice: sign helpers/sidecars with minimal entitlements
+         (no app-id, no team-id) so they don't trip nested-executable profile
+         checks. The main bundle keeps the full entitlements + embedded profile. -->
+    <!-- app-sandbox: required; sidecar inherits parent sandbox. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- network.client: outbound HTTPS to api.anthropic.com (the actual caller). -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- network.server: listens on 127.0.0.1:3456 for the Tauri main process. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <!-- cs.allow-jit: matches main binary; harmless on a non-JIT process. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- files.user-selected.read-only: needed if sidecar reads bookmarked path. -->
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+    <!-- files.bookmarks.app-scope: needed if sidecar resolves app-scope bookmarks. -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+</dict>
+</plist>

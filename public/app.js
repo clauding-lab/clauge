@@ -859,6 +859,50 @@ function renderSettings() {
 // signout_claude_ai, and has_claude_ai_session through ClaugeBridge.
 let settingsGeneralInitialized = false;
 
+// v0.9.0: shared promise + cached result of the is_mas_flavor IPC. We resolve
+// it once at module load (initFlavorGate below) and `await flavorGatePromise`
+// from any site that needs the MAS-vs-DMG/NSIS distinction (currently:
+// initSettingsGeneralControls, to decide the Updates button copy + Restart
+// Now visibility). Awaiting the shared promise — instead of re-firing the IPC
+// — avoids a race where renderSettings runs before initFlavorGate's IPC has
+// resolved.
+let isFlavorMas = false;
+let flavorGatePromise = null;
+
+/**
+ * v0.9.0: query the is_mas_flavor IPC and add `body.is-flavor-mas` if true.
+ * Mirrors the onboarding wizard's initFlavorGate (public/onboarding/onboarding.js)
+ * so the same CSS rules (.flavor-mas / .flavor-dmg-nsis in styles.css) gate
+ * dashboard surfaces — specifically the 4th Connections row "Claude Code logs".
+ *
+ * The returned promise is cached in `flavorGatePromise` so callers that need
+ * the resolved boolean (initSettingsGeneralControls) can await it without
+ * triggering a second IPC. The CSS default hides `.flavor-mas`, so a slow
+ * or failing IPC still degrades gracefully (DMG/NSIS view stays visible
+ * even during the in-flight window).
+ */
+function initFlavorGate() {
+  if (flavorGatePromise) return flavorGatePromise;
+  flavorGatePromise = (async () => {
+    if (!window.ClaugeBridge || !ClaugeBridge.isTauriAvailable()) return false;
+    try {
+      const isMas = await ClaugeBridge.isMasFlavor();
+      if (isMas) {
+        isFlavorMas = true;
+        document.body.classList.add('is-flavor-mas');
+      }
+      return !!isMas;
+    } catch (e) {
+      // Defensive default (CSS hides .flavor-mas) keeps the DMG/NSIS copy
+      // visible. Log so we can spot regressions.
+      console.warn('[clauge] is_mas_flavor IPC failed; defaulting to non-MAS:', e);
+      return false;
+    }
+  })();
+  return flavorGatePromise;
+}
+initFlavorGate();
+
 async function initSettingsGeneralControls() {
   const bridgeAvailable = window.ClaugeBridge && ClaugeBridge.isTauriAvailable();
   const autoToggle = document.getElementById('set-autostart-toggle');
@@ -898,6 +942,24 @@ async function initSettingsGeneralControls() {
 
   const restartBtn = document.getElementById('restart-btn');
 
+  // v0.9.0 MAS: Apple App Store policy forbids in-app self-updates. On MAS
+  // builds, relabel the Check Now button to make it clear the update path
+  // routes through the App Store, and hide the Restart Now button entirely
+  // — `check_for_updates` returns `{status: "opened_storefront"}` instead of
+  // `{status: "installed", version: "..."}` on MAS, so there's nothing to
+  // restart into. The button still hits the same IPC; the Rust side branches
+  // on the `mas` Cargo feature to choose its action.
+  //
+  // Await the shared flavor gate (don't re-fire is_mas_flavor) so we always
+  // see a settled result by the time we relabel. flavorGatePromise was kicked
+  // off at module load; this await typically resolves in <1ms because the IPC
+  // has already returned by the time renderSettings runs.
+  await initFlavorGate();
+  if (isFlavorMas) {
+    updatesBtn.textContent = 'Get latest version on the App Store';
+    if (restartBtn) restartBtn.hidden = true;
+  }
+
   updatesBtn.addEventListener('click', async () => {
     if (updatesBtn.disabled) return;
     updatesBtn.disabled = true;
@@ -908,11 +970,20 @@ async function initSettingsGeneralControls() {
       // and returns a tagged enum:
       //   {status: "up_to_date"}                          → nothing changed
       //   {status: "installed", version: "X.Y.Z"}         → restart to apply
+      //   {status: "opened_storefront"}                   → v0.9.0 MAS only
       // The previous handler shipped in v0.7.0 buggy (`update.available`),
       // got patched in v0.7.1 to truthy-check `update`, and is now superseded
       // by the install-on-check flow plus a Restart Now button.
       const result = await ClaugeBridge.checkForUpdates();
-      if (result?.status === 'installed') {
+      if (result?.status === 'opened_storefront') {
+        // v0.9.0 MAS: the Rust side already opened the Mac App Store storefront
+        // via shell.open(macappstore://…). Nothing more to do here beyond
+        // setting status text so the user knows the click took effect. No
+        // restart button — updates land via Apple's normal mechanism.
+        if (updatesStatus) {
+          updatesStatus.textContent = 'Opened the Mac App Store — updates ship through Apple.';
+        }
+      } else if (result?.status === 'installed') {
         if (restartBtn) {
           restartBtn.textContent = `↻ Restart Now to apply v${result.version}`;
           restartBtn.hidden = false;
