@@ -453,6 +453,74 @@ If `tauri::WebviewWindowBuilder::new(..., WebviewUrl::External(http://127.0.0.1:
 - First-launch wizard (`lib.rs::run::setup` onboarding block) — protected since v0.9.10 (the post-Apple-rejection fix).
 - Native popover WKWebView (`native_popover.rs::create_popover`) — protected by `reload_for_port` auto-recovery (it loads against a default port at init, then reloads when sidecar binds). DIFFERENT pattern; works because the popover is hidden until clicked, so the user typically clicks AFTER sidecar is ready.
 
+### 24. MAS-flavor sidecar binaries MUST be wrapped in their own `.app` bundle inside `Contents/Helpers/`
+
+Discovered in the v0.9.10 Apple resubmission cycle (2026-05-28). The naïve placement of the sidecar binary at `Clauge.app/Contents/MacOS/clauge-server` cannot satisfy both of Apple's contradictory requirements for MAS submissions:
+
+1. **Apple Transporter validation** (static check at upload) hard-requires `com.apple.security.app-sandbox=true` on every Mach-O executable in the bundle. No bypass. From the rejection: `"App sandbox not enabled. The following executables must include the 'com.apple.security.app-sandbox' entitlement with a Boolean value of true in the entitlements property list"`. HTTP 409 STATE_ERROR.VALIDATION_ERROR.
+
+2. **`libsystem_secinit.dylib::_libsecinit_appsandbox`** (runtime, during dyld init) hard-requires the binary to have an Info.plist with `kCFBundleIdentifierKey` reachable from code signature information. A standalone Mach-O binary has no embedded Info.plist. With `app-sandbox` set, secinit can't find a bundle identifier, fails per-binary container setup, and the process SIGTRAPs before any user code runs.
+
+The two requirements meet at: helpers must live in their OWN `.app` bundle (which has its own `Info.plist`). This is the documented Apple pattern (Electron/Chromium do this for helper renderers; Apple's docs at `developer.apple.com/documentation/security/app_sandbox` describe it as the standard).
+
+**Required structure for any sandboxed Mac App Store flavor of Clauge:**
+
+```
+Clauge.app/
+├── Contents/
+│   ├── Info.plist                          (main app — CFBundleIdentifier=com.clauding.clauge)
+│   ├── MacOS/
+│   │   └── clauge                          (Tauri main binary)
+│   └── Helpers/
+│       └── Clauge Helper.app/
+│           ├── Contents/
+│           │   ├── Info.plist              (helper — CFBundleIdentifier=com.clauding.clauge.helper)
+│           │   └── MacOS/
+│           │       └── clauge-server       (Node SEA sidecar)
+```
+
+**The helper.app Info.plist must contain at minimum:**
+
+- `CFBundleIdentifier=com.clauding.clauge.helper` (or whatever subdomain of the parent is used)
+- `CFBundleExecutable=clauge-server`
+- `CFBundlePackageType=APPL` (or `BNDL` — verify against Apple's current convention)
+- `CFBundleVersion=<matching parent's build>` (CFBundleVersion 4 for v0.9.10)
+- `CFBundleShortVersionString=<matching parent's marketing version>`
+- `LSUIElement=true` (no Dock icon)
+- `LSMinimumSystemVersion=<matching parent>` (12.0 for current Clauge)
+
+**Build script responsibility (`scripts/build-mas-clean.sh`):**
+
+The Tauri `externalBin` mechanism copies the sidecar binary to `Contents/MacOS/`. A post-build step in the MAS build script must:
+
+1. Move `Contents/MacOS/clauge-server` to `Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server`.
+2. Generate the helper Info.plist (heredoc + `plutil -convert binary1` if Apple prefers binary plists).
+3. Re-sign INSIDE-OUT: helper binary → helper bundle (with sidecar entitlements including `app-sandbox=true`) → main app bundle (re-seal so the parent's signature includes the helper's signature).
+
+**Runtime responsibility (`src-tauri/src/sidecar.rs`):**
+
+Tauri's default sidecar plugin (`app.shell().sidecar("clauge-server")`) constructs `<bundle>/Contents/MacOS/<name>` on macOS. With the helper in `Contents/Helpers/`, the plugin can't find it. The MAS-flavor spawn path must manually construct the path via `tauri::api::path::resource_dir()` (or equivalent) and use `std::process::Command::new(...)` directly. Gate the new path resolution on `#[cfg(feature = "mas")]`; the DMG flavor's `Contents/MacOS/clauge-server` path stays unchanged.
+
+**Bookmark + sandbox container sharing (open question per session 2026-05-28):**
+
+The helper gets its own sandbox container at `~/Library/Containers/com.clauding.clauge.helper/Data/`, separate from the main app's `~/Library/Containers/com.clauding.clauge/Data/`. The security-scoped bookmark (granting access to `~/.claude/`) is stored in the main app's container. Two possibilities for transferring scope to the helper:
+
+- **First, test process-tree inheritance.** Apple's `posix_spawn` from a sandboxed parent should make the child inherit the parent's security scope WITHOUT needing the child to explicitly hold the bookmark. If a quick wizard walkthrough on the helper.app build shows the dashboard populating with data, no further work is needed.
+- **If inheritance doesn't carry the bookmark**, add `com.apple.security.application-groups` entitlement to both the main app and the helper (e.g. `group.com.clauding.clauge`), migrate bookmark blob storage from the Tauri store (main container) to the app-group container at `~/Library/Group Containers/group.com.clauding.clauge/`, and update `security_scoped_bookmark.rs` to read/write from the group path on MAS. The helper then resolves the bookmark itself.
+
+**Anti-patterns to NEVER ship for the MAS flavor:**
+
+- Sidecar binary at `Contents/MacOS/clauge-server` with `app-sandbox` entitlement — runtime SIGTRAP (this session, v0.9.10 pre-helper).
+- Sidecar binary at `Contents/MacOS/clauge-server` WITHOUT `app-sandbox` entitlement — Transporter rejects (this session, v0.9.10 post-cd83087).
+- Ad-hoc signing (`codesign --sign -`) of a binary with restricted entitlements (`application-identifier`, `team-identifier`) — AMFI -424 at launch (this session, first local-test attempt).
+- Real-cert signing with embedded Production provisioning profile for direct dev-machine launch — taskgated-helper CPProfileManager -215 (this session, second local-test attempt). Only Development profiles can be installed for direct launch; MAS uses Production profiles. The `--local-test` mode in the build script strips this for sandbox-equivalent verification.
+
+**Cross-references:**
+
+- Full session postmortem: `~/Projects/claude-second-brain/01_Projects/Clauge/2026-05-28-mas-blocked-helperapp-needed-session.md`.
+- `AGENT_LEARNINGS.md` 2026-05-28 entry (when added — currently the wizard-race-framed entry is stale and needs amending).
+- Apple's official doc: `developer.apple.com/documentation/security/app_sandbox`.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
