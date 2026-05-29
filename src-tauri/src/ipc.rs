@@ -5,8 +5,9 @@ use std::sync::{
     Arc, Mutex,
 };
 use tauri::State;
-use tauri_plugin_shell::process::CommandChild;
 use tokio::sync::Notify;
+
+use crate::sidecar::SidecarChild;
 
 /// Shared app state holding the sidecar's bound port and shutdown machinery.
 ///
@@ -24,18 +25,22 @@ use tokio::sync::Notify;
 ///    in backoff sleep), the wake-up is LOST. The flag covers that gap —
 ///    every loop iteration checks it and breaks out if set.
 ///
-/// 3. `children` (`Arc<Mutex<Vec<CommandChild>>>`) — every spawned child is
+/// 3. `children` (`Arc<Mutex<Vec<SidecarChild>>>`) — every spawned child is
 ///    registered here so the `RunEvent::ExitRequested` handler in lib.rs
 ///    can take ownership of the entire set and call `kill()` on each one.
-///    `CommandChild` has no `Drop` impl (verified against
-///    tauri-plugin-shell-2.3.5/src/process/mod.rs), so a child that the
-///    supervisor's loop hasn't yet observed (e.g., crash-respawn racing the
-///    quit signal) would otherwise survive the parent process exit.
+///    Neither variant of `SidecarChild` has a `Drop` impl that kills the
+///    OS process (DMG: `tauri_plugin_shell::process::CommandChild` has no
+///    Drop per tauri-plugin-shell-2.3.5/src/process/mod.rs; MAS:
+///    `sidecar::NativeChild` only carries the PID, and the underlying
+///    `tokio::process::Child` lives in a wait-task that doesn't observe
+///    the parent's exit), so a child that the supervisor's loop hasn't
+///    yet observed (e.g., crash-respawn racing the quit signal) would
+///    otherwise survive the parent process exit.
 pub struct AppState {
     pub server_port: Arc<Mutex<Option<u16>>>,
     pub shutdown: Arc<Notify>,
     pub shutting_down: Arc<AtomicBool>,
-    pub children: Arc<Mutex<Vec<CommandChild>>>,
+    pub children: Arc<Mutex<Vec<SidecarChild>>>,
     /// Shared, mutex-serialized in-memory cache for the Claude Code OAuth
     /// credentials. Lives in `AppState` so concurrent dashboard polls share
     /// a single cached `ClaudeCodeCreds` and don't each re-prompt the user
@@ -93,7 +98,7 @@ impl AppState {
     /// Returns silently on lock poison — losing the registration is bad but
     /// not worth panicking for in production. The next time the lock recovers
     /// (or the OS cleans up zombie processes) it'll be fine.
-    pub fn register_child(&self, child: CommandChild) {
+    pub fn register_child(&self, child: SidecarChild) {
         match self.children.lock() {
             Ok(mut guard) => guard.push(child),
             Err(e) => log::error!("children lock poisoned at register: {}", e),
@@ -117,7 +122,7 @@ impl AppState {
     /// sidecar process and `kill()` each one. Returns an empty Vec on lock
     /// poison — at that point the children are leaked, but the alternative
     /// (panicking) would be worse.
-    pub fn take_all_children(&self) -> Vec<CommandChild> {
+    pub fn take_all_children(&self) -> Vec<SidecarChild> {
         match self.children.lock() {
             Ok(mut guard) => std::mem::take(&mut *guard),
             Err(e) => {

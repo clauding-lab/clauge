@@ -1,19 +1,39 @@
 #!/usr/bin/env bash
-# Build the MAS .app + .pkg with split entitlements (main vs sidecar).
-# Resolves Transporter 90885 (nested executable mismatch) by re-signing
-# the sidecar with entitlements that omit application-identifier.
+# Build the MAS .app + .pkg with split entitlements (main vs helper).
+#
+# The sidecar (clauge-server, Node SEA) is wrapped in its OWN .app bundle at
+# Contents/Helpers/Clauge Helper.app/. This is the Apple-documented
+# architecture for sandboxed bundled helpers (Electron + Chromium use the
+# same pattern). Without the helper.app wrap:
+#   - Transporter rejects with HTTP 409 "App sandbox not enabled" if the
+#     standalone Mach-O at Contents/MacOS/clauge-server lacks
+#     com.apple.security.app-sandbox.
+#   - libsystem_secinit's _libsecinit_appsandbox SIGTRAPs at runtime if
+#     the standalone Mach-O DECLARES app-sandbox but has no embedded
+#     Info.plist providing CFBundleIdentifier (cd83087 mid-cycle attempt
+#     in v0.9.10).
+# The helper.app gives the binary its own Info.plist with
+# CFBundleIdentifier=com.clauding.clauge.helper so libsystem_secinit can
+# set up the helper's per-binary container at runtime, AND it satisfies
+# Transporter's "every Mach-O must have app-sandbox" rule statically.
 #
 # Pipeline:
 #   1. Tauri build — signs every binary with entitlements.mas.plist (default).
-#   2. Re-sign sidecar (clauge-server) with entitlements-sidecar.mas.plist
-#      (NO application-identifier, NO team-identifier).
-#   3. Re-sign main .app to re-seal the bundle (picks up new sidecar sig).
-#   4. productbuild + productsign with installer cert.
+#   2. Wrap clauge-server in Contents/Helpers/Clauge Helper.app/:
+#      generate Info.plist; move binary from Contents/MacOS/ to
+#      Contents/Helpers/Clauge Helper.app/Contents/MacOS/.
+#   3. Re-sign helper binary with entitlements-sidecar.mas.plist
+#      (NO application-identifier, NO team-identifier; app-sandbox=true
+#      now valid via the helper's bundle Info.plist).
+#   4. Sign the helper.app bundle to seal it (re-uses the helper-binary
+#      entitlements; no --deep so the binary's signature is preserved).
+#   5. Re-sign main .app to re-seal the bundle (picks up new helper sig).
+#   6. productbuild + productsign with installer cert.
 #
-# Inside-out order matters: codesign seals the bundle. If we sign the bundle
-# first then the sidecar, the bundle seal becomes invalid. By signing the
-# sidecar first and the bundle last, the bundle's seal includes the sidecar's
-# new signature.
+# Inside-out order matters: codesign seals each bundle. If we sign the
+# main bundle first then the helper, the main bundle's seal becomes
+# invalid. By signing the helper binary → helper bundle → main bundle in
+# that order, each outer seal includes the fresh inner signature.
 #
 # Usage:
 #   ./scripts/build-mas-clean.sh             # production build (signed PKG for Transporter)
@@ -51,7 +71,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_TAURI="$REPO_ROOT/src-tauri"
 APP_PATH="$SRC_TAURI/target/universal-apple-darwin/release/bundle/macos/Clauge.app"
-SIDECAR_PATH="$APP_PATH/Contents/MacOS/clauge-server"
+# After Tauri build, the SEA binary initially lives at this path (Tauri's
+# externalBin default). The helper-wrap step below moves it into its own
+# .app bundle so libsystem_secinit can find a CFBundleIdentifier at runtime
+# AND Transporter's "every Mach-O must have app-sandbox" check passes.
+TAURI_SIDECAR_PATH="$APP_PATH/Contents/MacOS/clauge-server"
+HELPER_APP_PATH="$APP_PATH/Contents/Helpers/Clauge Helper.app"
+HELPER_BINARY_PATH="$HELPER_APP_PATH/Contents/MacOS/clauge-server"
 
 # Derive version from package.json so the PKG filename auto-updates on each
 # version bump. jq is installed on Adnan's Mac (he uses it routinely); falls
@@ -115,6 +141,75 @@ cd "$SRC_TAURI"
 cargo tauri build --features mas --config tauri.mas.conf.json \
   --bundles app --target universal-apple-darwin
 
+echo "==> Wrapping clauge-server in Contents/Helpers/Clauge Helper.app/..."
+# Defensive cleanup in case a prior partial run left a stale helper bundle
+# (cargo tauri build doesn't manage Helpers/, so we own the lifecycle here).
+rm -rf "$HELPER_APP_PATH"
+mkdir -p "$HELPER_APP_PATH/Contents/MacOS"
+mkdir -p "$HELPER_APP_PATH/Contents/Resources"
+
+# Generate the helper bundle's Info.plist BEFORE moving the binary. The
+# critical field is CFBundleIdentifier — without it, libsystem_secinit's
+# _libsecinit_appsandbox SIGTRAPs at runtime when the binary launches
+# (it can't determine which sandbox container to bind to). Other fields:
+#   - CFBundleExecutable=clauge-server: tells launchd what binary to run
+#     when the bundle is invoked. Tauri's manual std::process::Command
+#     spawn in src/sidecar.rs hits the binary path directly, so this is
+#     mostly for plistutil / Finder metadata consistency.
+#   - CFBundlePackageType=APPL: matches what Electron/Chromium use for
+#     helper apps (vs BNDL which is for loadable plug-ins).
+#   - LSUIElement=true + LSBackgroundOnly=true: no Dock icon, no menu bar,
+#     not in Cmd+Tab. Helper runs invisible to the user.
+#   - CFBundleVersion=4 must match tauri.mas.conf.json::bundle.macOS.
+#     bundleVersion (Apple's monotonic build counter for CFBundleVersion).
+#   - CFBundleShortVersionString: matches package.json $VERSION.
+#   - LSMinimumSystemVersion=12.0: matches main app's
+#     tauri.conf.json::bundle.macOS.minimumSystemVersion.
+cat > "$HELPER_APP_PATH/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.clauding.clauge.helper</string>
+    <key>CFBundleExecutable</key>
+    <string>clauge-server</string>
+    <key>CFBundleName</key>
+    <string>Clauge Helper</string>
+    <key>CFBundleDisplayName</key>
+    <string>Clauge Helper</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleVersion</key>
+    <string>4</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${VERSION}</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Adnan Rashid. All rights reserved.</string>
+</dict>
+</plist>
+PLIST
+
+# Move the Tauri-built binary into the helper bundle. Tauri's
+# bundle.externalBin still drops it at Contents/MacOS/clauge-server during
+# the build; we relocate it post-build because Tauri 2 has no API to
+# customize the output path of externalBin entries. The runtime spawn
+# path in src-tauri/src/sidecar.rs (MAS branch) constructs the new
+# absolute path from the bundle root.
+mv "$TAURI_SIDECAR_PATH" "$HELPER_BINARY_PATH"
+
+echo "==> Helper bundle layout:"
+ls -la "$HELPER_APP_PATH/Contents/"
+echo
+
 # Always use the real Apple Developer cert. Ad-hoc signing (identity="-")
 # was tried during v0.9.10 sandbox-test work and rejected by AMFI with code
 # -424 ("file is adhoc signed but contains restricted entitlements"): the
@@ -139,18 +234,31 @@ else
   fi
 fi
 
-echo "==> Re-signing sidecar with sidecar entitlements (no app-id, no app-sandbox)..."
-# v0.9.10 (Apple Issue 2 actual root cause): entitlements-sidecar.mas.plist
-# no longer declares com.apple.security.app-sandbox — the sidecar inherits
-# the parent's sandbox via process tree. Standalone Mach-O binaries without
-# embedded Info.plist crash during libsystem_secinit's per-binary container
-# setup if they declare app-sandbox themselves. See AGENT_LEARNINGS.md.
+echo "==> Signing helper.app bundle (sidecar entitlements; app-sandbox=true now valid via helper Info.plist)..."
+# Inside-out signing: codesign on a bundle applies --entitlements to the
+# bundle's CFBundleExecutable (clauge-server) AND seals the bundle into
+# Contents/_CodeSignature/CodeResources. The main .app bundle is signed
+# afterward so its own CodeResources picks up the helper's fresh signature.
+#
+# Sidecar entitlements omit application-identifier + team-identifier to
+# avoid Transporter 90885 (nested executable profile mismatch); the helper
+# has no per-binary provisioning profile. app-sandbox=true is now valid
+# because the helper.app's Info.plist provides CFBundleIdentifier so
+# libsystem_secinit can set up the helper's per-binary sandbox container
+# at runtime (vs. the cd83087 mid-cycle attempt where the standalone
+# binary at Contents/MacOS/clauge-server SIGTRAPped during dyld init).
 codesign --force --options runtime \
   --entitlements "$SRC_TAURI/entitlements-sidecar.mas.plist" \
   --sign "$SIGN_IDENTITY" \
-  "$SIDECAR_PATH"
+  "$HELPER_APP_PATH"
 
 echo "==> Re-signing main .app bundle (entitlements=$(basename "$MAIN_ENTITLEMENTS"))..."
+# No --deep on the outer sign: --deep would re-sign nested code (the
+# helper.app's binary) with the MAIN entitlements, clobbering the helper's
+# fresh sidecar entitlements. Without --deep, codesign signs the main
+# bundle's CFBundleExecutable (clauge) with main entitlements and rebuilds
+# the bundle's CodeResources, which seals the helper.app digest-wise but
+# does not touch its signature.
 codesign --force --options runtime \
   --entitlements "$MAIN_ENTITLEMENTS" \
   --sign "$SIGN_IDENTITY" \
@@ -158,20 +266,18 @@ codesign --force --options runtime \
 
 echo "==> Verifying signatures..."
 codesign --verify --deep --strict "$APP_PATH"
-echo "Main app entitlements (should include application-identifier in production):"
+codesign --verify --deep --strict "$HELPER_APP_PATH"
+echo "Main app entitlements (should include application-identifier + app-sandbox in production):"
 # Trailing `|| true` because grep returning no matches exits 1, which `set -e`
 # + pipefail (at the top of this script) would interpret as a fatal error
 # and kill the script silently before reaching productbuild. The grep is
 # diagnostic-only — we want to PRINT whatever it matches, not gate the
-# build on the result.
+# build on the result. See AGENT_LEARNINGS.md 2026-05-28.
 codesign -d --entitlements - --xml "$APP_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10 || true
-echo "Sidecar entitlements (should NOT include application-identifier):"
-# This grep correctly returns NO matches (sidecar deliberately omits all
-# three of those keys per the v0.9.10 fix), so `|| true` is load-bearing
-# here — without it the script silently dies before productbuild and you
-# get a re-signed .app but no .pkg. See AGENT_LEARNINGS.md 2026-05-28.
-codesign -d --entitlements - --xml "$SIDECAR_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10 || true
-echo "  (empty match above on the sidecar is correct: app-sandbox + restricted entitlements are intentionally absent)"
+echo "Helper bundle entitlements (should include app-sandbox; should NOT include application-identifier):"
+codesign -d --entitlements - --xml "$HELPER_APP_PATH" 2>/dev/null | plutil -convert xml1 -o - - | grep -E "application-identifier|team-identifier|app-sandbox" | head -10 || true
+echo "Helper bundle Info.plist sanity (CFBundleIdentifier + CFBundleExecutable + LSUIElement):"
+plutil -p "$HELPER_APP_PATH/Contents/Info.plist" | grep -E "CFBundleIdentifier|CFBundleExecutable|LSUIElement" || true
 
 if [[ "$MODE" == "local-test" ]]; then
   echo

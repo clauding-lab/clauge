@@ -2,59 +2,92 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- MAS flavor: sidecar binary (clauge-server) entitlements. Applied via
-         post-build codesign re-sign in scripts/build-mas-clean.sh.
-         Tauri 2 signs every binary in the bundle with the same entitlements
-         file by default. After commit db51ce5 added application-identifier +
-         team-identifier to entitlements.mas.plist, the sidecar inherited them
-         too — but the sidecar has no per-binary provisioning profile, so
-         Transporter 90885 (nested executable profile mismatch) fires.
-         Standard MAS practice: sign helpers/sidecars with minimal entitlements
-         (no app-id, no team-id) so they don't trip nested-executable profile
-         checks. The main bundle keeps the full entitlements + embedded profile.
+    <!-- MAS flavor: helper sidecar entitlements (clauge-server inside
+         Contents/Helpers/Clauge Helper.app/). Applied via post-build
+         codesign in scripts/build-mas-clean.sh.
 
-         v0.9.10 (Apple Issue 2 fix): com.apple.security.app-sandbox is
-         REMOVED from this list. clauge-server is a standalone Mach-O
-         binary (no .app bundle wrapper) and therefore has NO embedded
-         Info.plist with `CFBundleIdentifier`. When the binary launches
-         WITH the app-sandbox entitlement, libsystem_secinit.dylib's
-         `_libsecinit_appsandbox` tries to set up a per-bundle sandbox
-         container, fails to find a bundle identifier via
-         `kCFBundleIdentifierKey`, and the binary SIGTRAPs during dyld
-         initializer execution — BEFORE any of our Rust/Node code runs.
-         This was the actual root cause of Apple's v0.9.0 build 3 rejection
-         under Guideline 2.1(a) ("app does not load its content after
-         launch"); the wizard race fix is necessary but not sufficient.
+         Split-entitlements pattern: helpers/sidecars omit
+         application-identifier + team-identifier so they don't trip
+         Transporter 90885 (nested executable profile mismatch). The main
+         bundle keeps the full entitlements + embedded provisioning profile.
 
-         Without the app-sandbox entitlement, secinitd skips per-bundle
-         setup for this binary and the kernel applies the parent's sandbox
-         via process-tree inheritance. Verified locally 2026-05-28: sidecar
-         spawned, bound 127.0.0.1:3456, /api/health returned with
-         claudeDir resolved to the parent's container path
-         (~/Library/Containers/com.clauding.clauge/Data/.claude). The
-         security posture is unchanged — the sidecar is still sandboxed,
-         just inheriting rather than declaring its own container.
+         v0.9.10 timeline of three landings on the right configuration:
 
-         The remaining keys are runtime-hardening / non-sandbox flags:
-         cs.allow-jit is required for V8 JIT in the SEA Node binary, and
-         the network + files entitlements are kept for defense-in-depth
-         (harmless under inherited sandbox; would matter if Apple later
-         requires per-binary entitlement declarations). -->
-    <!-- network.client: outbound HTTPS to api.anthropic.com (the actual caller). -->
-    <key>com.apple.security.network.client</key>
+         (1) v0.9.0 build 3: sidecar at Contents/MacOS/clauge-server with
+             full main entitlements (including app-sandbox). Standalone
+             Mach-O has no embedded Info.plist → libsystem_secinit's
+             _libsecinit_appsandbox.cold.6 SIGTRAPs (no
+             kCFBundleIdentifierKey). Apple rejected under Guideline
+             2.1(a) ("app does not load its content after launch").
+
+         (2) Commit cd83087 (v0.9.10 mid-cycle): removed app-sandbox from
+             sidecar entitlements. Runtime worked (sidecar inherited
+             parent's sandbox via process tree because no own container).
+             Transporter rejected the .pkg with HTTP 409 — its static
+             validator hard-requires app-sandbox=true on every Mach-O in
+             a MAS bundle.
+
+         (3) Helper.app wrap + app-sandbox=true (re-added) + own
+             Info.plist with CFBundleIdentifier=com.clauding.clauge.helper.
+             FIRST attempt: tried to give the helper its own per-binary
+             container. _libsecinit_appsandbox.cold.9 SIGTRAPped with
+             asiSignatures SYSCALL_SET_USERLAND_PROFILE — secinitd's
+             kernel syscall to apply the helper's sandbox profile failed
+             because a sandboxed parent can't spawn a sandboxed child
+             with a NEW container under the parent's local-test
+             entitlement set. Crash report
+             clauge-server-2026-05-28-230755.ips.
+
+         (4) Helper.app wrap + com.apple.security.inherit=true (this
+             config). The inherit entitlement tells the kernel "attach me
+             to the parent's existing sandbox rather than creating a new
+             one." Transporter still sees app-sandbox=true on the Mach-O
+             (passes static validation). libsystem_secinit skips per-
+             binary container setup (no SIGTRAP). The helper inherits the
+             parent's startAccessingSecurityScopedResource grant on
+             ~/.claude/, so the SEA Node server can read Claude Code
+             logs without an app-groups migration. This is the
+             Apple-documented pattern for sandboxed bundled helpers;
+             Chrome's `Google Chrome Helper.app` and every Electron
+             renderer use it. Reference: Apple Technical Note TN2206. -->
+    <!-- app-sandbox: required for MAS submission; satisfied at runtime
+         because the helper.app's Info.plist provides CFBundleIdentifier. -->
+    <key>com.apple.security.app-sandbox</key>
     <true/>
-    <!-- network.server: listens on 127.0.0.1:3456 for the Tauri main process. -->
-    <key>com.apple.security.network.server</key>
+    <!-- inherit: THIS is the load-bearing entitlement for the helper.app
+         pattern. Tells the kernel: "don't set up a fresh container for me;
+         inherit the parent's sandbox state instead." With `inherit=true`:
+           - Transporter still sees app-sandbox=true on the Mach-O (passes
+             static validation).
+           - libsystem_secinit skips per-binary container setup at runtime
+             (no _libsecinit_appsandbox.cold.9 SIGTRAP — secinitd just
+             attaches the helper to the parent's existing sandbox).
+           - The helper inherits the parent's
+             startAccessingSecurityScopedResource grant on ~/.claude/, so
+             the SEA Node server can read the user's real Claude Code
+             logs without a separate app-groups container migration.
+         This is the Apple-documented pattern for sandboxed bundled
+         helpers; Chrome's `Google Chrome Helper.app` and every Electron
+         renderer use it. Without it, a helper.app inside a sandboxed
+         parent fails secinitd's profile-set syscall (asiSignatures
+         SYSCALL_SET_USERLAND_PROFILE — observed locally 2026-05-28
+         23:07 BDT, crash report clauge-server-2026-05-28-230755.ips). -->
+    <key>com.apple.security.inherit</key>
     <true/>
-    <!-- cs.allow-jit: required for the SEA Node binary's V8 JIT. NOT a sandbox
-         entitlement — it's a code-signing hardening flag. -->
+    <!-- cs.allow-jit: required for the SEA Node binary's V8 JIT. NOT a
+         sandbox entitlement — it's a code-signing hardening flag, not
+         affected by inherit. Has to be on the helper's own signature
+         because the dyld JIT permission check runs per-binary. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <!-- files.user-selected.read-only: harmless under inherited sandbox. -->
-    <key>com.apple.security.files.user-selected.read-only</key>
-    <true/>
-    <!-- files.bookmarks.app-scope: harmless under inherited sandbox. -->
-    <key>com.apple.security.files.bookmarks.app-scope</key>
-    <true/>
+    <!-- Network + files entitlements that used to live here have been
+         REMOVED. With `inherit=true`, the helper picks them up from the
+         parent (`entitlements.mas.plist` declares network.client +
+         network.server + files.user-selected.read-only +
+         files.bookmarks.app-scope). Listing them on the helper too would
+         be redundant at best and a potential conflict signal to App
+         Review at worst. Reference: Apple Technical Note TN2206, Chrome
+         /Electron helper entitlements convention. -->
+
 </dict>
 </plist>

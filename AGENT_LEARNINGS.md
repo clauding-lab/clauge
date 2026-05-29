@@ -37,7 +37,45 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-05-29 — v0.9.10 | The real Apple 2.1(a) fix — sandboxed sidecar couldn't boot (helper.app + inherit + CLAUDE_DIR env-forward)
+
+**Trigger:** Building the sandboxed MAS flavor for the v0.9.10 resubmission — after the wizard-race fix (2026-05-28 entry below) was already in hand. Transporter rejected the build (HTTP 409, "App sandbox not enabled" on every Mach-O), forcing an architectural rebuild that revealed the wizard race was NOT the load-bearing cause of Apple's 2.1(a) rejection.
+
+**What went wrong (two layers, neither was the wizard):**
+
+1. **The SEA sidecar couldn't boot under the App Sandbox.** The Node SEA is a ~220 MB *standalone* Mach-O dropped at `Contents/MacOS/clauge-server`. Transporter statically requires `com.apple.security.app-sandbox` on every Mach-O — but a standalone Mach-O that *declares* app-sandbox with no embedded `Info.plist` SIGTRAPs at runtime in `libsystem_secinit::_libsecinit_appsandbox.cold.9` (`SYSCALL_SET_USERLAND_PROFILE`), because secinitd can't set up a per-binary sandbox container without a `CFBundleIdentifier`. So the binary was caught between a static gate (must declare app-sandbox) and a runtime gate (declaring it crashes). Apple's reviewer saw the blank window because the sidecar process was crash-looping, not (only) because the wizard opened early.
+
+2. **After it booted, granted data didn't reach it.** Wrapping the binary in `Contents/Helpers/Clauge Helper.app/` (its own `Info.plist` + `CFBundleIdentifier=com.clauding.clauge.helper`) and adding `com.apple.security.inherit=true` got the helper booting and the dashboard rendering — but `/api/health` still reported the sandbox-redirected empty `~/.claude`. The MAS spawn path had been refactored from Tauri's shell plugin (`app.shell().sidecar(...)`, which implicitly inherits the parent env) to a raw `tokio::process::Command`, which set only `NO_OPEN=1`. The bookmark-resolved path lives in a Rust `OnceLock` (`MAS_CLAUDE_DIR`), not in the OS env, so the helper never learned where the real data was. A dashboard that renders but shows no data is itself a 2.1(a) re-rejection waiting to happen.
+
+**Lesson (project + generalizable):**
+- **A sandboxed *bundled helper binary* needs its own `.app` bundle** — `Info.plist` + `CFBundleIdentifier` + `com.apple.security.inherit=true`. `inherit` makes it attach to the parent's sandbox container (inheriting entitlements + the security-scoped bookmark) instead of getting a fresh per-binary container that secinitd can't provision. This is the Apple-documented pattern (Chrome/Electron helpers).
+- **When you replace a framework's process-spawn helper with a raw OS spawn, you lose its implicit env inheritance.** Tauri's `shell().sidecar()` arranged the child env; `tokio::process::Command` does not carry anything you don't explicitly set. Audit what the framework was doing for you before swapping it out — forward the needed env vars by hand.
+- **Verify the *data path*, not just that the UI renders.** "Dashboard appears" ≠ "fix works." The empty-data state looked like success on a screenshot.
+
+**Prevention:**
+
+1. `AGENTS.md` landmine #24 (helper.app + inherit + inside-out signing + first-spawn transient) and #25 (explicit env-forward when bypassing the shell plugin) — both already committed (`762ba72`).
+2. `scripts/build-mas-clean.sh` owns the helper.app wrap + inside-out sign (helper binary → helper bundle → main bundle; no `--deep`).
+3. **End-to-end sandboxed local-test verification before Transporter:** build with `--local-test`, launch, then `curl /api/health` (expect real `~/.claude`, not the container-redirected path) AND `curl /api/usage` (expect live plan + spend data). Compilation + unit tests are necessary but NOT sufficient — they passed the whole time the data path was broken.
+
+**Hotfix:** v0.9.10 build 4. Helper.app wrap + `com.apple.security.inherit=true` (`entitlements-sidecar.mas.plist`), MAS spawn via `tokio::process::Command` with explicit `CLAUDE_DIR` forward in `spawn_native_helper` (`sidecar.rs`). **Verified end-to-end on a sandboxed local-test build (2026-05-29):** PID 15001 running from `Clauge Helper.app/Contents/MacOS/clauge-server`, no separate `com.clauding.clauge.helper` container (inherit working), `/api/health` → real `/Users/adnanrashid/.claude`, `/api/usage` → live data (5h plan 5%, extra-usage $19.60/$20, balance $78.63).
+
+**Honest diagnostic note:** the wizard race was the first hypothesis (~70% confidence, recorded below on 2026-05-28) and could not be confirmed without a sandbox repro. Actually building the sandboxed flavor was the repro — and it showed the deeper cause. The wizard fix is correct and shipped as defense-in-depth; it was not retracted. This is a textbook case of a confident-looking diagnosis from code reading that only resolved once the real artifact was built and run.
+
+**Cross-references:**
+
+- Project landmines: `AGENTS.md` § 24 + § 25.
+- Recontextualizes the 2026-05-28 wizard-race entry below (preserved as a point-in-time observation per the no-delete rule).
+- CHANGELOG: `[0.9.10]` "Note on the rejection diagnosis" + the two architectural "Fixed" bullets.
+- Global: `~/.claude/AGENT_LEARNINGS.md` 2026-05-29 entry (the framework-spawn-loses-env-inheritance generalization).
+- Auto-memory: `project_v0_9_10_apple_issue_2_wizard_race.md` (corrective footer).
+- Branch: `feat/mas-on-v0.9.9`; PR #11. ASC submission `32193453-1524-407a-b705-c16ae62fbbd3`, build 4.
+
+---
+
 ## 2026-05-28 — v0.9.0 → v0.9.10 | Apple Mac App Store rejection — wizard race condition
+
+> **Recontextualized 2026-05-29 (see entry above):** this entry captured the first-hypothesis diagnosis (wizard race). Building the sandboxed flavor later revealed the load-bearing cause was the sidecar's inability to boot under the App Sandbox (helper.app + inherit) plus a `CLAUDE_DIR` env-propagation bug. The wizard fix below is correct and shipped, but as defense-in-depth, not the primary 2.1(a) fix. Kept verbatim as a point-in-time observation.
 
 **Trigger:** Apple App Review rejected v0.9.0 build 3 (in review since 2026-05-19, response 2026-05-28 02:51 BDT) under two guidelines:
 

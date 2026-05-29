@@ -84,12 +84,321 @@ pub enum CrashAction {
     BackoffRespawn(Duration),
 }
 
-use tauri::async_runtime::Receiver;
 use tauri::{AppHandle, Manager};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+
+// DMG-only Tauri shell-plugin spawn path. MAS bypasses the shell plugin
+// entirely (see spawn_native_helper below), so these imports are gated to
+// avoid "unused import" warnings under --features mas.
+#[cfg(not(feature = "mas"))]
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+#[cfg(not(feature = "mas"))]
 use tauri_plugin_shell::ShellExt;
 
 const PORT_MARKER: &str = "CLAUGE_BOUND_PORT=";
+
+// ============================================================================
+// Sidecar child + event abstraction (helper.app architecture for MAS, v0.9.10)
+// ============================================================================
+//
+// The DMG flavor spawns the SEA Node binary via `app.shell().sidecar(...)`,
+// which expects the binary at `Contents/MacOS/clauge-server` and returns a
+// `tauri_plugin_shell::process::CommandChild` + `Receiver<CommandEvent>`.
+//
+// The MAS flavor cannot use that path: Apple's Transporter validation
+// requires `app-sandbox=true` on every Mach-O in the bundle, but a
+// standalone Mach-O at `Contents/MacOS/clauge-server` with `app-sandbox`
+// SIGTRAPs at runtime in `libsystem_secinit::_libsecinit_appsandbox`
+// (no embedded `Info.plist` → no `CFBundleIdentifier` → secinitd can't
+// set up the per-binary container). The Apple-documented fix is to wrap
+// the helper in its own `.app` bundle under `Contents/Helpers/Clauge
+// Helper.app/`, which provides the `Info.plist` + `CFBundleIdentifier`
+// the sandbox machinery needs. Build script `scripts/build-mas-clean.sh`
+// performs the wrap post-Tauri-build.
+//
+// At runtime, Tauri's `Shell::sidecar(name)` API hardcodes the
+// `Contents/MacOS/<name>` lookup with no override hook, so the MAS branch
+// bypasses Tauri's shell plugin entirely and spawns via
+// `tokio::process::Command` from the helper's absolute path. The unified
+// `SidecarChild` enum + `SidecarEvent` enum below adapt both spawn paths
+// to a single supervisor implementation; AppState stores `SidecarChild`
+// (vs. the previous `CommandChild`) so the quit-time kill loop in lib.rs
+// doesn't care which path produced the children.
+
+/// Subset of `tauri_plugin_shell::process::CommandEvent` we actually consume.
+///
+/// We only care about Stderr lines (to scan for `CLAUGE_BOUND_PORT=` markers)
+/// and process termination (for the crash supervisor). Stdout, intermediate
+/// "error" events, and other Tauri-specific signals are filtered out at the
+/// forwarder. Using a custom enum lets the supervisor write one match arm
+/// instead of two cfg-gated ones.
+pub enum SidecarEvent {
+    Stderr(Vec<u8>),
+    Terminated {
+        code: Option<i32>,
+        signal: Option<i32>,
+    },
+}
+
+/// MAS-only minimal child handle.
+///
+/// Holds only the PID. `kill()` issues SIGTERM via `libc::kill(pid,
+/// SIGTERM)` directly — we don't need to own the `tokio::process::Child`
+/// for kill because the wait-task in `spawn_native_helper` already owns
+/// it (and surfaces `SidecarEvent::Terminated` when the kernel reaps the
+/// process). This dodges the `&mut self` constraint on
+/// `tokio::process::Child::kill()` which would otherwise force a Mutex
+/// or oneshot-channel dance to call kill from the supervisor's quit
+/// path while the wait task is concurrently `await`-ing on the same
+/// Child.
+#[cfg(feature = "mas")]
+pub struct NativeChild {
+    pid: u32,
+}
+
+#[cfg(feature = "mas")]
+impl NativeChild {
+    pub fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    pub fn kill(self) -> std::io::Result<()> {
+        // SIGTERM (vs SIGKILL) gives the SEA Node binary a chance to flush
+        // any in-flight log writes / Tauri store fsyncs before exit. The
+        // supervisor's grace window (lib.rs `std::thread::sleep(200ms)` in
+        // the ExitRequested handler) covers the time between SIGTERM and
+        // the kernel reaping the child.
+        //
+        // SAFETY: `libc::kill` is signal-safe and well-defined for any i32
+        // pid; if the pid doesn't match a process we own, kill returns -1
+        // with errno set (EPERM / ESRCH), surfaced as a normal io::Error.
+        // The u32→i32 cast is value-preserving for real macOS PIDs (kernel
+        // PID max is ~99999, well within i32::MAX).
+        let ret = unsafe { libc::kill(self.pid as i32, libc::SIGTERM) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+}
+
+/// Unified child handle — wraps `CommandChild` (DMG) or `NativeChild` (MAS).
+///
+/// AppState stores `Vec<SidecarChild>` so the quit-time kill loop in lib.rs
+/// + `kill_current_sidecar_for_respawn` here are flavor-agnostic.
+pub enum SidecarChild {
+    #[cfg(not(feature = "mas"))]
+    Tauri(CommandChild),
+    #[cfg(feature = "mas")]
+    Native(NativeChild),
+}
+
+impl SidecarChild {
+    pub fn pid(&self) -> u32 {
+        match self {
+            #[cfg(not(feature = "mas"))]
+            Self::Tauri(c) => c.pid(),
+            #[cfg(feature = "mas")]
+            Self::Native(n) => n.pid(),
+        }
+    }
+
+    /// Consume the handle and kill the underlying process. Returns
+    /// `io::Result` for both flavors — the DMG path adapts
+    /// `tauri_plugin_shell::Error` via `io::Error::other`.
+    pub fn kill(self) -> std::io::Result<()> {
+        match self {
+            #[cfg(not(feature = "mas"))]
+            Self::Tauri(c) => c
+                .kill()
+                .map_err(|e| std::io::Error::other(e.to_string())),
+            #[cfg(feature = "mas")]
+            Self::Native(n) => n.kill(),
+        }
+    }
+}
+
+/// Resolve the absolute path to the helper binary inside the running .app
+/// bundle. Computed from Tauri's resource_dir:
+///   resource_dir   = `<bundle>/Contents/Resources/`
+///   parent         = `<bundle>/Contents/`
+///   helper binary  = `<bundle>/Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server`
+///
+/// Matches the layout produced by `scripts/build-mas-clean.sh` (helper.app
+/// wrap step). Returns an error if `resource_dir` lookup fails or the path
+/// has no parent (pathological, would mean Tauri returned `/`).
+#[cfg(feature = "mas")]
+fn resolve_helper_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("resource_dir lookup failed: {}", e))?;
+    let contents = resource_dir.parent().ok_or_else(|| {
+        format!(
+            "resource_dir has no parent: {}",
+            resource_dir.display()
+        )
+    })?;
+    Ok(contents
+        .join("Helpers")
+        .join("Clauge Helper.app")
+        .join("Contents")
+        .join("MacOS")
+        .join("clauge-server"))
+}
+
+/// MAS spawn path: launch the helper via `tokio::process::Command` and
+/// background two tokio tasks that forward (a) stderr lines as
+/// `SidecarEvent::Stderr` and (b) process termination as
+/// `SidecarEvent::Terminated`. Returns the unbuffered receiver plus a
+/// `NativeChild` carrying only the PID (kill is libc::kill SIGTERM).
+///
+/// `kill_on_drop(true)` on the tokio Command guards against a panic in
+/// the spawning task: if anything unwinds before the wait-task picks up
+/// the Child, the kernel reaps the helper.
+#[cfg(feature = "mas")]
+async fn spawn_native_helper(
+    helper_path: std::path::PathBuf,
+) -> std::io::Result<(NativeChild, UnboundedReceiver<SidecarEvent>)> {
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    log::info!("Spawning MAS helper at: {}", helper_path.display());
+
+    let mut cmd = tokio::process::Command::new(&helper_path);
+    cmd.env("NO_OPEN", "1");
+    // Forward the MAS-flavor CLAUDE_DIR if the parent has resolved a bookmark.
+    // The DMG flavor spawns via Tauri's shell plugin `sidecar()`, which auto-
+    // inherits the parent's env on spawn; `tokio::process::Command` does not
+    // carry anything meaningful here, so the redirect target must be set
+    // explicitly. `MAS_CLAUDE_DIR.set()` is called from BOTH the supervisor's
+    // startup path (when a bookmark already exists) AND `grant_claude_dir_access`
+    // (first-launch grant + Re-select folder), so reading `.get()` at spawn-time
+    // picks up whichever populated it — including after a grant-and-respawn cycle.
+    if let Some(claude_dir) = crate::security_scoped_bookmark::MAS_CLAUDE_DIR.get() {
+        cmd.env("CLAUDE_DIR", claude_dir);
+    }
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::piped());
+    cmd.stdin(Stdio::null());
+    cmd.kill_on_drop(true);
+
+    let mut child = cmd.spawn()?;
+    let pid = child
+        .id()
+        .expect("freshly-spawned tokio Child must have a PID");
+    let stderr = child
+        .stderr
+        .take()
+        .expect("stderr is piped above so .take() yields Some");
+
+    let (tx, rx) = unbounded_channel();
+
+    // Stderr reader task: parse line-by-line and forward.
+    let tx_stderr = tx.clone();
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    if tx_stderr
+                        .send(SidecarEvent::Stderr(line.into_bytes()))
+                        .is_err()
+                    {
+                        // Receiver dropped — supervisor has moved on; stop reading.
+                        break;
+                    }
+                }
+                Ok(None) | Err(_) => break,
+            }
+        }
+    });
+
+    // Wait-for-termination task: emit Terminated once.
+    tokio::spawn(async move {
+        match child.wait().await {
+            Ok(status) => {
+                let code = status.code();
+                let signal = {
+                    use std::os::unix::process::ExitStatusExt;
+                    status.signal()
+                };
+                let _ = tx.send(SidecarEvent::Terminated { code, signal });
+            }
+            Err(e) => {
+                log::warn!("native helper wait() failed: {}", e);
+                let _ = tx.send(SidecarEvent::Terminated {
+                    code: None,
+                    signal: None,
+                });
+            }
+        }
+    });
+
+    Ok((NativeChild { pid }, rx))
+}
+
+/// Cfg-gated spawn step. Returns the unified child + event receiver.
+/// Both branches produce `(SidecarChild, UnboundedReceiver<SidecarEvent>)`,
+/// so `spawn_one` above can be flavor-agnostic from this point on.
+async fn spawn_helper_process(
+    app: &AppHandle,
+) -> Result<(SidecarChild, UnboundedReceiver<SidecarEvent>), String> {
+    #[cfg(not(feature = "mas"))]
+    {
+        let (mut tauri_rx, tauri_child): (
+            tauri::async_runtime::Receiver<CommandEvent>,
+            CommandChild,
+        ) = app
+            .shell()
+            .sidecar("clauge-server")
+            .map_err(|e| e.to_string())?
+            .env("NO_OPEN", "1")
+            .spawn()
+            .map_err(|e| e.to_string())?;
+
+        // Bridge Tauri's CommandEvent stream → our SidecarEvent receiver.
+        // Filters out Stdout / Error / IPC-injected events the supervisor
+        // doesn't consume. One forwarding task lives per spawn; it exits
+        // when the stream closes (Terminated arrives or sender drops).
+        let (tx, rx) = unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(ev) = tauri_rx.recv().await {
+                let forwarded = match ev {
+                    CommandEvent::Stderr(bytes) => Some(SidecarEvent::Stderr(bytes)),
+                    CommandEvent::Terminated(payload) => Some(SidecarEvent::Terminated {
+                        code: payload.code,
+                        signal: payload.signal,
+                    }),
+                    // Stdout / Error / future variants are not load-bearing.
+                    _ => None,
+                };
+                let is_terminated =
+                    matches!(forwarded, Some(SidecarEvent::Terminated { .. }));
+                if let Some(ev) = forwarded {
+                    if tx.send(ev).is_err() {
+                        break;
+                    }
+                }
+                if is_terminated {
+                    break;
+                }
+            }
+        });
+
+        Ok((SidecarChild::Tauri(tauri_child), rx))
+    }
+
+    #[cfg(feature = "mas")]
+    {
+        let helper_path = resolve_helper_path(app)?;
+        let (native, rx) = spawn_native_helper(helper_path)
+            .await
+            .map_err(|e| format!("native helper spawn failed: {}", e))?;
+        Ok((SidecarChild::Native(native), rx))
+    }
+}
 
 /// v0.9.0 MAS (Task 12b): kill the current sidecar PID so the supervisor's
 /// loop respawns it with the now-populated `MAS_CLAUDE_DIR` (`CLAUDE_DIR`
@@ -302,12 +611,10 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                                 return;
                             }
                             ev = rx.recv() => match ev {
-                                Some(CommandEvent::Terminated(payload)) => {
+                                Some(SidecarEvent::Terminated { code, signal }) => {
                                     log::warn!(
                                         "Sidecar terminated naturally (pid={}, code={:?}, signal={:?})",
-                                        pid,
-                                        payload.code,
-                                        payload.signal
+                                        pid, code, signal
                                     );
                                     // Natural exit: the OS process is gone.
                                     // Unregister so AppState::children doesn't
@@ -317,7 +624,7 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                                     }
                                     break;
                                 }
-                                Some(_) => {} // ignore stdout/stderr/error noise
+                                Some(SidecarEvent::Stderr(_)) => {} // ignore post-bound stderr
                                 None => {
                                     log::warn!("Sidecar event stream closed (pid={})", pid);
                                     if let Some(ref s) = state {
@@ -333,12 +640,10 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                     // shutdown signal, but we still drain the event stream so
                     // the crash breaker fires.
                     while let Some(ev) = rx.recv().await {
-                        if let CommandEvent::Terminated(payload) = ev {
+                        if let SidecarEvent::Terminated { code, signal } = ev {
                             log::warn!(
                                 "Sidecar terminated (pid={}, code={:?}, signal={:?})",
-                                pid,
-                                payload.code,
-                                payload.signal
+                                pid, code, signal
                             );
                             break;
                         }
@@ -408,27 +713,20 @@ pub async fn spawn_and_supervise(app: AppHandle) {
 async fn spawn_one(
     app: &AppHandle,
     shutdown_notify: Option<&tokio::sync::Notify>,
-) -> Result<(u16, Receiver<CommandEvent>, CommandChild), String> {
-    // NO_OPEN=1 suppresses server.js's `open(url)` call (server.js:594) which
-    // otherwise pops the user's default browser to http://localhost:<port>
-    // on every sidecar startup. Without this, every Clauge.app launch — and
-    // every crash-respawn — opens a fresh Chrome tab on top of the user's
-    // workspace. v0.3.0 manual smoke test reported this as Bug #3 ("Open
-    // Dashboard opens in system browser instead of Tauri webview"); the
-    // popover's Open Dashboard button was correctly creating a Tauri
-    // webview, but the sidecar's auto-open was racing the user and they
-    // saw Chrome appear first.
-    let (mut rx, child): (Receiver<CommandEvent>, CommandChild) = app
-        .shell()
-        .sidecar("clauge-server")
-        .map_err(|e| e.to_string())?
-        .env("NO_OPEN", "1")
-        .spawn()
-        .map_err(|e| e.to_string())?;
+) -> Result<(u16, UnboundedReceiver<SidecarEvent>, SidecarChild), String> {
+    // Spawn via the cfg-gated wrapper:
+    //   - DMG: Tauri shell plugin sidecar() at Contents/MacOS/clauge-server
+    //   - MAS: tokio::process::Command at
+    //          Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server
+    // Both paths return the same unified types. NO_OPEN=1 (suppressing
+    // server.js's `open(url)` default-browser pop) is set inside the
+    // spawn helpers so both flavors get it. v0.3.0 smoke test Bug #3
+    // tracked the "Open Dashboard opens in Chrome" regression to this.
+    let (child, mut rx) = spawn_helper_process(app).await?;
 
     // Park the child in an Option so the shutdown branch can `take()` and
     // call the consuming `kill(self)`. Same pattern as the supervise loop.
-    let mut child_slot: Option<CommandChild> = Some(child);
+    let mut child_slot: Option<SidecarChild> = Some(child);
 
     loop {
         if let Some(notify) = shutdown_notify {
@@ -472,17 +770,17 @@ async fn spawn_one(
     }
 }
 
-/// Inspect a single CommandEvent; return:
-///   - `Some(Ok(port))` if a `CLAUGE_BOUND_PORT=` line was parsed (caller should
-///     extract the child)
+/// Inspect a single SidecarEvent; return:
+///   - `Some(Ok(port))` if a `CLAUGE_BOUND_PORT=` line was parsed (caller
+///     should extract the child)
 ///   - `Some(Err(msg))` if the process died or the stream closed
 ///   - `None` for ignored events (caller should keep awaiting)
 fn handle_event(
-    ev: Option<CommandEvent>,
-    _child_slot: &mut Option<CommandChild>,
+    ev: Option<SidecarEvent>,
+    _child_slot: &mut Option<SidecarChild>,
 ) -> Option<Result<u16, String>> {
     match ev {
-        Some(CommandEvent::Stderr(line_bytes)) => {
+        Some(SidecarEvent::Stderr(line_bytes)) => {
             let line = String::from_utf8_lossy(&line_bytes);
             if let Some(idx) = line.find(PORT_MARKER) {
                 let after = &line[idx + PORT_MARKER.len()..];
@@ -494,11 +792,10 @@ fn handle_event(
             }
             None
         }
-        Some(CommandEvent::Terminated(payload)) => Some(Err(format!(
+        Some(SidecarEvent::Terminated { code, signal }) => Some(Err(format!(
             "sidecar exited before binding port (code={:?}, signal={:?})",
-            payload.code, payload.signal
+            code, signal
         ))),
-        Some(_) => None, // ignore stdout / error noise
         None => Some(Err(
             "sidecar event stream closed before port marker".to_string()
         )),
