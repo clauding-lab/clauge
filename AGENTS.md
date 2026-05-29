@@ -604,6 +604,16 @@ The fix lives in `src-tauri/src/autostart_mas.rs` (mas-gated): register via Appl
 
 **Verify the real effect, not the return code.** `sfltool dumpbtm | grep -A5 com.clauding.clauge`: a correct MAS registration shows `Type: app (0x2)`, `Flags: [ sandboxed ]`, `Disposition: [enabled, allowed]`. A `Type: legacy agent` entry pointing at `~/Library/LaunchAgents/` is the OLD DMG path, not the MAS one. "`enable()` returned `Ok`" is NOT proof — the LaunchAgent no-op also returns `Ok`.
 
+### 27. App Store Connect submission gotchas (hit live during the v0.9.10 resubmission, 2026-05-29)
+
+Three things bite at MAS submission time, none of them code bugs:
+
+1. **Export-compliance dialog → set `ITSAppUsesNonExemptEncryption = false` in the bundle Info.plist.** On submit, ASC asks "what encryption does your app implement?" Clauge bundles standard TLS (reqwest/`rustls` + the Node sidecar's OpenSSL), so the literal answer is "standard algorithms" — which then asks for a French encryption-declaration **document upload** if the app is available in France. Clauge's encryption is **exempt** (standard HTTPS only), so the correct, paperwork-free declaration is `ITSAppUsesNonExemptEncryption=false`. Add it to the MAS Info.plist (via `tauri.mas.conf.json` bundle config or the Info.plist) so the dialog never appears AND France/EU stays included with no docs. (v0.9.10 build 4 shipped WITHOUT this key, so the dialog appeared and France was excluded to avoid the doc upload — fix in the next build.)
+2. **EU DSA trader status must be declared before you can submit/update for the EU.** App Store Connect → Business → Trader Status. Non-trader (individual, free app) keeps you compliant; trader requires public contact details on the EU listing. Not declaring blocks EU submission + removes the app from EU storefronts (stays elsewhere).
+3. **The App Store version field must equal the build's `CFBundleShortVersionString`.** A rejected version is editable — bump the version number (e.g. 0.9.0 → 0.9.10) to match the build before the new build (0.9.10) becomes selectable in the Build picker.
+
+Reference: `~/Projects/clauge/SS/appstore/SUBMIT_GUIDE.md` + `APP_REVIEW_NOTES.txt` (paste-ready review notes covering 2.1(a) + 2.4.5(i)). App Store screenshots must be landscape 1280×800 / 1440×900 / 2560×1600 / 2880×1800; the menu-bar popover (portrait) must be composited onto a landscape canvas.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
