@@ -69,7 +69,14 @@ objc2 = "0.6"
 security-framework = "2.11"
 objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder", "NSView", "NSPanel", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "NSEvent", "NSPopover", "NSViewController", "NSApplication", "NSControl", "NSButton", "NSCell"] }
 objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
-objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL", "NSURLRequest", "NSValue", "NSData", "NSDictionary", "NSError", "NSArray"] }
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSURL", "NSURLRequest", "NSValue", "NSData", "NSDictionary", "NSError", "NSArray", "NSProcessInfo"] }
+# v0.9.10: MAS launch-at-login uses Apple's ServiceManagement SMAppService
+# (sandbox-correct, macOS 13+). Compiled unconditionally on macOS like the other
+# objc2 framework crates above; only referenced from the `mas`-gated
+# autostart_mas module (dormant in the DMG build). The runtime macOS-13 guard
+# (NSProcessInfo::isOperatingSystemAtLeastVersion) lets the minimumSystemVersion
+# stay at 12.0 — autostart degrades on 12, the rest of the app still runs.
+objc2-service-management = { version = "0.3", features = ["SMAppService"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKUserContentController", "WKScriptMessage", "WKScriptMessageHandler", "WKNavigation", "WKNavigationDelegate"] }
 # v0.9.0: libproc + libc replace the lsof + kill shell-out in
 # port_discovery::kill_pid_on_port_unix on macOS. Apple's App Sandbox

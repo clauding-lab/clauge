@@ -590,6 +590,20 @@ When adding new env-driven config in the future, **always check both the DMG pat
 
 **Anti-pattern:** Setting `std::env::set_var("CLAUDE_DIR", path)` in the parent process so subsequent spawns inherit it. This pollutes the parent's env (visible to other libraries / future code that reads `CLAUDE_DIR`), is non-thread-safe (mutating env is a documented data race in Rust as of 2024), and obscures the actual data flow. The explicit `cmd.env("CLAUDE_DIR", path)` per-spawn is the right pattern.
 
+### 26. MAS launch-at-login MUST use SMAppService, NOT the LaunchAgent plugin
+
+Discovered 2026-05-29. `tauri-plugin-autostart`'s `MacosLauncher::LaunchAgent` writes a plist to `~/Library/LaunchAgents/`. Under the App Sandbox that path is REDIRECTED into the app's container (`~/Library/Containers/com.clauding.clauge/Data/Library/LaunchAgents/`), where launchd never scans it. Result: `app.autolaunch().enable()` returns `Ok` (the write into the container succeeds), but the login item DOES NOT EXIST — a silent no-op, and the onboarding wizard's "added to your login items" copy becomes a lie.
+
+The fix lives in `src-tauri/src/autostart_mas.rs` (mas-gated): register via Apple's `SMAppService.mainApp` (`objc2-service-management` crate), the modern sandbox-correct API. The DMG/Windows flavors KEEP `tauri-plugin-autostart` (LaunchAgent works in a non-sandboxed process). The split is cfg-gated in three places — touch all three together:
+
+- `lib.rs` builder chain: `tauri_plugin_autostart::init(...)` is `#[cfg(not(feature = "mas"))]` (NOT initialized on MAS).
+- `lib.rs` first-launch enable block: cfg-split between `app.autolaunch().enable()` (non-mas) and `crate::autostart_mas::enable()` (mas).
+- `ipc.rs` `set_autostart` / `get_autostart`: same cfg-split.
+
+**`SMAppService` is macOS 13.0+.** `autostart_mas::is_supported()` runtime-guards every call (`NSProcessInfo::isOperatingSystemAtLeastVersion`), so macOS 12 degrades gracefully (no autostart, no crash) and `minimumSystemVersion` STAYS 12.0 — do NOT bump the floor to 13 for this.
+
+**Verify the real effect, not the return code.** `sfltool dumpbtm | grep -A5 com.clauding.clauge`: a correct MAS registration shows `Type: app (0x2)`, `Flags: [ sandboxed ]`, `Disposition: [enabled, allowed]`. A `Type: legacy agent` entry pointing at `~/Library/LaunchAgents/` is the OLD DMG path, not the MAS one. "`enable()` returned `Ok`" is NOT proof — the LaunchAgent no-op also returns `Ok`.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

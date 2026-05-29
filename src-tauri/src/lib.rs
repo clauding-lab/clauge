@@ -18,6 +18,11 @@ mod port_file;
 // directly and does not compile this module.
 #[cfg(feature = "mas")]
 mod security_scoped_bookmark;
+// v0.9.10 MAS flavor only: launch-at-login via Apple's SMAppService
+// (sandbox-correct, macOS 13+). The DMG/Windows flavors use
+// tauri-plugin-autostart (LaunchAgent) instead — see the builder chain.
+#[cfg(feature = "mas")]
+mod autostart_mas;
 mod sidecar;
 mod tray;
 mod windows;
@@ -89,11 +94,19 @@ pub fn run() {
             // the single-instance plugin can't introspect or focus it from
             // here — the dashboard is the next-best glanceable surface.
             crate::tray::show_dashboard(app);
-        }))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ));
+        }));
+
+    // Launch-at-login plugin (LaunchAgent) is for the NON-sandboxed flavors only.
+    // Under the MAS App Sandbox a LaunchAgent plist write is redirected into the
+    // app container where launchd never scans it, so autostart silently fails AND
+    // the wizard's "added to login items" claim would be false. MAS uses Apple's
+    // sandbox-correct SMAppService instead (crate::autostart_mas), wired into the
+    // set_autostart/get_autostart IPCs and the first-launch enable below.
+    #[cfg(not(feature = "mas"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None,
+    ));
 
     #[cfg(not(feature = "mas"))]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -153,7 +166,6 @@ pub fn run() {
             // The user can later toggle autostart OFF via the popover gear
             // (spec §6.6); we do not re-enable it once they've opted out.
             {
-                use tauri_plugin_autostart::ManagerExt;
                 use tauri_plugin_store::StoreExt;
 
                 let store = app.store("settings.json").map_err(|e| {
@@ -163,9 +175,25 @@ pub fn run() {
 
                 if store.get("first_launch_done").is_none() {
                     log::info!("First launch detected; enabling Launch at Login by default");
-                    if let Err(e) = app.autolaunch().enable() {
-                        log::warn!("Failed to enable autostart on first launch: {}", e);
+
+                    // DMG/Windows: LaunchAgent via tauri-plugin-autostart.
+                    #[cfg(not(feature = "mas"))]
+                    {
+                        use tauri_plugin_autostart::ManagerExt;
+                        if let Err(e) = app.autolaunch().enable() {
+                            log::warn!("Failed to enable autostart on first launch: {}", e);
+                        }
                     }
+
+                    // MAS: Apple SMAppService (macOS 13+). No-ops on macOS 12 where
+                    // SMAppService is unavailable; see crate::autostart_mas.
+                    #[cfg(feature = "mas")]
+                    {
+                        if let Err(e) = crate::autostart_mas::enable() {
+                            log::warn!("Failed to enable autostart on first launch (MAS): {}", e);
+                        }
+                    }
+
                     store.set("first_launch_done", serde_json::Value::Bool(true));
                     if let Err(e) = store.save() {
                         log::warn!("Failed to persist first_launch_done flag: {}", e);

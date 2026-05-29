@@ -337,19 +337,42 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
 
 #[tauri::command]
 pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    use tauri_plugin_autostart::ManagerExt;
-    let manager = app.autolaunch();
-    if enabled {
-        manager.enable().map_err(|e| e.to_string())
-    } else {
-        manager.disable().map_err(|e| e.to_string())
+    // DMG/Windows: LaunchAgent via tauri-plugin-autostart.
+    #[cfg(not(feature = "mas"))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let manager = app.autolaunch();
+        if enabled {
+            manager.enable().map_err(|e| e.to_string())
+        } else {
+            manager.disable().map_err(|e| e.to_string())
+        }
+    }
+    // MAS: Apple SMAppService (see crate::autostart_mas). The AppHandle is unused
+    // because SMAppService.mainApp implicitly targets the running app.
+    #[cfg(feature = "mas")]
+    {
+        let _ = &app;
+        if enabled {
+            crate::autostart_mas::enable()
+        } else {
+            crate::autostart_mas::disable()
+        }
     }
 }
 
 #[tauri::command]
 pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri_plugin_autostart::ManagerExt;
-    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+    #[cfg(not(feature = "mas"))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        app.autolaunch().is_enabled().map_err(|e| e.to_string())
+    }
+    #[cfg(feature = "mas")]
+    {
+        let _ = &app;
+        Ok(crate::autostart_mas::is_enabled())
+    }
 }
 
 /// Show the dashboard window (creating it if it doesn't exist yet).

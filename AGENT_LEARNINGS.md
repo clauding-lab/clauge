@@ -37,6 +37,24 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-05-29 — v0.9.10 | MAS launch-at-login silently failed (LaunchAgent in sandbox) → SMAppService
+
+**Trigger:** Pre-upload adversarial audit of the v0.9.10 resubmission (the completeness critic) flagged that the onboarding wizard claims "Clauge has been added to your login items," but the app registers autostart via `tauri-plugin-autostart`'s LaunchAgent — which a sandboxed app cannot write where launchd scans.
+
+**What went wrong:** `app.autolaunch().enable()` (LaunchAgent backend) writes `~/Library/LaunchAgents/<app>.plist`. Under the App Sandbox `$HOME` is redirected, so the plist lands in `~/Library/Containers/com.clauding.clauge/Data/Library/LaunchAgents/` — a path launchd never scans. The call returns `Ok` (the write INTO the container succeeds), so nothing logged an error, but the login item never existed. The wizard's "added to your login items" copy was therefore false on MAS, and launch-at-login simply never happened. A "success" return masked a total no-op. The plugin was also registered + enabled unconditionally (not cfg-gated), so the MAS build attempted this dead path on every first launch.
+
+**Lesson:**
+- **macOS-specific:** a sandboxed app's launch-at-login MUST use `SMAppService` (macOS 13+), not a LaunchAgent plist — the sandbox redirect makes LaunchAgent a silent no-op.
+- **Generalizable:** a convenience API returning success is NOT proof of the real-world effect under platform restrictions. Verify the EFFECT (did the login item actually appear?), not the return code. Here the LaunchAgent path and the SMAppService path BOTH return `Ok`; only `sfltool dumpbtm` distinguishes a real registration from a no-op.
+
+**Prevention:** `AGENTS.md` landmine #26. New `src-tauri/src/autostart_mas.rs` registers via `SMAppService.mainApp` (`objc2-service-management`), cfg-gated: MAS uses SMAppService, DMG/Windows keep LaunchAgent. Runtime macOS-13 guard (`NSProcessInfo::isOperatingSystemAtLeastVersion`) keeps `minimumSystemVersion` at 12.0. **Verified 2026-05-29** on a sandboxed local-test build: `sfltool dumpbtm` showed a new `Type: app`, `Flags: [ sandboxed ]`, `Disposition: [enabled, allowed]` item for `com.clauding.clauge` — distinct from the DMG's `legacy agent` entry. The dashboard's real-data path was unaffected (regression check: `/api/health` → real `~/.claude`, `/api/usage` → live data).
+
+**Hotfix:** Folded into v0.9.10 build 4 (rebuilt after the audit).
+
+**Cross-references:** `AGENTS.md` § 26; global `~/.claude/AGENT_LEARNINGS.md` 2026-05-29 (success-≠-effect-under-sandbox); auto-memory `project_v0_9_10_apple_issue_2_wizard_race.md`. Surfaced by the pre-upload audit workflow's completeness critic — a finding none of the seven primary review dimensions covered.
+
+---
+
 ## 2026-05-29 — v0.9.10 | The real Apple 2.1(a) fix — sandboxed sidecar couldn't boot (helper.app + inherit + CLAUDE_DIR env-forward)
 
 **Trigger:** Building the sandboxed MAS flavor for the v0.9.10 resubmission — after the wizard-race fix (2026-05-28 entry below) was already in hand. Transporter rejected the build (HTTP 409, "App sandbox not enabled" on every Mach-O), forcing an architectural rebuild that revealed the wizard race was NOT the load-bearing cause of Apple's 2.1(a) rejection.
