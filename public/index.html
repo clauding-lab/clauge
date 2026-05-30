@@ -122,7 +122,7 @@
       <div class="ms-sub" id="ms-token-split">—</div>
     </div>
     <div class="ms-cell">
-      <div class="ms-lbl">Return on sub <span class="chip">approx</span></div>
+      <div class="ms-lbl">Return on plan <span class="chip">approx</span></div>
       <div class="ms-val ok" id="ms-roi">—</div>
       <div class="ms-sub" id="ms-roi-sub">—</div>
     </div>
@@ -402,19 +402,19 @@
         </div>
 
         <div class="set-section" data-set-panel="pricing" hidden style="margin-top:24px">
-          <h2 style="font-size:14px">Pricing & ROI</h2>
-          <p class="set-desc">Configure how Clauge calculates the API replacement value.</p>
+          <h2 style="font-size:14px">Plan & ROI</h2>
+          <p class="set-desc">How Clauge calculates your API-replacement savings.</p>
           <div class="set-row">
             <div>
-              <div class="set-label">Subscription cost (monthly)</div>
-              <div class="set-help">Used for the API replacement value calc.</div>
+              <div class="set-label">Your Claude plan cost (monthly)</div>
+              <div class="set-help">What you already pay Anthropic for your Claude plan — used only to estimate how much the same usage would cost on the pay-as-you-go API. Clauge never sells plans or processes payments.</div>
             </div>
             <input class="input" id="set-sub-cost" value="$200.00" readonly />
           </div>
           <div class="set-row">
             <div>
-              <div class="set-label">Pricing source</div>
-              <div class="set-help">Where Clauge fetches per-token model rates.</div>
+              <div class="set-label">API rate source</div>
+              <div class="set-help">Where Clauge looks up Anthropic's per-token API rates.</div>
             </div>
             <span class="tag" id="set-pricing-source">—</span>
           </div>
@@ -443,7 +443,7 @@
               <span class="conn-dot" aria-hidden="true">●</span>
               <div class="conn-body">
                 <div class="conn-title">claude.ai web</div>
-                <div class="conn-status">Sign in to see plan-ring data even without Claude Code.</div>
+                <div class="conn-status">Optional — sign in to read your claude.ai plan usage (read-only), even without Claude Code.</div>
               </div>
               <div class="conn-actions">
                 <button type="button" class="conn-cta" id="signin-claude-ai">Sign in to claude.ai</button>
@@ -499,7 +499,7 @@
       <h1>Clauge</h1>
       <div class="ver" id="about-version">v0.4.0 · MIT · clauding-lab</div>
       <p class="desc">
-        Token analytics and subscription value dashboard for Claude Code and claude.ai. Local Node + HTML, <span class="mono" style="color:var(--brand-2)">npx</span>-installable. Browser extension auto-syncs claude.ai plan usage.
+        Token analytics and plan-ROI dashboard for Claude Code and claude.ai — shows what your usage would cost on the API versus your flat plan. Local Node + HTML, <span class="mono" style="color:var(--brand-2)">npx</span>-installable. Browser extension auto-syncs claude.ai plan usage.
       </p>
       <div class="about-links">
         <a href="https://github.com/clauding-lab/clauge" target="_blank" rel="noopener"><span>GitHub repository</span><span class="arrow">→</span></a>

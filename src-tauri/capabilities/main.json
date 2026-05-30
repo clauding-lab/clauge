@@ -32,6 +32,8 @@
     "allow-install-cli-symlink",
     "allow-is-mas-flavor",
     "allow-grant-claude-dir-access",
-    "allow-has-claude-dir-bookmark"
+    "allow-has-claude-dir-bookmark",
+    "allow-set-autostart",
+    "allow-get-autostart"
   ]
 }

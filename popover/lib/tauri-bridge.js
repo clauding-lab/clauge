@@ -56,13 +56,17 @@
     isMasFlavor: () => call('is_mas_flavor'),
     grantClaudeDirAccess: () => call('grant_claude_dir_access'),
     hasClaudeDirBookmark: () => call('has_claude_dir_bookmark'),
+    // v0.9.10 build 5: flavor-correct Launch at Login (promoted to APP_COMMANDS
+    // so the dashboard + onboarding wizard can call it). MAS → SMAppService;
+    // DMG/Windows → tauri-plugin-autostart. Replaces the dashboard's old
+    // plugin-only path, which silently no-ops in the MAS sandbox.
+    setAutostart: (enabled) => call('set_autostart', { enabled }),
+    getAutostart: () => call('get_autostart'),
 
     // ── Popover-only commands (no APP_COMMANDS entry; tauri:// origin) ──
     openDashboard: () => call('open_dashboard'),
     quitApp: () => call('quit_app'),
     proxyFetch: (req) => call('proxy_fetch', req),
-    setAutostartLegacy: (enabled) => call('set_autostart', { enabled }),
-    getAutostartLegacy: () => call('get_autostart'),
 
     // ── Plugin commands ──
     // Autostart plugin — current canonical path (not the legacy set_autostart).

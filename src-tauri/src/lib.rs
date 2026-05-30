@@ -155,16 +155,21 @@ pub fn run() {
             // required (Tauri menu event listeners are global).
             let menu = crate::menu::build(app.handle())?;
             app.set_menu(menu)?;
-            // First-launch autostart enablement (spec §3 Decision #8 + §4.2:
-            // "Launch at Login (default ON)"; toggle-OFF flow lives in §6.6).
-            // Placed AFTER menu setup so menu/tray remain functional even if
-            // the store fails to open. The store carries a `first_launch_done`
-            // flag in settings.json (~/Library/Application Support/com.clauding.clauge/settings.json).
-            // If the flag is absent (fresh install OR user wiped settings), we
-            // call `app.autolaunch().enable()` to register Clauge in macOS
-            // Login Items, then mark the flag so subsequent launches no-op.
-            // The user can later toggle autostart OFF via the popover gear
-            // (spec §6.6); we do not re-enable it once they've opted out.
+            // First-launch autostart enablement — DMG/Windows ONLY.
+            //
+            // DMG/NSIS builds register Clauge as a login item on first launch
+            // (LaunchAgent via tauri-plugin-autostart), tracked by a
+            // `first_launch_done` flag in settings.json so it runs exactly once.
+            // The user can toggle it OFF later (dashboard/popover) or in the OS.
+            //
+            // MAS deliberately does NOT auto-register. Apple Guideline
+            // 2.4.5(iii) forbids auto-launching at login without explicit user
+            // consent (Clauge v0.9.10 build 4 was rejected for exactly this).
+            // On MAS, Launch at Login is strictly OPT-IN: the onboarding wizard
+            // (Step 3) and the dashboard/popover toggles call `set_autostart`
+            // (→ crate::autostart_mas / SMAppService) ONLY when the user
+            // explicitly enables it. See AGENTS.md landmine #28.
+            #[cfg(not(feature = "mas"))]
             {
                 use tauri_plugin_store::StoreExt;
 
@@ -174,24 +179,11 @@ pub fn run() {
                 })?;
 
                 if store.get("first_launch_done").is_none() {
-                    log::info!("First launch detected; enabling Launch at Login by default");
+                    log::info!("First launch detected; enabling Launch at Login by default (non-MAS)");
 
-                    // DMG/Windows: LaunchAgent via tauri-plugin-autostart.
-                    #[cfg(not(feature = "mas"))]
-                    {
-                        use tauri_plugin_autostart::ManagerExt;
-                        if let Err(e) = app.autolaunch().enable() {
-                            log::warn!("Failed to enable autostart on first launch: {}", e);
-                        }
-                    }
-
-                    // MAS: Apple SMAppService (macOS 13+). No-ops on macOS 12 where
-                    // SMAppService is unavailable; see crate::autostart_mas.
-                    #[cfg(feature = "mas")]
-                    {
-                        if let Err(e) = crate::autostart_mas::enable() {
-                            log::warn!("Failed to enable autostart on first launch (MAS): {}", e);
-                        }
+                    use tauri_plugin_autostart::ManagerExt;
+                    if let Err(e) = app.autolaunch().enable() {
+                        log::warn!("Failed to enable autostart on first launch: {}", e);
                     }
 
                     store.set("first_launch_done", serde_json::Value::Bool(true));

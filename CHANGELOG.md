@@ -2,6 +2,17 @@
 
 ## [0.9.10] — 2026-05-29
 
+### Build 5 (2026-05-30) — fixes for Apple's second rejection
+
+Apple rejected build 4 on 2026-05-30 with three findings. All three are addressed here; the marketing version stays 0.9.10 (same App Store version, new build, `bundleVersion` 4 → 5).
+
+- **Launch at Login is now strictly opt-in on MAS (Guideline 2.4.5(iii)).** Build 4 auto-registered Clauge as a login item on first launch (an opt-out model Apple forbids). The MAS first-launch auto-enable is removed; Launch at Login now registers via SMAppService ONLY when the user explicitly enables it — a default-OFF toggle in the onboarding wizard's "Other Settings" step, or the dashboard Settings toggle. DMG/Windows are unchanged (they still auto-enable; not App Store). In passing this fixed a pre-existing MAS bug where the dashboard autostart toggle drove the sandbox-no-op LaunchAgent plugin instead of SMAppService — `set_autostart`/`get_autostart` are now triple-registered (`APP_COMMANDS` + capabilities) and the dashboard toggle calls the flavor-correct path.
+- **In-App Purchase clarification + relabel (Guideline 3.1.1).** Clauge is free and contains no IAP or payment mechanism of any kind; the reviewer misread the ROI cost input. The "Subscription cost (monthly)" field is relabeled **"Your Claude plan cost (monthly)"** with help text clarifying it is what the user already pays Anthropic, used only for the API-replacement estimate, and that "Clauge never sells plans or processes payments." The About blurb ("subscription value dashboard" → "plan-ROI dashboard"), the "Pricing source" row ("API rate source"), and the claude.ai sign-in copy (now explicitly read-only) were also clarified. A Resolution Center reply accompanies the resubmission.
+- **Popover no longer clips text (Guideline 4 / Design).** The menu-bar popover clipped the bottom of the 180-day activity heatmap: it sizes to content via a JS→native resize, but that ran before the (async) heatmap rendered and bailed entirely on content taller than 1200px. Now it re-measures after the heatmap renders, clamps into the native range instead of bailing, and `body` has an `overflow-y: auto` safety net so content can never be clipped.
+- **Engineering:** new `AGENTS.md` landmine #28 (MAS launch-at-login must be opt-in — distinct from #26's mechanism); `bundleVersion` 4 → 5.
+
+---
+
 **Mac App Store resubmission release.** Three things ship together: (1) the entire MAS flavor plumbing (~38 commits of v0.9.0 work) rebased onto current main so MAS users get v0.9.9's polish + flicker fix + landmines #21/#22 alongside the sandboxed flavor; (2) the **architectural** fix for Apple's Guideline 2.1(a) rejection of v0.9.0 build 3 — the sandboxed Node sidecar is now wrapped in its own `Clauge Helper.app` bundle with `com.apple.security.inherit=true`, which is what actually lets it boot under the App Sandbox and load the dashboard's content (plus a `CLAUDE_DIR` env-forward so granted data reaches it); and (3) defense-in-depth for cold launches — the first-launch wizard now waits for a `sidecar-ready` event instead of racing a fixed timer.
 
 DMG users are unaffected (all MAS work is `#[cfg(feature = "mas")]`-gated; the wizard hardening improves cold-launch robustness but doesn't change DMG behavior in practice).

@@ -921,7 +921,7 @@ async function initSettingsGeneralControls() {
   }
 
   try {
-    autoToggle.checked = !!(await ClaugeBridge.autostartIsEnabled());
+    autoToggle.checked = !!(await ClaugeBridge.getAutostart());
   } catch (err) {
     console.warn('autostart is_enabled failed; defaulting toggle off:', err);
     autoToggle.checked = false;
@@ -933,7 +933,7 @@ async function initSettingsGeneralControls() {
   autoToggle.addEventListener('change', async () => {
     const desired = autoToggle.checked;
     try {
-      await ClaugeBridge.autostartSetEnabled(desired);
+      await ClaugeBridge.setAutostart(desired);
     } catch (err) {
       console.error('autostart toggle failed; reverting:', err);
       autoToggle.checked = !desired;

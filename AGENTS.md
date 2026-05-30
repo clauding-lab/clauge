@@ -614,6 +614,19 @@ Three things bite at MAS submission time, none of them code bugs:
 
 Reference: `~/Projects/clauge/SS/appstore/SUBMIT_GUIDE.md` + `APP_REVIEW_NOTES.txt` (paste-ready review notes covering 2.1(a) + 2.4.5(i)). App Store screenshots must be landscape 1280×800 / 1440×900 / 2560×1600 / 2880×1800; the menu-bar popover (portrait) must be composited onto a landscape canvas.
 
+### 28. MAS launch-at-login must be OPT-IN — auto-enabling at first launch violates Apple 2.4.5(iii)
+
+Distinct from landmine #26 (which is about the *mechanism* — SMAppService vs LaunchAgent). This is about *consent*. Apple Guideline **2.4.5(iii)** forbids an app auto-launching or running code at login **without explicit user consent**. v0.9.10 **build 4 was rejected** for exactly this: `lib.rs`'s first-launch block called `autostart_mas::enable()` automatically (the comment literally said "Launch at Login (default ON)") and the onboarding wizard only showed a *notice* ("Clauge has been added to your login items") — an opt-OUT model.
+
+Rules for the MAS flavor:
+
+- **Never auto-register at startup/first launch.** The first-launch autostart block in `lib.rs::run::setup` is now `#[cfg(not(feature = "mas"))]` — DMG/Windows may auto-enable (not App Store; allowed), MAS must not.
+- **Launch at Login is enabled ONLY by an explicit user action** — the onboarding wizard Step 3 toggle (`#wizard-autostart-toggle`, default OFF) or the dashboard Settings toggle, both calling `set_autostart`.
+- `set_autostart`/`get_autostart` are in `APP_COMMANDS` + `capabilities/main.json` (added build 5) so the dashboard AND the onboarding window (both remote-http origins) can call them; they route by flavor (MAS → SMAppService, DMG/Win → plugin).
+- The dashboard toggle must use `ClaugeBridge.getAutostart()/setAutostart()` (flavor-correct), NOT the `plugin:autostart|*` path — the plugin's LaunchAgent silently no-ops in the MAS sandbox (see #26), so the plugin path leaves the Settings toggle disconnected from the real SMAppService state on MAS.
+- The popover's `#autostart-toggle` (Preferences panel, `popover/index.html`) is **hidden** as of build 5. It was never wired on any flavor: the native NSPopover hosts a raw `WKWebView` with **no `__TAURI__` injected** (it talks to Rust only via `webkit.messageHandlers.clauge` → `native_popover.rs`, which handles `open_dashboard`/`resize` and nothing else), so `ClaugeBridge`/Tauri-invoke calls cannot work there. Wiring it needs a new `set_autostart` native message handler + an initial-state read — tracked for v0.9.11. Until then, keep it hidden rather than ship a dead control.
+- Any new autostart surface (wizard, settings) defaults to OFF and registers only on explicit enable.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

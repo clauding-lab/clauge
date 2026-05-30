@@ -33,6 +33,13 @@ const APP_COMMANDS: &[&str] = &[
     "is_mas_flavor",
     "grant_claude_dir_access",
     "has_claude_dir_bookmark",
+    // v0.9.10 build 5: promoted from popover-only to app-level so the dashboard
+    // (Settings) AND the onboarding wizard (Step 3 opt-in toggle) can drive
+    // Launch at Login. On MAS these route to SMAppService (crate::autostart_mas);
+    // on DMG/Windows to tauri-plugin-autostart. Required after making MAS
+    // Launch-at-Login strictly opt-in (Apple Guideline 2.4.5(iii)).
+    "set_autostart",
+    "get_autostart",
 ];
 
 fn main() {

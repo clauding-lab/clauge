@@ -37,6 +37,32 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-05-31 — v0.9.10 build 5 | Apple's SECOND rejection — three findings, including one the prior fix CREATED
+
+**Trigger:** Apple rejected v0.9.10 **build 4** (2026-05-30) with three findings: **2.4.5(iii)** (auto-launches at login without consent), **3.1.1** (appears to sell/access paid content via non-IAP), and **4 / Design** (a window cuts off text — the popover heatmap).
+
+**What went wrong:**
+- **2.4.5(iii) was self-inflicted by the PRIOR session's fix.** v0.9.10 added `SMAppService` launch-at-login (correct mechanism, landmine #26) but wired it to **auto-enable on first launch** (`lib.rs` called `autostart_mas::enable()` unconditionally; the comment literally said "default ON") with the wizard only showing an opt-OUT *notice*. Making the feature *work* introduced a *consent* violation. Apple forbids auto-launch without explicit consent.
+- **3.1.1 was a reviewer misread** of the Settings field "Subscription cost (monthly) $200" — a user-entered ROI input, not a product for sale. Clauge has zero payment infrastructure (verified: no StoreKit/Stripe/IAP anywhere). Product-y wording ("subscription cost", "subscription value dashboard", "Return on sub") on a *config input* invited the misread.
+- **Design 4** — the popover sized to content via a one-shot `resizeToContent()` that ran in the refresh `finally` block, BEFORE the async `refreshHeatmap()` painted the 180-day grid, and **bailed entirely** (`return`) when content exceeded the 1200px cap instead of clamping. So the heatmap rendered taller than the measured popover and the `overflow:hidden` clipped it.
+- **The prior pre-upload audit (14 agents) PASSED build 4** and missed all three. It checked known-risk dimensions but did not model a skeptical reviewer on a fresh Mac with empty `~/.claude` clicking every control.
+
+**Lesson:**
+- **Making a feature work ≠ making it App-Store-compliant.** For anything that touches startup, background execution, or payments, the *default/consent model* is the compliance surface — default to opt-in, register only on explicit user action.
+- **Never use product/commerce vocabulary ("subscription", "plan cost", "buy") for a user-config input or a passive readout** — a reviewer skims labels out of context. Frame as the user's own external cost + state "never sells/processes payments".
+- **One-shot layout measurement loses to async-rendered content.** Re-measure after async renders complete; clamp into bounds instead of bailing; add a scroll safety net so text can never clip.
+- **A pre-submission audit must role-play the reviewer** (fresh machine, empty data, click every control), not just tick known dimensions — that's the only lens that would have caught all three.
+
+**Prevention:** `AGENTS.md` landmine #28 (MAS launch-at-login must be opt-in; distinct from #26's mechanism). Build-5 fixes: `lib.rs` first-launch autostart block now `#[cfg(not(feature="mas"))]`; wizard Step 3 opt-in toggle (default OFF); `set_autostart`/`get_autostart` triple-registered so wizard + dashboard drive the flavor-correct path; relabel of every "subscription"/"sub" surface + a no-payments disclaimer; popover `resizeToContent()` re-called after heatmap render + clamp + `overflow-y:auto`. A 4-lens adversarial reviewer-seat audit (one lens = "fresh-Mac completeness critic") replaced the dimension-checklist audit — it caught a **dead popover autostart toggle** (hidden for build 5) and a missed **"Return on sub"** label the targeted fixes alone left behind.
+
+**Verified (2026-05-31, sandboxed `--local-test` build):** `/api/health` → real `/Users/adnanrashid/.claude`, `/api/usage` → live data (helper + `CLAUDE_DIR` forward still good); served dashboard HTML shows "Your Claude plan cost" + no-payments line, old "Subscription cost"/"Return on sub" gone; build compiles clean (both flavors), all 5 repo validators pass; `.app` codesign-valid, 2 Mach-Os, helper carries app-sandbox+inherit. Autostart no-auto-register verified by code-proof + audit (empirical `sfltool` confounded by a stale enabled test-build login item from the prior session that can't be reset — TCC-blocked — and must be removed via System Settings).
+
+**Hotfix:** Build 5, `bundleVersion` 4 → 5, marketing version unchanged (0.9.10). Branch `feat/mas-on-v0.9.9`, PR #11 (unmerged). Resubmission + Resolution Center reply (`SS/appstore/APP_REVIEW_REPLY_build5.txt`) pending Adnan in App Store Connect.
+
+**Cross-references:** `AGENTS.md` § 28; auto-memory `project_v0_9_10_build5_second_rejection`. Plan-tier auto-detect (a v0.9.11 follow-up greenlit this session) is specced at `docs/superpowers/specs/2026-05-30-plan-tier-autodetect-design.md`.
+
+---
+
 ## 2026-05-29 — v0.9.10 | MAS launch-at-login silently failed (LaunchAgent in sandbox) → SMAppService
 
 **Trigger:** Pre-upload adversarial audit of the v0.9.10 resubmission (the completeness critic) flagged that the onboarding wizard claims "Clauge has been added to your login items," but the app registers autostart via `tauri-plugin-autostart`'s LaunchAgent — which a sandboxed app cannot write where launchd scans.

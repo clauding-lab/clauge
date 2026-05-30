@@ -234,6 +234,18 @@ else
   fi
 fi
 
+# v0.9.10 build 5: declare exempt encryption so App Store Connect skips the
+# export-compliance dialog. Clauge uses only standard HTTPS/TLS (reqwest/rustls
+# + the Node sidecar's TLS) — exempt under Apple/BIS rules — so the paperwork-
+# free declaration is ITSAppUsesNonExemptEncryption=false. This ALSO re-includes
+# France/EU with no encryption-declaration document upload. Injected into the
+# main app's Tauri-generated Info.plist BEFORE the main .app is signed (the
+# codesign step below seals Info.plist; modifying it afterward would invalidate
+# the signature). Idempotent (Delete-then-Add). See AGENTS.md landmine #27 item 1.
+echo "==> Setting ITSAppUsesNonExemptEncryption=false in main Info.plist..."
+/usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$APP_PATH/Contents/Info.plist"
+
 echo "==> Signing helper.app bundle (sidecar entitlements; app-sandbox=true now valid via helper Info.plist)..."
 # Inside-out signing: codesign on a bundle applies --entitlements to the
 # bundle's CFBundleExecutable (clauge-server) AND seals the bundle into
@@ -322,5 +334,5 @@ ls -la "$PKG_OUT"
 echo
 echo "==> DONE. .pkg at $PKG_OUT"
 echo "    Next: open Transporter.app, drag the .pkg in, click Deliver."
-echo "    Then in App Store Connect, attach build $VERSION (CFBundleVersion 4) to the"
+echo "    Then in App Store Connect, attach build $VERSION (CFBundleVersion $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist" 2>/dev/null)) to the"
 echo "    existing submission 32193453-1524-407a-b705-c16ae62fbbd3 and resubmit."

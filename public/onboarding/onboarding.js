@@ -257,4 +257,27 @@
     if (currentStep === 2 && document.body.classList.contains('is-flavor-mas')) return;
     showStep(currentStep + 1);
   });
+
+  // v0.9.10 build 5 (Apple Guideline 2.4.5(iii) fix): Launch at Login is
+  // OPT-IN on MAS. This Step-3 toggle (default OFF) registers the login item
+  // via SMAppService (set_autostart) ONLY when the user explicitly ticks it.
+  // DMG/Windows auto-enable at first launch (lib.rs) and show a notice instead
+  // of this toggle, so the element is absent there. set_autostart routes by
+  // flavor (MAS → autostart_mas; DMG/Windows → tauri-plugin-autostart).
+  var autostartToggle = document.getElementById('wizard-autostart-toggle');
+  if (autostartToggle) {
+    autostartToggle.addEventListener('change', async function () {
+      var enabled = autostartToggle.checked;
+      try {
+        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+          await window.__TAURI__.core.invoke('set_autostart', { enabled: enabled });
+        } else {
+          console.warn('[wizard] Tauri IPC unavailable; cannot set autostart');
+        }
+      } catch (err) {
+        console.error('[wizard] set_autostart failed; reverting toggle:', err);
+        autostartToggle.checked = !enabled;
+      }
+    });
+  }
 })();

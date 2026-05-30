@@ -240,6 +240,22 @@ body.is-windows .platform-win { display: block; }
 body.is-flavor-mas .flavor-dmg-nsis { display: none; }
 body.is-flavor-mas .flavor-mas { display: block; }
 
+/* v0.9.10 build 5: MAS Launch-at-Login opt-in toggle (Apple Guideline 2.4.5(iii)). */
+.autostart-optin { margin-top: 4px; }
+.autostart-optin .onb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.autostart-optin .onb-toggle input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 /* Windows credentials path mock — visual analog to the Mac dialog-mock. */
 .path-mock {
   background: #f4f4f5;

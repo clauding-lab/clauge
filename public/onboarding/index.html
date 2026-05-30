@@ -105,12 +105,23 @@
         </li>
         <li>
           <strong>Launch at Login</strong>
-          <p class="platform-mac">Clauge has been added to your login items so it starts when you log in to your Mac. Toggle off in System Settings → General → Login Items if you'd prefer manual launches.</p>
+          <!-- MAS (Apple Guideline 2.4.5(iii)): OPT-IN only. Default OFF;
+               registers the login item via SMAppService ONLY when the user
+               ticks this box. See onboarding.js + lib.rs. -->
+          <div class="flavor-mas autostart-optin">
+            <p>Start Clauge automatically when you log in to your Mac.</p>
+            <label class="onb-toggle">
+              <input type="checkbox" id="wizard-autostart-toggle" />
+              <span>Launch Clauge at login</span>
+            </label>
+          </div>
+          <!-- DMG/Windows auto-enable at first launch (not App Store; allowed). -->
+          <p class="platform-mac flavor-dmg-nsis">Clauge has been added to your login items so it starts when you log in to your Mac. Toggle off in System Settings → General → Login Items if you'd prefer manual launches.</p>
           <p class="platform-win">Clauge has been added to your startup apps so it starts when you sign in to Windows. Toggle off in Settings → Apps → Startup if you'd prefer manual launches.</p>
         </li>
         <li>
           <strong>claude.ai sign-in</strong>
-          <p class="platform-mac">Optional. Connect from Settings → Connections if you have a claude.ai account (separate from Claude Code).</p>
+          <p class="platform-mac">Optional. Connect from Settings → Connections to view your claude.ai plan usage (read-only) — separate from Claude Code.</p>
           <p class="platform-win">Not yet supported on Windows — coming in a future release. Claude Code CLI credentials are enough for most usage.</p>
         </li>
       </ul>
