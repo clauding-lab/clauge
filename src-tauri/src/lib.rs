@@ -1,4 +1,9 @@
 pub mod anthropic_oauth;
+// v0.9.0 MAS (Task 12b): cfg-gate claude_ai_session on MAS. The module
+// reads/writes a Keychain entry the non-sandboxed DMG wrote. The MAS sandbox
+// identity doesn't auto-grant access, so the IPC polling path triggers a
+// Keychain prompt every cycle. Clauge Sync browser extension is the MAS path.
+#[cfg(not(feature = "mas"))]
 mod claude_ai_session;
 pub mod connections;
 mod ipc;
@@ -8,11 +13,63 @@ mod menu;
 mod native_popover;
 mod port_discovery;
 mod port_file;
+// v0.9.0 MAS flavor only: NSURL security-scoped bookmark wrapper for the
+// user-granted read access to ~/.claude/. DMG flavor reads the filesystem
+// directly and does not compile this module.
+#[cfg(feature = "mas")]
+mod security_scoped_bookmark;
+// v0.9.10 MAS flavor only: launch-at-login via Apple's SMAppService
+// (sandbox-correct, macOS 13+). The DMG/Windows flavors use
+// tauri-plugin-autostart (LaunchAgent) instead — see the builder chain.
+#[cfg(feature = "mas")]
+mod autostart_mas;
 mod sidecar;
 mod tray;
 mod windows;
 
 use tauri::Manager;
+
+/// v0.9.10 (Apple Issue 2 fix): build the first-launch onboarding WebviewWindow
+/// at most once. The setup() block registers TWO ways to trigger this — a
+/// `sidecar-ready` event listener AND a 30 s timeout fallback — and races
+/// them via the `spawned` `AtomicBool`. Whichever fires first wins; the loser
+/// observes `swap(true)` returning true and bails out.
+///
+/// Build failures here are logged but do NOT flip `onboarding_completed=true`
+/// (the prior implementation did, which turned a transient build error into a
+/// permanent dead state — see commit history and AGENT_LEARNINGS.md).
+fn spawn_wizard_window_once(
+    app: &tauri::AppHandle,
+    port: u16,
+    spawned: &std::sync::atomic::AtomicBool,
+) {
+    if spawned.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let url_str = format!("http://127.0.0.1:{}/onboarding/index.html", port);
+    let url = match url_str.parse() {
+        Ok(u) => tauri::WebviewUrl::External(u),
+        Err(e) => {
+            log::error!("Failed to parse wizard URL '{}': {}", url_str, e);
+            return;
+        }
+    };
+    let result = tauri::WebviewWindowBuilder::new(app, "onboarding", url)
+        .title("Welcome to Clauge")
+        .inner_size(560.0, 640.0)
+        .resizable(false)
+        .center()
+        .visible(true)
+        .build();
+    if let Err(e) = result {
+        // Intentionally NOT setting onboarding_completed=true here: a
+        // transient build failure (resource race during cold launch, etc.)
+        // should be retried on next launch, not turned into a permanent
+        // "no-wizard-ever" state. The user's next launch goes through the
+        // same code path and tries again.
+        log::error!("Failed to spawn onboarding wizard window: {}", e);
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,7 +79,14 @@ pub fn run() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .try_init();
 
-    let app = tauri::Builder::default()
+    // v0.9.0 MAS flavor: the updater plugin is cfg-gated below so it is
+    // ABSENT from MAS binaries (Apple App Store policy forbids in-app updates).
+    // The cfg attribute can't gate a single `.plugin(...)` mid-chain in a
+    // fluent builder expression, so we split the chain into a let-binding,
+    // conditionally rebind it with the updater plugin attached for non-MAS
+    // builds, then continue the chain. tauri.mas.conf.json also sets
+    // `plugins.updater: null` (belt + suspenders).
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // Second-launch attempt (spec §6.7): show the dashboard. The
@@ -30,16 +94,34 @@ pub fn run() {
             // the single-instance plugin can't introspect or focus it from
             // here — the dashboard is the next-best glanceable surface.
             crate::tray::show_dashboard(app);
-        }))
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        }));
+
+    // Launch-at-login plugin (LaunchAgent) is for the NON-sandboxed flavors only.
+    // Under the MAS App Sandbox a LaunchAgent plist write is redirected into the
+    // app container where launchd never scans it, so autostart silently fails AND
+    // the wizard's "added to login items" claim would be false. MAS uses Apple's
+    // sandbox-correct SMAppService instead (crate::autostart_mas), wired into the
+    // set_autostart/get_autostart IPCs and the first-launch enable below.
+    #[cfg(not(feature = "mas"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None,
+    ));
+
+    #[cfg(not(feature = "mas"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    let app = builder
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         // TODO(T18): configure store path/migration when popover settings handler lands.
         .plugin(tauri_plugin_store::Builder::default().build())
+        // v0.9.0: dialog plugin is consumed by the MAS-flavor
+        // security-scoped bookmark module to present NSOpenPanel for the
+        // user-granted ~/.claude/ read access. Registered unconditionally
+        // because the cost is dormant on DMG (no code calls into it) and
+        // ACL on main.json gates any frontend access (none granted).
+        .plugin(tauri_plugin_dialog::init())
         .manage(ipc::AppState::default())
         .setup(|app| {
             // macOS: boot as menu-bar-only (no Dock icon, not in Cmd+Tab). The
@@ -73,18 +155,22 @@ pub fn run() {
             // required (Tauri menu event listeners are global).
             let menu = crate::menu::build(app.handle())?;
             app.set_menu(menu)?;
-            // First-launch autostart enablement (spec §3 Decision #8 + §4.2:
-            // "Launch at Login (default ON)"; toggle-OFF flow lives in §6.6).
-            // Placed AFTER menu setup so menu/tray remain functional even if
-            // the store fails to open. The store carries a `first_launch_done`
-            // flag in settings.json (~/Library/Application Support/com.clauding.clauge/settings.json).
-            // If the flag is absent (fresh install OR user wiped settings), we
-            // call `app.autolaunch().enable()` to register Clauge in macOS
-            // Login Items, then mark the flag so subsequent launches no-op.
-            // The user can later toggle autostart OFF via the popover gear
-            // (spec §6.6); we do not re-enable it once they've opted out.
+            // First-launch autostart enablement — DMG/Windows ONLY.
+            //
+            // DMG/NSIS builds register Clauge as a login item on first launch
+            // (LaunchAgent via tauri-plugin-autostart), tracked by a
+            // `first_launch_done` flag in settings.json so it runs exactly once.
+            // The user can toggle it OFF later (dashboard/popover) or in the OS.
+            //
+            // MAS deliberately does NOT auto-register. Apple Guideline
+            // 2.4.5(iii) forbids auto-launching at login without explicit user
+            // consent (Clauge v0.9.10 build 4 was rejected for exactly this).
+            // On MAS, Launch at Login is strictly OPT-IN: the onboarding wizard
+            // (Step 3) and the dashboard/popover toggles call `set_autostart`
+            // (→ crate::autostart_mas / SMAppService) ONLY when the user
+            // explicitly enables it. See AGENTS.md landmine #28.
+            #[cfg(not(feature = "mas"))]
             {
-                use tauri_plugin_autostart::ManagerExt;
                 use tauri_plugin_store::StoreExt;
 
                 let store = app.store("settings.json").map_err(|e| {
@@ -93,10 +179,13 @@ pub fn run() {
                 })?;
 
                 if store.get("first_launch_done").is_none() {
-                    log::info!("First launch detected; enabling Launch at Login by default");
+                    log::info!("First launch detected; enabling Launch at Login by default (non-MAS)");
+
+                    use tauri_plugin_autostart::ManagerExt;
                     if let Err(e) = app.autolaunch().enable() {
                         log::warn!("Failed to enable autostart on first launch: {}", e);
                     }
+
                     store.set("first_launch_done", serde_json::Value::Bool(true));
                     if let Err(e) = store.save() {
                         log::warn!("Failed to persist first_launch_done flag: {}", e);
@@ -107,13 +196,23 @@ pub fn run() {
             // v0.7.2: first-launch onboarding wizard. Gated by a SEPARATE flag
             // (`onboarding_completed`) so a future "Re-run setup" feature can
             // reset it without flipping the autostart flag.
-            // The wizard window is spawned even before sidecar port discovery
-            // completes — the URL it loads uses port 3456 (the default sidecar
-            // bind) which the port_discovery::SpawnAt branch reserves. If the
-            // user has an external clauge-server on a non-default port, the
-            // wizard's URL would fall through to a 404; for v0.7.2 we accept
-            // this edge case since external-clauge-server users are typically
-            // power users who've already onboarded.
+            //
+            // v0.9.10 (Apple Issue 2 fix): the wizard window URL points at
+            // the sidecar's HTTP server (http://127.0.0.1:PORT/onboarding/...).
+            // The sidecar takes 1–8 s to bind on cold launch in sandbox
+            // (loadPriceTable HTTP fetch + serveStatic setup + listenWithRetry).
+            // The prior implementation opened the wizard at T+500ms with no
+            // listener for sidecar-ready → webview showed ERR_CONNECTION_REFUSED
+            // → reviewer saw a blank "Welcome to Clauge" window → Apple
+            // rejected under Guideline 2.1(a).
+            //
+            // Fix: wait for the `sidecar-ready` event (emitted by sidecar.rs
+            // when PORT_MARKER is captured AND by the External-discovery
+            // branch below) before building the window. A 30 s timeout
+            // fallback opens the window anyway if the event never fires —
+            // better to show a window with an error page than to appear
+            // completely unresponsive (if the timeout path fires, the
+            // sidecar is genuinely broken and a relaunch is needed).
             {
                 use tauri_plugin_store::StoreExt;
                 let store = app.store("settings.json").map_err(|e| {
@@ -121,37 +220,41 @@ pub fn run() {
                     e
                 })?;
                 if store.get("onboarding_completed").is_none() {
-                    log::info!("First-launch wizard not yet completed; spawning onboarding window");
-                    let app_handle = app.handle().clone();
-                    // Spawn into the async runtime so we don't block setup.
-                    // The wizard window uses URL http://127.0.0.1:3456/onboarding/index.html
-                    // which will be available once the sidecar starts (the spawn
-                    // below races with port_discovery, but Tauri's WebviewWindow
-                    // handles a temporarily-404 load gracefully by retrying when
-                    // the user clicks).
+                    log::info!(
+                        "First-launch wizard not yet completed; deferring spawn until sidecar-ready"
+                    );
+
+                    // Coordination: build the wizard window AT MOST ONCE,
+                    // whichever fires first — the sidecar-ready event listener
+                    // (preferred) OR the 30-second fallback timeout.
+                    let wizard_spawned =
+                        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+                    // Preferred path: sidecar-ready event from sidecar.rs.
+                    let app_for_listen = app.handle().clone();
+                    let spawned_for_listen = wizard_spawned.clone();
+                    use tauri::Listener;
+                    app.listen("sidecar-ready", move |event| {
+                        let port = serde_json::from_str::<serde_json::Value>(event.payload())
+                            .ok()
+                            .and_then(|v| v.get("port").and_then(|p| p.as_u64()))
+                            .map(|p| p as u16)
+                            .unwrap_or(3456);
+                        spawn_wizard_window_once(&app_for_listen, port, &spawned_for_listen);
+                    });
+
+                    // Fallback path: open after 30 s no matter what so the
+                    // user isn't staring at a menu-bar icon for half a minute
+                    // wondering if the app launched.
+                    let app_for_timeout = app.handle().clone();
+                    let spawned_for_timeout = wizard_spawned.clone();
                     tauri::async_runtime::spawn(async move {
-                        // Brief delay so port_discovery has a chance to bind.
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        let url = tauri::WebviewUrl::External(
-                            "http://127.0.0.1:3456/onboarding/index.html"
-                                .parse()
-                                .unwrap(),
-                        );
-                        let result =
-                            tauri::WebviewWindowBuilder::new(&app_handle, "onboarding", url)
-                                .title("Welcome to Clauge")
-                                .inner_size(560.0, 640.0)
-                                .resizable(false)
-                                .center()
-                                .visible(true)
-                                .build();
-                        if let Err(e) = result {
-                            log::error!("Failed to spawn onboarding wizard window: {}", e);
-                            // Mark the flag so we don't loop on a broken wizard.
-                            if let Ok(store) = app_handle.store("settings.json") {
-                                store.set("onboarding_completed", serde_json::Value::Bool(true));
-                                let _ = store.save();
-                            }
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        if !spawned_for_timeout.load(std::sync::atomic::Ordering::SeqCst) {
+                            log::warn!(
+                                "sidecar-ready event hasn't fired in 30 s; opening wizard with fallback port 3456 — webview will show ECONNREFUSED if sidecar is still down. Relaunch will retry."
+                            );
+                            spawn_wizard_window_once(&app_for_timeout, 3456, &spawned_for_timeout);
                         }
                     });
                 } else {
@@ -211,6 +314,20 @@ pub fn run() {
                             }
                             crate::native_popover::reload_for_port(&app_handle, port);
                         }
+                        // v0.9.10 (Apple Issue 2 fix): emit sidecar-ready so the
+                        // wizard listener fires for the External-discovery path
+                        // too. Without this, users with a pre-running clauge
+                        // server would never see the wizard build (the wizard
+                        // would hit its 30 s timeout fallback instead).
+                        use tauri::Emitter;
+                        if let Err(e) =
+                            app_handle.emit("sidecar-ready", serde_json::json!({ "port": port }))
+                        {
+                            log::warn!(
+                                "Failed to emit sidecar-ready event (External branch): {}",
+                                e
+                            );
+                        }
                     }
                     port_discovery::DiscoveryResult::SpawnAt(_start) => {
                         sidecar::spawn_and_supervise(app_handle).await;
@@ -218,12 +335,20 @@ pub fn run() {
                 }
             });
 
-            let app_handle_updater = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::ipc::check_for_updates(app_handle_updater).await {
-                    log::warn!("Updater check on launch failed: {}", e);
-                }
-            });
+            // v0.9.0 MAS flavor: skip the launch-time updater poll. The
+            // `ipc::check_for_updates` FUNCTION stays defined (the Settings
+            // → Updates button still calls it on DMG; the MAS variant opens
+            // the App Store storefront). Only the cold-start auto-check
+            // is gated here — App Store policy forbids in-app updates.
+            #[cfg(not(feature = "mas"))]
+            {
+                let app_handle_updater = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::ipc::check_for_updates(app_handle_updater).await {
+                        log::warn!("Updater check on launch failed: {}", e);
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -244,6 +369,9 @@ pub fn run() {
             ipc::restart_app,
             ipc::take_pending_focus_connections,
             ipc::install_cli_symlink,
+            ipc::is_mas_flavor,
+            ipc::grant_claude_dir_access,
+            ipc::has_claude_dir_bookmark,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -46,6 +46,12 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
+  /* v0.9.10: transparent body so the NSVisualEffectView in
+     native_popover.rs tints the popover with the wallpaper.
+     `backdrop-filter` was removed from #root below — that was the
+     WebKit compositor racing the native vibrancy and producing the
+     10 s refresh flicker. Native vibrancy stays; it doesn't have the
+     cross-compositor sync issue. */
   background: transparent;
   color: var(--text);
   font-family: var(--sans);
@@ -54,7 +60,12 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   border-radius: 14px;
-  overflow: hidden;
+  /* v0.9.10 build 5 (Apple Design 4.2 fix): vertical scroll safety net so
+     content can never be clipped if it briefly exceeds the native popover
+     height (e.g. heatmap renders before resize fires, or content > 1200px).
+     overflow-x stays hidden to preserve the 14px rounded corners. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .mono {
@@ -64,23 +75,17 @@ html, body {
 }
 
 /* ── Root popover surface ──────────────────────────────────── */
-/* v0.9.4 — popover vibrancy wash.
- *
- * Goal: visible wallpaper-hue bleed through a tinted overlay (macOS HUD-style
- * vibrancy via CSS). Dashboard kept its v0.9.3 wash — `.transparent(true)` +
- * `apply_vibrancy(HudWindow, ...)` broke the dashboard render during smoke,
- * so single-surface vibrancy ships here.
- *
- * Tuning history (v0.9.1 .22 → too see-through; v0.9.4 .93 → too flat).
- * Settled on .55-.60 alpha with 80px blur — wallpaper colors visible through
- * a tinted overlay; text on top stays legible on bright backgrounds.
- */
+/* v0.9.10 — semi-transparent popover surface, CSS-side blur removed.
+ * v0.9.4 → v0.9.9 had `backdrop-filter: blur(80px) saturate(180%)` here
+ * AND the NSVisualEffectView in native_popover.rs. Two compositors on
+ * independent frame clocks → visible flicker on every 10 s refresh
+ * tick. v0.9.10 removes the CSS backdrop-filter and keeps the native
+ * vibrancy doing the blur. The semi-transparent gradient stays as the
+ * brand-tinted wash on top of the vibrancy. */
 #root {
   width: 340px;
   background:
     linear-gradient(180deg, rgba(30, 26, 38, 0.55) 0%, rgba(20, 18, 26, 0.60) 100%);
-  -webkit-backdrop-filter: blur(80px) saturate(180%);
-          backdrop-filter: blur(80px) saturate(180%);
   border-radius: 14px;
   box-shadow:
     inset 0 1px 0 rgba(244, 236, 228, 0.10),

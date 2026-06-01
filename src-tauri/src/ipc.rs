@@ -5,8 +5,9 @@ use std::sync::{
     Arc, Mutex,
 };
 use tauri::State;
-use tauri_plugin_shell::process::CommandChild;
 use tokio::sync::Notify;
+
+use crate::sidecar::SidecarChild;
 
 /// Shared app state holding the sidecar's bound port and shutdown machinery.
 ///
@@ -24,18 +25,22 @@ use tokio::sync::Notify;
 ///    in backoff sleep), the wake-up is LOST. The flag covers that gap —
 ///    every loop iteration checks it and breaks out if set.
 ///
-/// 3. `children` (`Arc<Mutex<Vec<CommandChild>>>`) — every spawned child is
+/// 3. `children` (`Arc<Mutex<Vec<SidecarChild>>>`) — every spawned child is
 ///    registered here so the `RunEvent::ExitRequested` handler in lib.rs
 ///    can take ownership of the entire set and call `kill()` on each one.
-///    `CommandChild` has no `Drop` impl (verified against
-///    tauri-plugin-shell-2.3.5/src/process/mod.rs), so a child that the
-///    supervisor's loop hasn't yet observed (e.g., crash-respawn racing the
-///    quit signal) would otherwise survive the parent process exit.
+///    Neither variant of `SidecarChild` has a `Drop` impl that kills the
+///    OS process (DMG: `tauri_plugin_shell::process::CommandChild` has no
+///    Drop per tauri-plugin-shell-2.3.5/src/process/mod.rs; MAS:
+///    `sidecar::NativeChild` only carries the PID, and the underlying
+///    `tokio::process::Child` lives in a wait-task that doesn't observe
+///    the parent's exit), so a child that the supervisor's loop hasn't
+///    yet observed (e.g., crash-respawn racing the quit signal) would
+///    otherwise survive the parent process exit.
 pub struct AppState {
     pub server_port: Arc<Mutex<Option<u16>>>,
     pub shutdown: Arc<Notify>,
     pub shutting_down: Arc<AtomicBool>,
-    pub children: Arc<Mutex<Vec<CommandChild>>>,
+    pub children: Arc<Mutex<Vec<SidecarChild>>>,
     /// Shared, mutex-serialized in-memory cache for the Claude Code OAuth
     /// credentials. Lives in `AppState` so concurrent dashboard polls share
     /// a single cached `ClaudeCodeCreds` and don't each re-prompt the user
@@ -93,7 +98,7 @@ impl AppState {
     /// Returns silently on lock poison — losing the registration is bad but
     /// not worth panicking for in production. The next time the lock recovers
     /// (or the OS cleans up zombie processes) it'll be fine.
-    pub fn register_child(&self, child: CommandChild) {
+    pub fn register_child(&self, child: SidecarChild) {
         match self.children.lock() {
             Ok(mut guard) => guard.push(child),
             Err(e) => log::error!("children lock poisoned at register: {}", e),
@@ -117,7 +122,7 @@ impl AppState {
     /// sidecar process and `kill()` each one. Returns an empty Vec on lock
     /// poison — at that point the children are leaked, but the alternative
     /// (panicking) would be worse.
-    pub fn take_all_children(&self) -> Vec<CommandChild> {
+    pub fn take_all_children(&self) -> Vec<SidecarChild> {
         match self.children.lock() {
             Ok(mut guard) => std::mem::take(&mut *guard),
             Err(e) => {
@@ -161,11 +166,27 @@ pub fn get_server_port(state: State<AppState>) -> Result<u16, String> {
 /// - `{"status":"up_to_date"}` — nothing to do
 /// - `{"status":"installed","version":"X.Y.Z"}` — new version installed
 ///   on disk; user needs to restart (frontend surfaces a Restart Now button).
+/// - `{"status":"opened_storefront"}` — v0.9.0 MAS: opens the Mac App Store
+///   storefront instead of polling latest.json. Frontend renders
+///   "Opened the Mac App Store. Updates ship through Apple."
+///
+/// MAS builds only construct `OpenedStorefront`; DMG/NSIS only construct
+/// `UpToDate` / `Installed`. `#[allow(dead_code)]` silences the warning
+/// on whichever flavor isn't constructing a given variant.
 #[derive(serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum UpdateStatus {
     UpToDate,
-    Installed { version: String },
+    Installed {
+        version: String,
+    },
+    /// v0.9.0 MAS: opened the Mac App Store storefront instead of polling
+    /// latest.json. Frontend renders the "Updates ship through Apple"
+    /// message. Gated to the `mas` feature so DMG/NSIS builds don't generate
+    /// a dead-code warning for a variant they can never construct.
+    #[cfg(feature = "mas")]
+    OpenedStorefront,
 }
 
 /// Walk up `exe`'s ancestor path and return the first `.app` bundle dir.
@@ -175,75 +196,110 @@ pub enum UpdateStatus {
 /// (no `.app` in any ancestor) and the *innermost* `.app` for nested helper
 /// bundles, which matches what we want — strip quarantine from the bundle
 /// that actually contains the running executable.
+///
+/// Used only by the non-MAS update path's xattr-strip block; MAS builds
+/// route through the App Store and never touch this helper.
+/// `allow(dead_code)` silences the unused-function warning under
+/// `--features mas` while keeping the helper's tests reachable on every
+/// flavor (test baselines stay stable).
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn find_app_bundle(exe: &std::path::Path) -> Option<&std::path::Path> {
     exe.ancestors()
         .find(|p| p.extension().is_some_and(|e| e == "app"))
 }
 
+/// Apple App Store numeric ID for Clauge. Issued 2026-05-17 when the
+/// App Store Connect listing was created for `com.clauding.clauge`.
+#[cfg(feature = "mas")]
+const APP_STORE_ID: &str = "6770303247";
+
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, String> {
-    use tauri_plugin_notification::NotificationExt;
-    use tauri_plugin_updater::UpdaterExt;
+    // v0.9.0 MAS: Apple App Store policy forbids in-app self-updates. Instead
+    // of polling latest.json + downloading a DMG, we open the Mac App Store
+    // storefront so the user can update through Apple's normal mechanism.
+    // The Settings → Updates button hits this same IPC on both flavors;
+    // frontend keys off the returned `OpenedStorefront` variant to render
+    // the "Updates ship through Apple" message.
+    #[cfg(feature = "mas")]
+    {
+        use tauri_plugin_shell::ShellExt;
+        // TODO(deprecation): migrate to tauri-plugin-opener when bumping Tauri.
+        // shell.open is #[deprecated(since = "2.1.0")]; see lib.rs same pattern.
+        #[allow(deprecated)]
+        app.shell()
+            .open(
+                format!("macappstore://apps.apple.com/app/clauge/id{}", APP_STORE_ID),
+                None,
+            )
+            .map_err(|e| format!("failed to open App Store: {}", e))?;
+        return Ok(UpdateStatus::OpenedStorefront);
+    }
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(update)) => {
-            // Capture version before `download_and_install` consumes `update`.
-            // Field is a public `String` on `tauri_plugin_updater::Update` (verified
-            // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
-            // a `version()` method.
-            let new_version = update.version.clone();
+    #[cfg(not(feature = "mas"))]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        use tauri_plugin_updater::UpdaterExt;
 
-            update
-                .download_and_install(|_, _| {}, || {})
-                .await
-                .map_err(|e| e.to_string())?;
+        let updater = app.updater().map_err(|e| e.to_string())?;
+        match updater.check().await {
+            Ok(Some(update)) => {
+                // Capture version before `download_and_install` consumes `update`.
+                // Field is a public `String` on `tauri_plugin_updater::Update` (verified
+                // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
+                // a `version()` method.
+                let new_version = update.version.clone();
 
-            // Strip quarantine attr on the running .app bundle so unsigned updates
-            // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
-            //
-            // Dev mode caveat: `current_exe()` returns the dev target binary
-            // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
-            // returns None and the xattr block silently skips. In production it
-            // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
-            // ancestors() walks up to the .app bundle.
-            //
-            // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
-            // dispatch a TOAST telling the user the update installed but Gatekeeper
-            // will reappear, with the right-click → Open workaround.
-            #[cfg(target_os = "macos")]
-            {
-                use tokio::process::Command;
-                let mut xattr_failed = false;
-                if let Ok(exe) = std::env::current_exe() {
-                    if let Some(bundle) = find_app_bundle(&exe) {
-                        match Command::new("xattr")
-                            .args(["-dr", "com.apple.quarantine"])
-                            .arg(bundle)
-                            .output()
-                            .await
-                        {
-                            Ok(out) if out.status.success() => {
-                                log::info!("Stripped quarantine from {:?}", bundle);
-                            }
-                            Ok(out) => {
-                                log::warn!(
-                                    "xattr exited non-zero stripping quarantine: {}",
-                                    String::from_utf8_lossy(&out.stderr)
-                                );
-                                xattr_failed = true;
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to invoke xattr: {}", e);
-                                xattr_failed = true;
+                update
+                    .download_and_install(|_, _| {}, || {})
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                // Strip quarantine attr on the running .app bundle so unsigned updates
+                // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
+                //
+                // Dev mode caveat: `current_exe()` returns the dev target binary
+                // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
+                // returns None and the xattr block silently skips. In production it
+                // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
+                // ancestors() walks up to the .app bundle.
+                //
+                // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
+                // dispatch a TOAST telling the user the update installed but Gatekeeper
+                // will reappear, with the right-click → Open workaround.
+                #[cfg(target_os = "macos")]
+                {
+                    use tokio::process::Command;
+                    let mut xattr_failed = false;
+                    if let Ok(exe) = std::env::current_exe() {
+                        if let Some(bundle) = find_app_bundle(&exe) {
+                            match Command::new("xattr")
+                                .args(["-dr", "com.apple.quarantine"])
+                                .arg(bundle)
+                                .output()
+                                .await
+                            {
+                                Ok(out) if out.status.success() => {
+                                    log::info!("Stripped quarantine from {:?}", bundle);
+                                }
+                                Ok(out) => {
+                                    log::warn!(
+                                        "xattr exited non-zero stripping quarantine: {}",
+                                        String::from_utf8_lossy(&out.stderr)
+                                    );
+                                    xattr_failed = true;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to invoke xattr: {}", e);
+                                    xattr_failed = true;
+                                }
                             }
                         }
                     }
-                }
 
-                if xattr_failed {
-                    if let Err(e) = app
+                    if xattr_failed {
+                        if let Err(e) = app
                         .notification()
                         .builder()
                         .title("Clauge update issue")
@@ -252,49 +308,73 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
                     {
                         log::warn!("Failed to dispatch xattr-fail notification: {}", e);
                     }
+                    }
                 }
-            }
 
-            // User-visible notification that update is installed (spec §6.5).
-            // Platform-agnostic; capability `notification:default` is granted in
-            // src-tauri/capabilities/main.json.
-            if let Err(e) = app
-                .notification()
-                .builder()
-                .title("Clauge updated")
-                .body(format!(
-                    "Updated to v{}. Restart the app to apply.",
-                    new_version
-                ))
-                .show()
-            {
-                log::warn!("Failed to dispatch update notification: {}", e);
-            }
+                // User-visible notification that update is installed (spec §6.5).
+                // Platform-agnostic; capability `notification:default` is granted in
+                // src-tauri/capabilities/main.json.
+                if let Err(e) = app
+                    .notification()
+                    .builder()
+                    .title("Clauge updated")
+                    .body(format!(
+                        "Updated to v{}. Restart the app to apply.",
+                        new_version
+                    ))
+                    .show()
+                {
+                    log::warn!("Failed to dispatch update notification: {}", e);
+                }
 
-            Ok(UpdateStatus::Installed {
-                version: new_version,
-            })
+                Ok(UpdateStatus::Installed {
+                    version: new_version,
+                })
+            }
+            Ok(None) => Ok(UpdateStatus::UpToDate),
+            Err(e) => Err(e.to_string()),
         }
-        Ok(None) => Ok(UpdateStatus::UpToDate),
-        Err(e) => Err(e.to_string()),
     }
 }
 
 #[tauri::command]
 pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    use tauri_plugin_autostart::ManagerExt;
-    let manager = app.autolaunch();
-    if enabled {
-        manager.enable().map_err(|e| e.to_string())
-    } else {
-        manager.disable().map_err(|e| e.to_string())
+    // DMG/Windows: LaunchAgent via tauri-plugin-autostart.
+    #[cfg(not(feature = "mas"))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let manager = app.autolaunch();
+        if enabled {
+            manager.enable().map_err(|e| e.to_string())
+        } else {
+            manager.disable().map_err(|e| e.to_string())
+        }
+    }
+    // MAS: Apple SMAppService (see crate::autostart_mas). The AppHandle is unused
+    // because SMAppService.mainApp implicitly targets the running app.
+    #[cfg(feature = "mas")]
+    {
+        let _ = &app;
+        if enabled {
+            crate::autostart_mas::enable()
+        } else {
+            crate::autostart_mas::disable()
+        }
     }
 }
 
 #[tauri::command]
 pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
-    use tauri_plugin_autostart::ManagerExt;
-    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+    #[cfg(not(feature = "mas"))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        app.autolaunch().is_enabled().map_err(|e| e.to_string())
+    }
+    #[cfg(feature = "mas")]
+    {
+        let _ = &app;
+        Ok(crate::autostart_mas::is_enabled())
+    }
 }
 
 /// Show the dashboard window (creating it if it doesn't exist yet).
@@ -420,21 +500,56 @@ fn check_body_cap(bytes: &[u8]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(bytes).map_err(|e| e.to_string())
 }
 
+/// Open the in-app WKWebView for claude.ai sign-in (Architecture A — DMG/NSIS
+/// only). On MAS this is a no-op error — the Clauge Sync browser extension is
+/// the recommended path (per wizard step 4). The frontend should never call
+/// this on MAS (connections.js gates the button by flavor), but we return a
+/// helpful error message so a misrouted call surfaces clearly in logs.
 #[tauri::command]
 pub async fn open_claude_ai_login(app: tauri::AppHandle) -> Result<(), String> {
-    crate::claude_ai_session::open_login_modal(&app)
-        .await
-        .map_err(|e| e.to_string())
+    #[cfg(not(feature = "mas"))]
+    {
+        crate::claude_ai_session::open_login_modal(&app)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(feature = "mas")]
+    {
+        let _ = app;
+        Err(
+            "Direct sign-in unavailable on Mac App Store. Use the Clauge Sync browser extension via Settings → Connections.".to_string(),
+        )
+    }
 }
 
+/// Clear the stored claude.ai sessionKey cookie from Keychain (sign-out —
+/// DMG/NSIS only). MAS no-op returns Ok(()) because the cookie is never
+/// stored there (claude_ai_session module is cfg-gated out on MAS).
 #[tauri::command]
 pub fn signout_claude_ai() -> Result<(), String> {
-    crate::claude_ai_session::clear_stored_cookie().map_err(|e| e.to_string())
+    #[cfg(not(feature = "mas"))]
+    {
+        crate::claude_ai_session::clear_stored_cookie().map_err(|e| e.to_string())
+    }
+    #[cfg(feature = "mas")]
+    {
+        Ok(())
+    }
 }
 
+/// Returns true if a claude.ai sessionKey cookie is stored in Keychain
+/// (DMG/NSIS only). On MAS this always returns false — the claude_ai_session
+/// module is cfg-gated out, so there's never a cookie to read.
 #[tauri::command]
 pub fn has_claude_ai_session() -> bool {
-    crate::claude_ai_session::read_stored_cookie().is_ok()
+    #[cfg(not(feature = "mas"))]
+    {
+        crate::claude_ai_session::read_stored_cookie().is_ok()
+    }
+    #[cfg(feature = "mas")]
+    {
+        false
+    }
 }
 
 #[tauri::command]
@@ -490,6 +605,31 @@ pub async fn get_connection_status(
                 err
             );
         }
+    }
+
+    // v0.9.0 MAS: fill in the claude_code_logs field after the pure compositor
+    // has returned. compose_status() defaults this to None because it lacks an
+    // AppHandle; we fill it here where `_app` is in scope. The bookmark
+    // presence is the source of truth for "granted" — `MAS_CLAUDE_DIR` may not
+    // yet be populated this run (sidecar supervisor sets it on acquire), so
+    // we report `path = None` in that case while still surfacing "granted".
+    #[cfg(feature = "mas")]
+    {
+        let logs_state = if crate::security_scoped_bookmark::has_bookmark(&_app) {
+            let path = crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+                .get()
+                .map(|p| p.to_string_lossy().into_owned());
+            crate::connections::ClaudeCodeLogsState {
+                status: crate::connections::ClaudeDirGrantStatus::Granted,
+                path,
+            }
+        } else {
+            crate::connections::ClaudeCodeLogsState {
+                status: crate::connections::ClaudeDirGrantStatus::NotGranted,
+                path: None,
+            }
+        };
+        status.claude_code_logs = Some(logs_state);
     }
 
     Ok(status)
@@ -609,6 +749,122 @@ fn mark_onboarding_completed(app: &tauri::AppHandle) -> Result<(), Box<dyn std::
     store.set("onboarding_completed", serde_json::Value::Bool(true));
     store.save()?;
     Ok(())
+}
+
+// --- v0.9.0 MAS flavor IPCs ---
+
+/// Returns true if this build was compiled with the `mas` Cargo feature.
+/// Used by frontend JS to gate flavor-specific UI (wizard step 2 + step 5
+/// markup, Settings → Updates button copy, 4th Connections row visibility).
+///
+/// Both flavors register the IPC; it just returns `false` on DMG/NSIS.
+#[tauri::command]
+pub fn is_mas_flavor() -> bool {
+    cfg!(feature = "mas")
+}
+
+/// Prompt the user via NSOpenPanel to grant access to ~/.claude/. Persists
+/// the resulting security-scoped bookmark to the Tauri store. Returns
+/// Ok(()) on grant, Err(string) on cancel / failure.
+///
+/// MAS-only — DMG/NSIS no-op returns Ok(()) (frontend shouldn't be calling
+/// it but graceful degradation if it does).
+///
+/// NSOpenPanel is modal and blocking — wrap the bookmark call in
+/// `spawn_blocking` to avoid stalling the Tauri main thread.
+///
+/// **Task 12b — first-launch UX fix:** after prompt success, this IPC now
+/// also (a) acquires the scoped path immediately to populate
+/// `MAS_CLAUDE_DIR` for `read_claude_code_credentials`, (b) holds the
+/// resulting `ScopedHandle` in the process-wide `MAS_SCOPE_HOLDER` so the
+/// scope outlives this IPC handler's stack frame, and (c) signals the
+/// sidecar to respawn so its `CLAUDE_DIR` env picks up the fresh value.
+/// Without these steps, first-launch users had to restart the app for the
+/// dashboard to leave the empty state (smoke surfaced this 2026-05-17).
+#[tauri::command]
+pub async fn grant_claude_dir_access(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(feature = "mas")]
+    {
+        // Step 1: prompt user via NSOpenPanel, persist bookmark blob to store.
+        let app_for_prompt = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::security_scoped_bookmark::prompt_for_folder_grant(&app_for_prompt)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking join failed: {}", e))??;
+
+        // Step 2: acquire scope + populate MAS_CLAUDE_DIR if not already.
+        // On first launch, the supervisor's acquire failed (no bookmark yet),
+        // so MAS_CLAUDE_DIR is None and we must populate it here. On re-select
+        // (subsequent launches with bookmark already present), supervisor
+        // already populated it and we don't need to re-acquire.
+        if crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+            .get()
+            .is_none()
+        {
+            let app_for_acquire = app.clone();
+            let acquire_result = tauri::async_runtime::spawn_blocking(move || {
+                crate::security_scoped_bookmark::acquire_scoped_path(&app_for_acquire)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking acquire join failed: {}", e))?;
+
+            match acquire_result {
+                Ok((path, guard)) => {
+                    let _ = crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+                        .set(std::path::PathBuf::from(&path));
+                    // Hold the ScopedHandle in the static so the scope stays
+                    // active beyond this IPC handler's stack. Without this,
+                    // the guard's Drop impl would fire on this function's
+                    // return and revoke filesystem access immediately —
+                    // making the whole exercise pointless.
+                    if let Ok(mut holder) = crate::security_scoped_bookmark::MAS_SCOPE_HOLDER.lock()
+                    {
+                        *holder = Some(guard);
+                    }
+                    log::info!(
+                        "grant_claude_dir_access: MAS_CLAUDE_DIR populated to {} and scope held in MAS_SCOPE_HOLDER",
+                        path
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "grant_claude_dir_access: bookmark persisted but acquire_scoped_path failed: {}. Credentials/JSONL reads may fail until app restart.",
+                        e
+                    );
+                }
+            }
+        }
+
+        // Step 3: signal sidecar respawn so its CLAUDE_DIR env updates.
+        // The supervisor's loop auto-respawns on sidecar death.
+        crate::sidecar::kill_current_sidecar_for_respawn(&app).await;
+
+        Ok(())
+    }
+    #[cfg(not(feature = "mas"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
+/// Returns true if a security-scoped bookmark blob is persisted in the
+/// Tauri store. Cheap — one store read, no Foundation FFI.
+///
+/// DMG/NSIS always returns true (no bookmark needed — full FS access).
+#[tauri::command]
+pub fn has_claude_dir_bookmark(app: tauri::AppHandle) -> bool {
+    #[cfg(feature = "mas")]
+    {
+        crate::security_scoped_bookmark::has_bookmark(&app)
+    }
+    #[cfg(not(feature = "mas"))]
+    {
+        let _ = app;
+        true
+    }
 }
 
 /// v0.8.1: dashboard's app.js calls this on load to check whether the wizard

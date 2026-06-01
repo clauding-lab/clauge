@@ -624,6 +624,11 @@ function renderPopoverHeatmap(data) {
       ? t('heatmap.longest', { count: data.longestStreak, plural: data.longestStreak === 1 ? '' : 's' })
       : t('heatmap.longestUnknown');
   }
+  // v0.9.10 build 5 (Apple Design 4.2 fix): the heatmap renders AFTER the main
+  // refresh's resizeToContent() already measured, so re-measure now that the
+  // 180-day grid is in the DOM. Without this the popover stayed at its
+  // pre-heatmap height and the bottom rows were clipped.
+  resizeToContent();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -698,8 +703,13 @@ function resizeToContent() {
       const root = document.getElementById('root');
       if (!root) return;
       const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
-      const height = Math.ceil(root.offsetHeight * zoom);
-      if (height < 200 || height > 1200) return;
+      const measured = Math.ceil(root.offsetHeight * zoom);
+      // Clamp into the native popover's allowed range instead of bailing.
+      // Bailing on tall content (e.g. the 180-day heatmap) left the popover at
+      // its prior height and clipped the overflow — the Apple Design 4.2
+      // rejection on v0.9.10 build 4. The body scroll net (popover.css) covers
+      // the rare >1200px case so text is never cut off.
+      const height = Math.min(1200, Math.max(200, measured));
       window.webkit.messageHandlers.clauge.postMessage({ cmd: 'resize', height });
     } catch (err) {
       console.warn('[Clauge popover] resizeToContent failed:', err);

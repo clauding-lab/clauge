@@ -37,6 +37,125 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-05-31 — v0.9.10 build 5 | Apple's SECOND rejection — three findings, including one the prior fix CREATED
+
+**Trigger:** Apple rejected v0.9.10 **build 4** (2026-05-30) with three findings: **2.4.5(iii)** (auto-launches at login without consent), **3.1.1** (appears to sell/access paid content via non-IAP), and **4 / Design** (a window cuts off text — the popover heatmap).
+
+**What went wrong:**
+- **2.4.5(iii) was self-inflicted by the PRIOR session's fix.** v0.9.10 added `SMAppService` launch-at-login (correct mechanism, landmine #26) but wired it to **auto-enable on first launch** (`lib.rs` called `autostart_mas::enable()` unconditionally; the comment literally said "default ON") with the wizard only showing an opt-OUT *notice*. Making the feature *work* introduced a *consent* violation. Apple forbids auto-launch without explicit consent.
+- **3.1.1 was a reviewer misread** of the Settings field "Subscription cost (monthly) $200" — a user-entered ROI input, not a product for sale. Clauge has zero payment infrastructure (verified: no StoreKit/Stripe/IAP anywhere). Product-y wording ("subscription cost", "subscription value dashboard", "Return on sub") on a *config input* invited the misread.
+- **Design 4** — the popover sized to content via a one-shot `resizeToContent()` that ran in the refresh `finally` block, BEFORE the async `refreshHeatmap()` painted the 180-day grid, and **bailed entirely** (`return`) when content exceeded the 1200px cap instead of clamping. So the heatmap rendered taller than the measured popover and the `overflow:hidden` clipped it.
+- **The prior pre-upload audit (14 agents) PASSED build 4** and missed all three. It checked known-risk dimensions but did not model a skeptical reviewer on a fresh Mac with empty `~/.claude` clicking every control.
+
+**Lesson:**
+- **Making a feature work ≠ making it App-Store-compliant.** For anything that touches startup, background execution, or payments, the *default/consent model* is the compliance surface — default to opt-in, register only on explicit user action.
+- **Never use product/commerce vocabulary ("subscription", "plan cost", "buy") for a user-config input or a passive readout** — a reviewer skims labels out of context. Frame as the user's own external cost + state "never sells/processes payments".
+- **One-shot layout measurement loses to async-rendered content.** Re-measure after async renders complete; clamp into bounds instead of bailing; add a scroll safety net so text can never clip.
+- **A pre-submission audit must role-play the reviewer** (fresh machine, empty data, click every control), not just tick known dimensions — that's the only lens that would have caught all three.
+
+**Prevention:** `AGENTS.md` landmine #28 (MAS launch-at-login must be opt-in; distinct from #26's mechanism). Build-5 fixes: `lib.rs` first-launch autostart block now `#[cfg(not(feature="mas"))]`; wizard Step 3 opt-in toggle (default OFF); `set_autostart`/`get_autostart` triple-registered so wizard + dashboard drive the flavor-correct path; relabel of every "subscription"/"sub" surface + a no-payments disclaimer; popover `resizeToContent()` re-called after heatmap render + clamp + `overflow-y:auto`. A 4-lens adversarial reviewer-seat audit (one lens = "fresh-Mac completeness critic") replaced the dimension-checklist audit — it caught a **dead popover autostart toggle** (hidden for build 5) and a missed **"Return on sub"** label the targeted fixes alone left behind.
+
+**Verified (2026-05-31, sandboxed `--local-test` build):** `/api/health` → real `/Users/adnanrashid/.claude`, `/api/usage` → live data (helper + `CLAUDE_DIR` forward still good); served dashboard HTML shows "Your Claude plan cost" + no-payments line, old "Subscription cost"/"Return on sub" gone; build compiles clean (both flavors), all 5 repo validators pass; `.app` codesign-valid, 2 Mach-Os, helper carries app-sandbox+inherit. Autostart no-auto-register verified by code-proof + audit (empirical `sfltool` confounded by a stale enabled test-build login item from the prior session that can't be reset — TCC-blocked — and must be removed via System Settings).
+
+**Hotfix:** Build 5, `bundleVersion` 4 → 5, marketing version unchanged (0.9.10). Branch `feat/mas-on-v0.9.9`, PR #11 (unmerged). Resubmission + Resolution Center reply (`SS/appstore/APP_REVIEW_REPLY_build5.txt`) pending Adnan in App Store Connect.
+
+**Cross-references:** `AGENTS.md` § 28; auto-memory `project_v0_9_10_build5_second_rejection`. Plan-tier auto-detect (a v0.9.11 follow-up greenlit this session) is specced at `docs/superpowers/specs/2026-05-30-plan-tier-autodetect-design.md`.
+
+---
+
+## 2026-05-29 — v0.9.10 | MAS launch-at-login silently failed (LaunchAgent in sandbox) → SMAppService
+
+**Trigger:** Pre-upload adversarial audit of the v0.9.10 resubmission (the completeness critic) flagged that the onboarding wizard claims "Clauge has been added to your login items," but the app registers autostart via `tauri-plugin-autostart`'s LaunchAgent — which a sandboxed app cannot write where launchd scans.
+
+**What went wrong:** `app.autolaunch().enable()` (LaunchAgent backend) writes `~/Library/LaunchAgents/<app>.plist`. Under the App Sandbox `$HOME` is redirected, so the plist lands in `~/Library/Containers/com.clauding.clauge/Data/Library/LaunchAgents/` — a path launchd never scans. The call returns `Ok` (the write INTO the container succeeds), so nothing logged an error, but the login item never existed. The wizard's "added to your login items" copy was therefore false on MAS, and launch-at-login simply never happened. A "success" return masked a total no-op. The plugin was also registered + enabled unconditionally (not cfg-gated), so the MAS build attempted this dead path on every first launch.
+
+**Lesson:**
+- **macOS-specific:** a sandboxed app's launch-at-login MUST use `SMAppService` (macOS 13+), not a LaunchAgent plist — the sandbox redirect makes LaunchAgent a silent no-op.
+- **Generalizable:** a convenience API returning success is NOT proof of the real-world effect under platform restrictions. Verify the EFFECT (did the login item actually appear?), not the return code. Here the LaunchAgent path and the SMAppService path BOTH return `Ok`; only `sfltool dumpbtm` distinguishes a real registration from a no-op.
+
+**Prevention:** `AGENTS.md` landmine #26. New `src-tauri/src/autostart_mas.rs` registers via `SMAppService.mainApp` (`objc2-service-management`), cfg-gated: MAS uses SMAppService, DMG/Windows keep LaunchAgent. Runtime macOS-13 guard (`NSProcessInfo::isOperatingSystemAtLeastVersion`) keeps `minimumSystemVersion` at 12.0. **Verified 2026-05-29** on a sandboxed local-test build: `sfltool dumpbtm` showed a new `Type: app`, `Flags: [ sandboxed ]`, `Disposition: [enabled, allowed]` item for `com.clauding.clauge` — distinct from the DMG's `legacy agent` entry. The dashboard's real-data path was unaffected (regression check: `/api/health` → real `~/.claude`, `/api/usage` → live data).
+
+**Hotfix:** Folded into v0.9.10 build 4 (rebuilt after the audit).
+
+**Cross-references:** `AGENTS.md` § 26; global `~/.claude/AGENT_LEARNINGS.md` 2026-05-29 (success-≠-effect-under-sandbox); auto-memory `project_v0_9_10_apple_issue_2_wizard_race.md`. Surfaced by the pre-upload audit workflow's completeness critic — a finding none of the seven primary review dimensions covered.
+
+---
+
+## 2026-05-29 — v0.9.10 | The real Apple 2.1(a) fix — sandboxed sidecar couldn't boot (helper.app + inherit + CLAUDE_DIR env-forward)
+
+**Trigger:** Building the sandboxed MAS flavor for the v0.9.10 resubmission — after the wizard-race fix (2026-05-28 entry below) was already in hand. Transporter rejected the build (HTTP 409, "App sandbox not enabled" on every Mach-O), forcing an architectural rebuild that revealed the wizard race was NOT the load-bearing cause of Apple's 2.1(a) rejection.
+
+**What went wrong (two layers, neither was the wizard):**
+
+1. **The SEA sidecar couldn't boot under the App Sandbox.** The Node SEA is a ~220 MB *standalone* Mach-O dropped at `Contents/MacOS/clauge-server`. Transporter statically requires `com.apple.security.app-sandbox` on every Mach-O — but a standalone Mach-O that *declares* app-sandbox with no embedded `Info.plist` SIGTRAPs at runtime in `libsystem_secinit::_libsecinit_appsandbox.cold.9` (`SYSCALL_SET_USERLAND_PROFILE`), because secinitd can't set up a per-binary sandbox container without a `CFBundleIdentifier`. So the binary was caught between a static gate (must declare app-sandbox) and a runtime gate (declaring it crashes). Apple's reviewer saw the blank window because the sidecar process was crash-looping, not (only) because the wizard opened early.
+
+2. **After it booted, granted data didn't reach it.** Wrapping the binary in `Contents/Helpers/Clauge Helper.app/` (its own `Info.plist` + `CFBundleIdentifier=com.clauding.clauge.helper`) and adding `com.apple.security.inherit=true` got the helper booting and the dashboard rendering — but `/api/health` still reported the sandbox-redirected empty `~/.claude`. The MAS spawn path had been refactored from Tauri's shell plugin (`app.shell().sidecar(...)`, which implicitly inherits the parent env) to a raw `tokio::process::Command`, which set only `NO_OPEN=1`. The bookmark-resolved path lives in a Rust `OnceLock` (`MAS_CLAUDE_DIR`), not in the OS env, so the helper never learned where the real data was. A dashboard that renders but shows no data is itself a 2.1(a) re-rejection waiting to happen.
+
+**Lesson (project + generalizable):**
+- **A sandboxed *bundled helper binary* needs its own `.app` bundle** — `Info.plist` + `CFBundleIdentifier` + `com.apple.security.inherit=true`. `inherit` makes it attach to the parent's sandbox container (inheriting entitlements + the security-scoped bookmark) instead of getting a fresh per-binary container that secinitd can't provision. This is the Apple-documented pattern (Chrome/Electron helpers).
+- **When you replace a framework's process-spawn helper with a raw OS spawn, you lose its implicit env inheritance.** Tauri's `shell().sidecar()` arranged the child env; `tokio::process::Command` does not carry anything you don't explicitly set. Audit what the framework was doing for you before swapping it out — forward the needed env vars by hand.
+- **Verify the *data path*, not just that the UI renders.** "Dashboard appears" ≠ "fix works." The empty-data state looked like success on a screenshot.
+
+**Prevention:**
+
+1. `AGENTS.md` landmine #24 (helper.app + inherit + inside-out signing + first-spawn transient) and #25 (explicit env-forward when bypassing the shell plugin) — both already committed (`762ba72`).
+2. `scripts/build-mas-clean.sh` owns the helper.app wrap + inside-out sign (helper binary → helper bundle → main bundle; no `--deep`).
+3. **End-to-end sandboxed local-test verification before Transporter:** build with `--local-test`, launch, then `curl /api/health` (expect real `~/.claude`, not the container-redirected path) AND `curl /api/usage` (expect live plan + spend data). Compilation + unit tests are necessary but NOT sufficient — they passed the whole time the data path was broken.
+
+**Hotfix:** v0.9.10 build 4. Helper.app wrap + `com.apple.security.inherit=true` (`entitlements-sidecar.mas.plist`), MAS spawn via `tokio::process::Command` with explicit `CLAUDE_DIR` forward in `spawn_native_helper` (`sidecar.rs`). **Verified end-to-end on a sandboxed local-test build (2026-05-29):** PID 15001 running from `Clauge Helper.app/Contents/MacOS/clauge-server`, no separate `com.clauding.clauge.helper` container (inherit working), `/api/health` → real `/Users/adnanrashid/.claude`, `/api/usage` → live data (5h plan 5%, extra-usage $19.60/$20, balance $78.63).
+
+**Honest diagnostic note:** the wizard race was the first hypothesis (~70% confidence, recorded below on 2026-05-28) and could not be confirmed without a sandbox repro. Actually building the sandboxed flavor was the repro — and it showed the deeper cause. The wizard fix is correct and shipped as defense-in-depth; it was not retracted. This is a textbook case of a confident-looking diagnosis from code reading that only resolved once the real artifact was built and run.
+
+**Cross-references:**
+
+- Project landmines: `AGENTS.md` § 24 + § 25.
+- Recontextualizes the 2026-05-28 wizard-race entry below (preserved as a point-in-time observation per the no-delete rule).
+- CHANGELOG: `[0.9.10]` "Note on the rejection diagnosis" + the two architectural "Fixed" bullets.
+- Global: `~/.claude/AGENT_LEARNINGS.md` 2026-05-29 entry (the framework-spawn-loses-env-inheritance generalization).
+- Auto-memory: `project_v0_9_10_apple_issue_2_wizard_race.md` (corrective footer).
+- Branch: `feat/mas-on-v0.9.9`; PR #11. ASC submission `32193453-1524-407a-b705-c16ae62fbbd3`, build 4.
+
+---
+
+## 2026-05-28 — v0.9.0 → v0.9.10 | Apple Mac App Store rejection — wizard race condition
+
+> **Recontextualized 2026-05-29 (see entry above):** this entry captured the first-hypothesis diagnosis (wizard race). Building the sandboxed flavor later revealed the load-bearing cause was the sidecar's inability to boot under the App Sandbox (helper.app + inherit) plus a `CLAUDE_DIR` env-propagation bug. The wizard fix below is correct and shipped, but as defense-in-depth, not the primary 2.1(a) fix. Kept verbatim as a point-in-time observation.
+
+**Trigger:** Apple App Review rejected v0.9.0 build 3 (in review since 2026-05-19, response 2026-05-28 02:51 BDT) under two guidelines:
+
+- **Guideline 2.4.5(i):** justification needed for `com.apple.security.network.server` entitlement. Paperwork — replied in App Store Connect explaining the loopback-only TCP listener for the Tauri webview ↔ Node sidecar IPC channel. No binary change needed.
+- **Guideline 2.1(a):** "the app does not load its content after launch." Showstopper. Tested on a clean MacBook Pro 14" running macOS 26.5. No screenshot or screen recording attached.
+
+**What went wrong:** The first-launch onboarding wizard `WebviewWindow` opens 500 ms after `tauri::Builder::setup()` runs (`lib.rs:159` pre-fix), with URL `http://127.0.0.1:3456/onboarding/index.html`. This URL is served by the Node SEA sidecar, which at module top-level in `server.js:79,84` `await`s `loadPriceTable()` (8 s timeout HTTP fetch to raw.githubusercontent.com via `lib/cost-calculator.js:80`, with bundled fallback) AND `usageStore.load()` BEFORE `listenWithRetry(PORT)` at `server.js:678` actually binds the port. On cold launch in sandbox the sidecar takes **1–8 seconds** to bind — far longer than the 500 ms wizard delay.
+
+The wizard webview hit `ERR_CONNECTION_REFUSED` and stayed in error state. No retry, no listener for the `sidecar-ready` event (which sidecar.rs emits when PORT_MARKER is captured). Apple's reviewer saw a blank "Welcome to Clauge" window and rejected.
+
+Compounding bug at `lib.rs:178-181` pre-fix: if `WebviewWindowBuilder::build()` itself errored (rather than just the webview's initial load failing), the handler stored `onboarding_completed=true` permanently — meaning the wizard would never appear on any subsequent launch either, even after the bug was fixed at the source. A transient race got promoted into a permanent dead state.
+
+The dashboard window doesn't have this race — it uses bundled `splash.html` via `WebviewUrl::App("splash.html")` (windows.rs:27), and the splash JS listens for `sidecar-ready` before navigating to the sidecar URL. The pattern existed in the codebase for the dashboard since v0.8.1; it just hadn't been extended to the wizard.
+
+**Lesson (project-specific):** Any `WebviewWindow` that loads from the sidecar HTTP origin (`http://127.0.0.1:PORT/...`) MUST gate its `build()` call on a `sidecar-ready` event listener, NOT on a fixed `tokio::sleep` delay. The sidecar's cold-start latency in sandbox is variable (1–8 s) and the 500 ms / 1 s / 2 s margins look fine in dev but break under App Review's first-launch conditions. Build failures during the wizard spawn must NEVER permanently disable the wizard — log and let the next launch retry.
+
+**Lesson (generalizable):** Race conditions between the frontend window opening and backend HTTP readiness in dev-time tooling produce blank UI that gets misdiagnosed as "app broken" by external reviewers (Apple's App Review, App Store testers, novice users) — they don't know to wait, click again, or reload. Either gate the window open on a backend-ready signal, OR open the window pointing at a bundled wait-screen that polls the backend, NEVER trust a sleep timer.
+
+**Prevention:**
+
+1. Codified as AGENTS.md landmine #23 — "WebviewWindow URLs pointing at the sidecar HTTP origin MUST listen for `sidecar-ready` before opening."
+2. The `spawn_wizard_window_once` helper at `src-tauri/src/lib.rs:27-69` is the canonical pattern: takes `&AppHandle`, `port`, and an `AtomicBool` race-guard; called from a `sidecar-ready` event listener AND a 30 s timeout fallback; on `build()` error, logs only — never mutates the `onboarding_completed` flag.
+3. External-discovery branch (`port_discovery::DiscoveryResult::External`) now also emits `sidecar-ready` so users with a pre-running clauge-server hit the same listener path.
+
+**Hotfix:** v0.9.10 shipping for App Store resubmission (build 4). The MAS plumbing port from `clauding-lab/mas-implement-session` onto current main + the wizard race fix are bundled in one release rather than landing v0.9.0 separately, so MAS users get v0.9.9's polish + flicker fix + landmines #21/#22 alongside the sandboxed flavor.
+
+**Cross-references:**
+
+- Project landmine: `AGENTS.md` § 23 (wizard race rule).
+- Global: `~/.claude/AGENT_LEARNINGS.md` (the generalizable lesson about frontend-window-vs-backend-readiness races).
+- Auto-memory: `project_v0_9_10_apple_issue_2_wizard_race.md` (point-in-time observations) + `feedback_webview_sidecar_race.md` (cross-project rule).
+- Commits: `329fa30` (fix), TBD (release prep).
+- PR: #11 (draft, feat/mas-on-v0.9.9 → main).
+
+---
+
 ## 2026-05-27 — v0.9.8 → v0.9.9 | Dashboard plan-card flickered every 60 seconds
 
 **Trigger:** Adnan asked "still slight flickering of the dashboard exists. investigate" after v0.9.8 shipped. Reproduced against the user's live sidecar on port 3456 with a Playwright `MutationObserver` covering `#plan-body`, `#plan-meta`, `#plan-status-tag`, `#plan-inline`, and the finance-side spans. Across two 60-second cycles the observer recorded 38 mutations per tick at exact 60s intervals — even when the underlying `/api/usage` payload was byte-identical (e.g. `#claude-balance-val` text replaced `"78.63"` with `"78.63"`).

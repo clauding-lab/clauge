@@ -27,6 +27,19 @@ const APP_COMMANDS: &[&str] = &[
     "get_server_port",
     "take_pending_focus_connections",
     "install_cli_symlink",
+    // v0.9.0 Mac App Store flavor: three new IPCs gated by the cfg feature
+    // flag. Listed unconditionally so DMG builds still register the no-op
+    // variants (the frontend may probe is_mas_flavor on any build to gate UI).
+    "is_mas_flavor",
+    "grant_claude_dir_access",
+    "has_claude_dir_bookmark",
+    // v0.9.10 build 5: promoted from popover-only to app-level so the dashboard
+    // (Settings) AND the onboarding wizard (Step 3 opt-in toggle) can drive
+    // Launch at Login. On MAS these route to SMAppService (crate::autostart_mas);
+    // on DMG/Windows to tauri-plugin-autostart. Required after making MAS
+    // Launch-at-Login strictly opt-in (Apple Guideline 2.4.5(iii)).
+    "set_autostart",
+    "get_autostart",
 ];
 
 fn main() {

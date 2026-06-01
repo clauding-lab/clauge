@@ -29,6 +29,11 @@
     "allow-check-for-updates",
     "allow-get-server-port",
     "allow-take-pending-focus-connections",
-    "allow-install-cli-symlink"
+    "allow-install-cli-symlink",
+    "allow-is-mas-flavor",
+    "allow-grant-claude-dir-access",
+    "allow-has-claude-dir-bookmark",
+    "allow-set-autostart",
+    "allow-get-autostart"
   ]
 }

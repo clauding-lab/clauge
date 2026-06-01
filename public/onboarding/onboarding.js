@@ -21,6 +21,40 @@
     document.body.classList.add('is-mac');
   }
 
+  // v0.9.0: flavor detection — drives the .flavor-mas vs .flavor-dmg-nsis
+  // copy split in steps 2 and 5. The is_mas_flavor IPC is registered by
+  // BOTH flavors (returns true on MAS, false on DMG/NSIS); the CSS default
+  // hides .flavor-mas so if the IPC fails (defensive: shouldn't, but),
+  // DMG/NSIS copy still shows. Fire-and-forget: step 1 is the inert
+  // "Welcome" screen so the IPC has the user's read time to complete
+  // before step 2 (the first flavor-conditional surface) is reached.
+  //
+  // Use direct __TAURI__.core.invoke here — ClaugeBridge isn't loaded in
+  // the onboarding window (separate WebviewWindow with its own asset graph).
+  async function initFlavorGate() {
+    try {
+      if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) {
+        return;
+      }
+      const isMas = await window.__TAURI__.core.invoke('is_mas_flavor');
+      if (isMas) {
+        document.body.classList.add('is-flavor-mas');
+        // Cheap insurance against a slow IPC: if the user has already
+        // navigated to a flavor-aware step (2 or 5) before the IPC
+        // resolved, re-render that step now so they see the MAS copy
+        // instead of the default DMG/NSIS copy.
+        if (currentStep === 2 || currentStep === 5) {
+          showStep(currentStep);
+        }
+      }
+    } catch (e) {
+      // IPC failed — defensive default (CSS hides .flavor-mas) keeps the
+      // DMG/NSIS copy visible. Log so we can spot regressions.
+      console.warn('[wizard] is_mas_flavor IPC failed; defaulting to non-MAS:', e);
+    }
+  }
+  initFlavorGate();
+
   // v0.8.1: Clauge Sync Web Store URL — used by the install step.
   const CLAUGE_SYNC_WEB_STORE =
     'https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga';
@@ -156,6 +190,34 @@
     }
   }
 
+  // v0.9.0: MAS step-2 Grant Access handler. Calls grant_claude_dir_access
+  // IPC, which opens NSOpenPanel pre-pointed at ~/.claude and stores the
+  // security-scoped bookmark on Choose. On success advance to step 3; on
+  // failure keep the user on step 2 so they can retry. Disable the button
+  // while the IPC is in flight to prevent double-grant.
+  async function grantFolderAccess(btn) {
+    btn.disabled = true;
+    try {
+      if (!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)) {
+        console.warn('[wizard] Tauri IPC unavailable; cannot invoke grant_claude_dir_access');
+        return;
+      }
+      await window.__TAURI__.core.invoke('grant_claude_dir_access');
+      // Success: clear any prior dismiss marker (user has now granted) +
+      // advance to step 3 (Other Settings).
+      try {
+        localStorage.removeItem('clauge.claude_dir_grant_dismissed_at');
+      } catch (_) { /* localStorage may be unavailable in rare contexts; non-fatal. */ }
+      showStep(currentStep + 1);
+    } catch (err) {
+      console.error('[wizard] grant_claude_dir_access failed:', err);
+      // TODO(v0.9.x): surface error in UI. For v0.9.0 MVP, log + leave user
+      // on step 2 so they can click Grant Access again or Skip.
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   document.addEventListener('click', function (e) {
     var t = e.target;
     if (!(t instanceof Element)) return;
@@ -163,6 +225,21 @@
     else if (t.matches('[data-back]')) showStep(currentStep - 1);
     else if (t.matches('[data-skip]')) invokeAndClose('wizard_skip');
     else if (t.matches('[data-skip-step]')) showStep(currentStep + 1);
+    // v0.9.0: data-skip-grant is the MAS step-2 "Skip for now" button. It
+    // stores a dismiss marker (so the dashboard's Connections row surfaces
+    // the missing grant) then advances. Distinct from data-skip-step
+    // because the marker side-effect is grant-specific.
+    else if (t.matches('[data-skip-grant]')) {
+      try {
+        localStorage.setItem('clauge.claude_dir_grant_dismissed_at', Date.now().toString());
+      } catch (err) {
+        console.warn('[wizard] localStorage.setItem failed for dismiss marker:', err);
+      }
+      showStep(currentStep + 1);
+    }
+    // v0.9.0: MAS step-2 Grant Access button. Async — pass the element so
+    // the handler can disable/re-enable it.
+    else if (t.matches('[data-grant-folder]')) grantFolderAccess(t);
     else if (t.matches('[data-install-extension]')) {
       setInstallStatus('waiting', 'Waiting for installation…');
       openWebStore();
@@ -172,8 +249,35 @@
   });
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && currentStep < TOTAL_STEPS) {
-      showStep(currentStep + 1);
-    }
+    if (e.key !== 'Enter' || currentStep >= TOTAL_STEPS) return;
+    // v0.9.0: on MAS step 2, Enter should NOT silently bypass the explicit
+    // Grant Access / Skip decision (which sets the dismiss marker on Skip).
+    // Force the user to click one of the two buttons. DMG/NSIS step 2 keeps
+    // the default Enter-to-advance behavior.
+    if (currentStep === 2 && document.body.classList.contains('is-flavor-mas')) return;
+    showStep(currentStep + 1);
   });
+
+  // v0.9.10 build 5 (Apple Guideline 2.4.5(iii) fix): Launch at Login is
+  // OPT-IN on MAS. This Step-3 toggle (default OFF) registers the login item
+  // via SMAppService (set_autostart) ONLY when the user explicitly ticks it.
+  // DMG/Windows auto-enable at first launch (lib.rs) and show a notice instead
+  // of this toggle, so the element is absent there. set_autostart routes by
+  // flavor (MAS → autostart_mas; DMG/Windows → tauri-plugin-autostart).
+  var autostartToggle = document.getElementById('wizard-autostart-toggle');
+  if (autostartToggle) {
+    autostartToggle.addEventListener('change', async function () {
+      var enabled = autostartToggle.checked;
+      try {
+        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+          await window.__TAURI__.core.invoke('set_autostart', { enabled: enabled });
+        } else {
+          console.warn('[wizard] Tauri IPC unavailable; cannot set autostart');
+        }
+      } catch (err) {
+        console.error('[wizard] set_autostart failed; reverting toggle:', err);
+        autostartToggle.checked = !enabled;
+      }
+    });
+  }
 })();

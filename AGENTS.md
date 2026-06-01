@@ -429,6 +429,204 @@ When a recurring `setInterval` / `setTimeout` callback rebuilds a DOM region (ty
 - `public/app.js` plan-card auto-refresh (60s) — surgical-update split in v0.9.9 (`renderPlanCapacity`, `renderFinanceSide`; helpers `setTextIfChanged` / `setAttrIfChanged` / `updateBigRings` / `updatePlanMeta` / `updatePlanInline`).
 - `popover/popover.js` popover auto-refresh (10s) — currently rebuilds via `renderPopover()` on every tick. No visible flicker today because the popover surface has no long-lived CSS-animated element, but the same surgical-update pattern applies if a `.dot-live`-style element is ever added.
 
+### 23. WebviewWindow URLs pointing at the sidecar HTTP origin MUST listen for `sidecar-ready`
+
+If `tauri::WebviewWindowBuilder::new(..., WebviewUrl::External(http://127.0.0.1:PORT/...))` is called BEFORE the sidecar has bound `PORT`, the resulting webview gets `ERR_CONNECTION_REFUSED` on its initial load and STAYS in error state. Tauri's `WebviewWindow` doesn't auto-retry; there's no built-in reload-on-failure. This shipped as the v0.9.0 Apple App Store rejection (Guideline 2.1(a)): the first-launch wizard opened at `T+500ms` while the sidecar took 1–8 s to bind (loadPriceTable HTTP fetch + serveStatic setup + listenWithRetry). The reviewer saw a blank "Welcome to Clauge" window and rejected. Full postmortem in `AGENT_LEARNINGS.md`.
+
+**Rule:** never gate a sidecar-URL `WebviewWindow` on a fixed `tokio::sleep` delay. The sidecar's cold-start latency in sandbox is variable (1–8 s) and the 500 ms / 1 s / 2 s margins look fine in dev but break under App Review or fresh-install conditions. Use the `sidecar-ready` event listener pattern instead.
+
+**Pattern (the canonical implementation lives at `src-tauri/src/lib.rs::spawn_wizard_window_once`):**
+
+1. **Helper function** — takes `&AppHandle`, `port: u16`, and a `&std::sync::atomic::AtomicBool` race-guard. Calls `swap(true, SeqCst)`; if it returns true, bail (another caller already won). Otherwise builds the `WebviewWindow`. On `build()` error: log only — NEVER mutate a persistent flag like `onboarding_completed` to permanently disable the window (a transient race must not become a permanent dead state).
+2. **Primary trigger** — `app.listen("sidecar-ready", |event| { let port = parse_payload(event); spawn_window_once(&app, port, &guard); })`. The event payload is `{"port": <u16>}`.
+3. **Timeout fallback** — `tauri::async_runtime::spawn(async move { tokio::time::sleep(30s).await; spawn_window_once(&app, 3456, &guard); })`. If `sidecar-ready` never fires (sidecar genuinely broken), at least show a window with an error page rather than appear completely unresponsive. 30 s is the order of magnitude where a user would assume the app launch failed and force-quit.
+
+**Both spawn paths MUST emit `sidecar-ready`:**
+
+- SpawnAt (sidecar.rs `spawn_one` captures PORT_MARKER): already emits.
+- External (lib.rs `DiscoveryResult::External`): added in v0.9.10. Without this, npx-clauge users running an external server would only hit the 30 s wizard timeout fallback.
+
+**Alternative when the bundled-asset path is acceptable:** use `WebviewUrl::App(<bundled-html>)` (loads from `frontendDist`) instead of `WebviewUrl::External`. The dashboard does this with `windows.rs:27` → `splash.html`, then splash.js listens for `sidecar-ready` and navigates to `http://127.0.0.1:PORT/`. This is more robust than the listener-gate-then-open pattern (window appears immediately with content), but requires the HTML/JS/CSS to be bundled into `popover/` (Tauri's `frontendDist`). For the wizard we chose listener-gate-then-open because the wizard's HTML lives in `public/onboarding/` and migrating it to `popover/` would touch ~10 files.
+
+**Existing sidecar-URL WebviewWindow surfaces to mind:**
+
+- First-launch wizard (`lib.rs::run::setup` onboarding block) — protected since v0.9.10 (the post-Apple-rejection fix).
+- Native popover WKWebView (`native_popover.rs::create_popover`) — protected by `reload_for_port` auto-recovery (it loads against a default port at init, then reloads when sidecar binds). DIFFERENT pattern; works because the popover is hidden until clicked, so the user typically clicks AFTER sidecar is ready.
+
+### 24. MAS-flavor sidecar binaries MUST be wrapped in their own `.app` bundle inside `Contents/Helpers/`
+
+Discovered in the v0.9.10 Apple resubmission cycle (2026-05-28). The naïve placement of the sidecar binary at `Clauge.app/Contents/MacOS/clauge-server` cannot satisfy both of Apple's contradictory requirements for MAS submissions:
+
+1. **Apple Transporter validation** (static check at upload) hard-requires `com.apple.security.app-sandbox=true` on every Mach-O executable in the bundle. No bypass. From the rejection: `"App sandbox not enabled. The following executables must include the 'com.apple.security.app-sandbox' entitlement with a Boolean value of true in the entitlements property list"`. HTTP 409 STATE_ERROR.VALIDATION_ERROR.
+
+2. **`libsystem_secinit.dylib::_libsecinit_appsandbox`** (runtime, during dyld init) hard-requires the binary to have an Info.plist with `kCFBundleIdentifierKey` reachable from code signature information. A standalone Mach-O binary has no embedded Info.plist. With `app-sandbox` set, secinit can't find a bundle identifier, fails per-binary container setup, and the process SIGTRAPs before any user code runs.
+
+The two requirements meet at: helpers must live in their OWN `.app` bundle (which has its own `Info.plist`). This is the documented Apple pattern (Electron/Chromium do this for helper renderers; Apple's docs at `developer.apple.com/documentation/security/app_sandbox` describe it as the standard).
+
+**Required structure for any sandboxed Mac App Store flavor of Clauge:**
+
+```
+Clauge.app/
+├── Contents/
+│   ├── Info.plist                          (main app — CFBundleIdentifier=com.clauding.clauge)
+│   ├── MacOS/
+│   │   └── clauge                          (Tauri main binary)
+│   └── Helpers/
+│       └── Clauge Helper.app/
+│           ├── Contents/
+│           │   ├── Info.plist              (helper — CFBundleIdentifier=com.clauding.clauge.helper)
+│           │   └── MacOS/
+│           │       └── clauge-server       (Node SEA sidecar)
+```
+
+**The helper.app Info.plist must contain at minimum:**
+
+- `CFBundleIdentifier=com.clauding.clauge.helper` (or whatever subdomain of the parent is used)
+- `CFBundleExecutable=clauge-server`
+- `CFBundlePackageType=APPL` (or `BNDL` — verify against Apple's current convention)
+- `CFBundleVersion=<matching parent's build>` (CFBundleVersion 4 for v0.9.10)
+- `CFBundleShortVersionString=<matching parent's marketing version>`
+- `LSUIElement=true` (no Dock icon)
+- `LSMinimumSystemVersion=<matching parent>` (12.0 for current Clauge)
+
+**Build script responsibility (`scripts/build-mas-clean.sh`):**
+
+The Tauri `externalBin` mechanism copies the sidecar binary to `Contents/MacOS/`. A post-build step in the MAS build script must:
+
+1. Move `Contents/MacOS/clauge-server` to `Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server`.
+2. Generate the helper Info.plist (heredoc + `plutil -convert binary1` if Apple prefers binary plists).
+3. Re-sign INSIDE-OUT: helper binary → helper bundle (with sidecar entitlements including `app-sandbox=true`) → main app bundle (re-seal so the parent's signature includes the helper's signature).
+
+**Runtime responsibility (`src-tauri/src/sidecar.rs`):**
+
+Tauri's default sidecar plugin (`app.shell().sidecar("clauge-server")`) hardcodes `<bundle>/Contents/MacOS/<name>` on macOS. With the helper in `Contents/Helpers/`, the plugin can't find it. The MAS-flavor spawn path bypasses the shell plugin entirely:
+
+- Resolve the helper path at runtime via `app.path().resource_dir()` → parent → `Helpers/Clauge Helper.app/Contents/MacOS/clauge-server`. The helper function is `resolve_helper_path(app)` in `sidecar.rs`.
+- Spawn via `tokio::process::Command::new(helper_path)` with `kill_on_drop(true)` for panic-safety, stderr piped (for parsing the `CLAUGE_BOUND_PORT=` marker), stdout/stdin nulled.
+- Use `libc::kill(pid, SIGTERM)` for kill — avoids the `&mut self` constraint on `tokio::process::Child::kill()` that would otherwise force a Mutex-or-oneshot dance between the supervisor's quit path and the wait-task that owns the Child.
+
+Type unification (so the supervisor loop is single-path across flavors):
+
+- `SidecarChild` enum wraps either `tauri_plugin_shell::process::CommandChild` (DMG) or `NativeChild` (MAS). API surface: `pid() -> u32`, `kill(self) -> io::Result<()>`. `AppState::children` stores `Vec<SidecarChild>` regardless of flavor.
+- `SidecarEvent` enum mirrors the subset of `CommandEvent` we use: `Stderr(Vec<u8>)` and `Terminated { code, signal }`. Both flavors produce `UnboundedReceiver<SidecarEvent>` from `spawn_helper_process(app)`. The DMG path adds a small tokio forwarding task that translates `CommandEvent` → `SidecarEvent`; the MAS path emits SidecarEvent directly from its stderr-reader and wait tasks.
+- Cfg-gate imports of `CommandChild` + `CommandEvent` from `tauri_plugin_shell` with `#[cfg(not(feature = "mas"))]` so the MAS build doesn't warn on dead imports.
+
+Cfg-gate the path resolution + native spawn helpers on `#[cfg(feature = "mas")]`. The DMG flavor's spawn path stays unchanged (still uses `app.shell().sidecar("clauge-server")`).
+
+**See landmine #25 for the env-variable propagation pitfall when refactoring spawn paths.**
+
+**Helper entitlements — `com.apple.security.inherit=true` is LOAD-BEARING:**
+
+The helper's `entitlements-sidecar.mas.plist` MUST contain:
+
+- `com.apple.security.app-sandbox=true` — satisfies Transporter's static "every Mach-O must declare app-sandbox" check.
+- `com.apple.security.inherit=true` — **THIS** is what makes the helper.app pattern actually work at runtime. Tells the kernel "attach this helper to the parent's existing sandbox container; do NOT create a fresh per-binary container." With `inherit`, the helper:
+  - Bypasses `libsystem_secinit`'s per-binary container setup (no `_libsecinit_appsandbox.cold.9` SIGTRAP — that fires when secinitd tries to apply a fresh sandbox profile via SYSCALL_SET_USERLAND_PROFILE and the kernel rejects it).
+  - Runs in the parent's `~/Library/Containers/com.clauding.clauge/` container; no separate `~/Library/Containers/com.clauding.clauge.helper/` is created.
+  - **Inherits the parent's `startAccessingSecurityScopedResource` grant** on `~/.claude/` via process-tree sandbox state sharing. No `application-groups` entitlement needed. No bookmark blob migration to a group container needed.
+- `com.apple.security.cs.allow-jit=true` — required for the SEA Node binary's V8 JIT. Not a sandbox entitlement; a code-signing hardened-runtime flag, not affected by `inherit`. Has to be on the helper's own signature because the JIT permission check runs per-binary.
+
+The helper MUST NOT declare any other entitlements (network, files, etc.). With `inherit`, those are picked up from the parent's full set in `entitlements.mas.plist`. Listing them on the helper too is redundant at best and a potential conflict signal to App Review at worst. Reference: Apple Technical Note TN2206; Chrome's `Google Chrome Helper.app` and Electron renderer helpers use this exact pattern.
+
+**Empirically validated 2026-05-28 (session `2026-05-28-helper-inherit-env-passthrough-bug-session.md`):** with the inherit entitlement, the helper boots cleanly, the dashboard renders fully, and Apple's Guideline 2.1(a) "app doesn't load content after launch" is demonstrably resolved. The mid-cycle hypothesis that app-groups would be needed turned out to be wrong — inherit handles the bookmark sharing.
+
+**First-spawn-after-entitlement-change transient:** Immediately after rebuilding with new helper entitlements (e.g. adding `inherit`), the FIRST spawn attempt sometimes still SIGTRAPs in `_libsecinit_appsandbox.cold.9`. CrashBreaker's silent respawn (first crash = silent) handles it transparently; the second-and-subsequent spawns work cleanly. Cause is likely secinitd's profile cache not invalidating immediately. Production users won't see this because they install once and don't change entitlements between launches. Don't add workaround code — the existing CrashBreaker logic is the right behavior.
+
+**Anti-patterns to NEVER ship for the MAS flavor:**
+
+- Sidecar binary at `Contents/MacOS/clauge-server` with `app-sandbox` entitlement — runtime SIGTRAP (v0.9.10 pre-helper, `_libsecinit_appsandbox.cold.6`, no kCFBundleIdentifierKey).
+- Sidecar binary at `Contents/MacOS/clauge-server` WITHOUT `app-sandbox` entitlement — Transporter rejects (v0.9.10 commit cd83087, HTTP 409).
+- Helper bundle WITHOUT `com.apple.security.inherit=true` — runtime SIGTRAP (v0.9.10 first helper.app attempt, `_libsecinit_appsandbox.cold.9`, SYSCALL_SET_USERLAND_PROFILE rejection).
+- Helper bundle with `application-groups` entitlement added "for safety" — redundant with `inherit`, signals architectural hedging to App Review.
+- Ad-hoc signing (`codesign --sign -`) of a binary with restricted entitlements (`application-identifier`, `team-identifier`) — AMFI -424 at launch.
+- Real-cert signing with embedded Production provisioning profile for direct dev-machine launch — taskgated-helper CPProfileManager -215. Only Development profiles can be installed for direct launch; MAS uses Production profiles. The `--local-test` mode in the build script strips this for sandbox-equivalent verification.
+
+**Cross-references:**
+
+- Full session postmortems:
+  - `~/Projects/claude-second-brain/01_Projects/Clauge/2026-05-28-mas-blocked-helperapp-needed-session.md` (architectural pivot)
+  - `~/Projects/claude-second-brain/01_Projects/Clauge/2026-05-28-helper-inherit-env-passthrough-bug-session.md` (inherit-entitlement validation + env-passthrough bug discovery)
+- `AGENT_LEARNINGS.md` 2026-05-28 entry (currently the wizard-race-framed entry is stale and needs amending — the actual fix is helper.app + inherit + env-passthrough, not the wizard race).
+- Apple docs:
+  - `developer.apple.com/documentation/security/app_sandbox` (sandbox model + helper pattern)
+  - Apple Technical Note TN2206 — Code Signing — On Bundle Format
+  - `developer.apple.com/documentation/bundleresources/entitlements/com_apple_security_inherit` (inherit entitlement reference)
+
+### 25. When the MAS spawn path bypasses Tauri's shell plugin, env vars must be forwarded EXPLICITLY
+
+Discovered 2026-05-28, session `2026-05-28-helper-inherit-env-passthrough-bug-session.md`. The DMG flavor's `app.shell().sidecar("clauge-server").env("NO_OPEN", "1").spawn()` chain implicitly inherits the parent process's full environment in addition to the keys passed via `.env()`. The MAS flavor's `tokio::process::Command::new(helper_path).env("NO_OPEN", "1").spawn()` ALSO inherits the parent's environment by default — but the parent process's environment doesn't have `CLAUDE_DIR` set on it. In the MAS flavor, the bookmark-resolved path lives in a Rust `OnceLock<PathBuf>` (`security_scoped_bookmark::MAS_CLAUDE_DIR`), NOT in the OS-level env. The supervisor must explicitly bridge that OnceLock to the spawn-time env.
+
+**The rule:** when spawning the helper in MAS mode, read `MAS_CLAUDE_DIR.get()` AT SPAWN TIME (not cached, not at supervisor-startup-time) and forward it as `CLAUDE_DIR` on the spawned process. The OnceLock can be populated AFTER the supervisor's first spawn (via `grant_claude_dir_access` IPC on first-launch wizard grant), and the helper respawn must pick up the new value.
+
+**Where this lives in code:**
+
+```rust
+// In src-tauri/src/sidecar.rs, inside spawn_native_helper, BEFORE cmd.spawn():
+#[cfg(feature = "mas")]
+{
+    if let Some(claude_dir) = crate::security_scoped_bookmark::MAS_CLAUDE_DIR.get() {
+        cmd.env("CLAUDE_DIR", claude_dir);
+    }
+}
+```
+
+**Symptom of the bug (so future readers can recognize it):**
+
+- Wizard grant completes successfully (the user picks `~/.claude/`, NSOpenPanel dismisses, bookmark blob persists in `settings.json`).
+- Connections panel shows "Granted at /Users/adnanrashid/.claude" with a green dot.
+- BUT the dashboard's Overview tab stays empty ("No plan data yet").
+- `curl http://127.0.0.1:<port>/api/health` returns `claudeDir: /Users/adnanrashid/Library/Containers/com.clauding.clauge/Data/.claude` — the sandbox-redirected fake path, NOT the user's real `/Users/adnanrashid/.claude`.
+
+**The DMG flavor doesn't have this issue** because DMG runs in a non-sandboxed parent that has direct access to `$HOME/.claude/`. The helper inherits `$HOME` from the parent's env and resolves `.claude/` from there. The MAS flavor's parent process has `$HOME` sandbox-redirected, so `$HOME/.claude/` is the empty redirect path — only an explicit `CLAUDE_DIR` env (or a Rust-side path override) routes the helper to the real bookmark-resolved path.
+
+**Other env vars to check** if the SEA Node `server.js` reads them:
+
+- `CLAUDE_DIR` — the bookmark-resolved Claude data dir (this session's bug)
+- `CLAUDE_PROJECTS_DIR` — overrides `$CLAUDE_DIR/projects/`
+- `CLAUDE_CONFIG_DIR` — overrides `$CLAUDE_DIR/`
+- `NO_OPEN` — already wired correctly
+
+When adding new env-driven config in the future, **always check both the DMG path (auto-inherits) AND the MAS path (must explicitly forward).** The MAS path's `tokio::process::Command` is the test for whether the env is actually propagating.
+
+**Anti-pattern:** Setting `std::env::set_var("CLAUDE_DIR", path)` in the parent process so subsequent spawns inherit it. This pollutes the parent's env (visible to other libraries / future code that reads `CLAUDE_DIR`), is non-thread-safe (mutating env is a documented data race in Rust as of 2024), and obscures the actual data flow. The explicit `cmd.env("CLAUDE_DIR", path)` per-spawn is the right pattern.
+
+### 26. MAS launch-at-login MUST use SMAppService, NOT the LaunchAgent plugin
+
+Discovered 2026-05-29. `tauri-plugin-autostart`'s `MacosLauncher::LaunchAgent` writes a plist to `~/Library/LaunchAgents/`. Under the App Sandbox that path is REDIRECTED into the app's container (`~/Library/Containers/com.clauding.clauge/Data/Library/LaunchAgents/`), where launchd never scans it. Result: `app.autolaunch().enable()` returns `Ok` (the write into the container succeeds), but the login item DOES NOT EXIST — a silent no-op, and the onboarding wizard's "added to your login items" copy becomes a lie.
+
+The fix lives in `src-tauri/src/autostart_mas.rs` (mas-gated): register via Apple's `SMAppService.mainApp` (`objc2-service-management` crate), the modern sandbox-correct API. The DMG/Windows flavors KEEP `tauri-plugin-autostart` (LaunchAgent works in a non-sandboxed process). The split is cfg-gated in three places — touch all three together:
+
+- `lib.rs` builder chain: `tauri_plugin_autostart::init(...)` is `#[cfg(not(feature = "mas"))]` (NOT initialized on MAS).
+- `lib.rs` first-launch enable block: cfg-split between `app.autolaunch().enable()` (non-mas) and `crate::autostart_mas::enable()` (mas).
+- `ipc.rs` `set_autostart` / `get_autostart`: same cfg-split.
+
+**`SMAppService` is macOS 13.0+.** `autostart_mas::is_supported()` runtime-guards every call (`NSProcessInfo::isOperatingSystemAtLeastVersion`), so macOS 12 degrades gracefully (no autostart, no crash) and `minimumSystemVersion` STAYS 12.0 — do NOT bump the floor to 13 for this.
+
+**Verify the real effect, not the return code.** `sfltool dumpbtm | grep -A5 com.clauding.clauge`: a correct MAS registration shows `Type: app (0x2)`, `Flags: [ sandboxed ]`, `Disposition: [enabled, allowed]`. A `Type: legacy agent` entry pointing at `~/Library/LaunchAgents/` is the OLD DMG path, not the MAS one. "`enable()` returned `Ok`" is NOT proof — the LaunchAgent no-op also returns `Ok`.
+
+### 27. App Store Connect submission gotchas (hit live during the v0.9.10 resubmission, 2026-05-29)
+
+Three things bite at MAS submission time, none of them code bugs:
+
+1. **Export-compliance dialog → set `ITSAppUsesNonExemptEncryption = false` in the bundle Info.plist.** On submit, ASC asks "what encryption does your app implement?" Clauge bundles standard TLS (reqwest/`rustls` + the Node sidecar's OpenSSL), so the literal answer is "standard algorithms" — which then asks for a French encryption-declaration **document upload** if the app is available in France. Clauge's encryption is **exempt** (standard HTTPS only), so the correct, paperwork-free declaration is `ITSAppUsesNonExemptEncryption=false`. Add it to the MAS Info.plist so the dialog never appears AND France/EU stays included with no docs. **Wired as of build 5:** `scripts/build-mas-clean.sh` injects it into the main app's `Info.plist` via `PlistBuddy` AFTER `cargo tauri build` but BEFORE the main-app `codesign` (the order is load-bearing — codesign seals `Info.plist`, so modifying it after signing breaks the signature). Verified 2026-05-31: Transporter uploaded build 5 with NO export-compliance prompt. (Build 4 shipped without the key, so the dialog appeared and France was excluded to dodge the doc upload.)
+2. **EU DSA trader status must be declared before you can submit/update for the EU.** App Store Connect → Business → Trader Status. Non-trader (individual, free app) keeps you compliant; trader requires public contact details on the EU listing. Not declaring blocks EU submission + removes the app from EU storefronts (stays elsewhere).
+3. **The App Store version field must equal the build's `CFBundleShortVersionString`.** A rejected version is editable — bump the version number (e.g. 0.9.0 → 0.9.10) to match the build before the new build (0.9.10) becomes selectable in the Build picker.
+
+Reference: `~/Projects/clauge/SS/appstore/SUBMIT_GUIDE.md` + `APP_REVIEW_NOTES.txt` (paste-ready review notes covering 2.1(a) + 2.4.5(i)). App Store screenshots must be landscape 1280×800 / 1440×900 / 2560×1600 / 2880×1800; the menu-bar popover (portrait) must be composited onto a landscape canvas.
+
+### 28. MAS launch-at-login must be OPT-IN — auto-enabling at first launch violates Apple 2.4.5(iii)
+
+Distinct from landmine #26 (which is about the *mechanism* — SMAppService vs LaunchAgent). This is about *consent*. Apple Guideline **2.4.5(iii)** forbids an app auto-launching or running code at login **without explicit user consent**. v0.9.10 **build 4 was rejected** for exactly this: `lib.rs`'s first-launch block called `autostart_mas::enable()` automatically (the comment literally said "Launch at Login (default ON)") and the onboarding wizard only showed a *notice* ("Clauge has been added to your login items") — an opt-OUT model.
+
+Rules for the MAS flavor:
+
+- **Never auto-register at startup/first launch.** The first-launch autostart block in `lib.rs::run::setup` is now `#[cfg(not(feature = "mas"))]` — DMG/Windows may auto-enable (not App Store; allowed), MAS must not.
+- **Launch at Login is enabled ONLY by an explicit user action** — the onboarding wizard Step 3 toggle (`#wizard-autostart-toggle`, default OFF) or the dashboard Settings toggle, both calling `set_autostart`.
+- `set_autostart`/`get_autostart` are in `APP_COMMANDS` + `capabilities/main.json` (added build 5) so the dashboard AND the onboarding window (both remote-http origins) can call them; they route by flavor (MAS → SMAppService, DMG/Win → plugin).
+- The dashboard toggle must use `ClaugeBridge.getAutostart()/setAutostart()` (flavor-correct), NOT the `plugin:autostart|*` path — the plugin's LaunchAgent silently no-ops in the MAS sandbox (see #26), so the plugin path leaves the Settings toggle disconnected from the real SMAppService state on MAS.
+- The popover's `#autostart-toggle` (Preferences panel, `popover/index.html`) is **hidden** as of build 5. It was never wired on any flavor: the native NSPopover hosts a raw `WKWebView` with **no `__TAURI__` injected** (it talks to Rust only via `webkit.messageHandlers.clauge` → `native_popover.rs`, which handles `open_dashboard`/`resize` and nothing else), so `ClaugeBridge`/Tauri-invoke calls cannot work there. Wiring it needs a new `set_autostart` native message handler + an initial-state read — tracked for v0.9.11. Until then, keep it hidden rather than ship a dead control.
+- Any new autostart surface (wizard, settings) defaults to OFF and registers only on explicit enable.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

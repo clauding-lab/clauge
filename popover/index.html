@@ -172,7 +172,13 @@
       <span>Preferences</span>
     </header>
     <ul class="prefs-list">
-      <li class="prefs-row">
+      <!-- v0.9.10 build 5: hidden — this toggle was never wired to a backend
+           call on any flavor (the NSPopover webview has no __TAURI__ and there
+           is no set_autostart native message handler), so it was a dead control
+           that did nothing when clicked. Launch at Login is controlled by the
+           onboarding wizard (Step 3) + dashboard Settings, both working. Proper
+           popover wiring is tracked for v0.9.11. -->
+      <li class="prefs-row" hidden>
         <span>Launch at login</span>
         <label class="toggle">
           <input type="checkbox" id="autostart-toggle">

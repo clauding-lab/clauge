@@ -148,21 +148,34 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
         })
         .build()?;
 
-    // v0.9.4 vibrancy. HudWindow tints with wallpaper hue at low saturation.
-    // 14.0 is the window corner radius. On Windows, prefer Mica (Win11), fall
-    // through to Acrylic (Win10) with a dark RGBA tint matching the upper
-    // gradient stop.
+    // v0.9.10: native vibrancy restored, CSS-side `backdrop-filter`
+    // removed (see public/styles.css + popover/popover.css). The
+    // mid-v0.9.10 "kill transparency entirely" attempt verified that
+    // a single-compositor render pipeline doesn't flicker; the
+    // long-standing flicker since v0.9.4 was from the WebKit CSS
+    // backdrop-filter racing the Core Animation vibrancy — two
+    // compositors on independent frame clocks going out of sync on
+    // every auto-refresh tick. Keeping the native vibrancy and
+    // dropping the CSS backdrop-filter collapses to a single
+    // compositor (CA) doing the blur, with the WebKit body simply
+    // overlaying a semi-transparent gradient tint on top. No frame
+    // mismatch → no flicker.
     //
-    // v0.9.7: switched state from FollowsWindowActiveState → Active. The former
-    // dims the vibrancy layer when the dashboard loses focus, producing a
-    // visible flicker as the window moves between active/inactive states (e.g.
-    // when the user clicks back to the app). Active keeps the material at full
-    // intensity regardless of focus, matching the popover (which already uses
-    // Active via NSVisualEffectView in native_popover.rs).
+    // 14.0 is the window corner radius. NSVisualEffectState::Active
+    // keeps the material at full intensity regardless of focus
+    // (v0.9.7 lesson: FollowsWindowActiveState caused a focus-change
+    // flicker as the material dimmed/brightened on app activation).
+    // v0.9.10: HudWindow → WindowBackground. HudWindow is Apple's
+    // material for floating utility palettes (HUD-style), with a more
+    // dynamic continuous-sampling compositor. WindowBackground is the
+    // material specifically intended for full window backgrounds —
+    // less aggressive recompositing on layer updates, which translates
+    // to less visible flicker when the WKWebView repaints on
+    // auto-refresh.
     #[cfg(target_os = "macos")]
     if let Err(e) = apply_vibrancy(
         &win,
-        NSVisualEffectMaterial::HudWindow,
+        NSVisualEffectMaterial::WindowBackground,
         Some(NSVisualEffectState::Active),
         Some(14.0),
     ) {

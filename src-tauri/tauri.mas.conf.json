@@ -1,0 +1,19 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "targets": ["app"],
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "bundleVersion": "5",
+      "entitlements": "entitlements.mas.plist",
+      "providerShortName": "CY4FK9S7X9",
+      "signingIdentity": "8E2186661CBDCC424149F713A16A430FB024DC7C",
+      "files": {
+        "embedded.provisionprofile": "embedded.provisionprofile"
+      }
+    }
+  },
+  "plugins": {
+    "updater": null
+  }
+}
