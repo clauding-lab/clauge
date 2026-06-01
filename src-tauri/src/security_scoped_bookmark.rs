@@ -31,7 +31,7 @@ use std::sync::OnceLock;
 use objc2::rc::Retained;
 use objc2::runtime::Bool;
 use objc2_foundation::{
-    NSData, NSString, NSURL, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions,
+    NSData, NSString, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions, NSURL,
 };
 
 /// Process-wide cache for the resolved ~/.claude/ path.
@@ -73,8 +73,7 @@ pub static MAS_CLAUDE_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// `Mutex::new(None)` is `const` in stable Rust since 1.63 (Cargo.toml's
 /// `rust-version = "1.77.2"` is comfortably above), so this works as a
 /// `static` initializer without needing `OnceLock` or `lazy_static`.
-pub static MAS_SCOPE_HOLDER: std::sync::Mutex<Option<ScopedHandle>> =
-    std::sync::Mutex::new(None);
+pub static MAS_SCOPE_HOLDER: std::sync::Mutex<Option<ScopedHandle>> = std::sync::Mutex::new(None);
 
 /// Tauri store key for the persisted bookmark blob.
 ///
@@ -387,7 +386,9 @@ fn read_bookmark_blob(app: &tauri::AppHandle) -> Result<Vec<u8>, BookmarkError> 
     let store = app
         .store("settings.json")
         .map_err(|e| BookmarkError::Store(e.to_string()))?;
-    let blob = store.get(BOOKMARK_STORE_KEY).ok_or(BookmarkError::NoBookmark)?;
+    let blob = store
+        .get(BOOKMARK_STORE_KEY)
+        .ok_or(BookmarkError::NoBookmark)?;
     let arr = blob
         .as_array()
         .ok_or_else(|| BookmarkError::Store("bookmark blob is not a JSON array".into()))?;

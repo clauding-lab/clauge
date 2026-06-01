@@ -210,9 +210,7 @@ impl SidecarChild {
     pub fn kill(self) -> std::io::Result<()> {
         match self {
             #[cfg(not(feature = "mas"))]
-            Self::Tauri(c) => c
-                .kill()
-                .map_err(|e| std::io::Error::other(e.to_string())),
+            Self::Tauri(c) => c.kill().map_err(|e| std::io::Error::other(e.to_string())),
             #[cfg(feature = "mas")]
             Self::Native(n) => n.kill(),
         }
@@ -234,12 +232,9 @@ fn resolve_helper_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .path()
         .resource_dir()
         .map_err(|e| format!("resource_dir lookup failed: {}", e))?;
-    let contents = resource_dir.parent().ok_or_else(|| {
-        format!(
-            "resource_dir has no parent: {}",
-            resource_dir.display()
-        )
-    })?;
+    let contents = resource_dir
+        .parent()
+        .ok_or_else(|| format!("resource_dir has no parent: {}", resource_dir.display()))?;
     Ok(contents
         .join("Helpers")
         .join("Clauge Helper.app")
@@ -374,8 +369,7 @@ async fn spawn_helper_process(
                     // Stdout / Error / future variants are not load-bearing.
                     _ => None,
                 };
-                let is_terminated =
-                    matches!(forwarded, Some(SidecarEvent::Terminated { .. }));
+                let is_terminated = matches!(forwarded, Some(SidecarEvent::Terminated { .. }));
                 if let Some(ev) = forwarded {
                     if tx.send(ev).is_err() {
                         break;
@@ -643,7 +637,9 @@ pub async fn spawn_and_supervise(app: AppHandle) {
                         if let SidecarEvent::Terminated { code, signal } = ev {
                             log::warn!(
                                 "Sidecar terminated (pid={}, code={:?}, signal={:?})",
-                                pid, code, signal
+                                pid,
+                                code,
+                                signal
                             );
                             break;
                         }

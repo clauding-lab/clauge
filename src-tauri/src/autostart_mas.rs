@@ -43,8 +43,7 @@ pub fn enable() -> Result<(), String> {
     // SAFETY: mainAppService constructs the main-app service object; the
     // -registerAndReturnError: BOOL/NSError** pair maps to Result.
     let service = unsafe { SMAppService::mainAppService() };
-    unsafe { service.registerAndReturnError() }
-        .map_err(|e| e.localizedDescription().to_string())
+    unsafe { service.registerAndReturnError() }.map_err(|e| e.localizedDescription().to_string())
 }
 
 /// Unregister the login item. No-op on macOS 12; safe when not registered.
@@ -53,8 +52,7 @@ pub fn disable() -> Result<(), String> {
         return Ok(());
     }
     let service = unsafe { SMAppService::mainAppService() };
-    unsafe { service.unregisterAndReturnError() }
-        .map_err(|e| e.localizedDescription().to_string())
+    unsafe { service.unregisterAndReturnError() }.map_err(|e| e.localizedDescription().to_string())
 }
 
 /// True iff the app is currently registered AND enabled as a login item.

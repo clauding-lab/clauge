@@ -190,8 +190,7 @@ async fn kill_pid_on_port_unix(port: u16) -> Result<(), String> {
             // insi_lport is network-endian, stored in the low 16 bits of an
             // i32. Manual byteswap mirrors libproc's own doctest.
             let raw = tcp.tcpsi_ini.insi_lport;
-            let local_port: u16 =
-                (((raw >> 8) & 0x00ff) | ((raw << 8) & 0xff00)) as u16;
+            let local_port: u16 = (((raw >> 8) & 0x00ff) | ((raw << 8) & 0xff00)) as u16;
 
             if local_port != port {
                 continue;
@@ -203,11 +202,7 @@ async fn kill_pid_on_port_unix(port: u16) -> Result<(), String> {
             // number has no memory-safety implications.
             let kill_ret = unsafe { libc::kill(pid, libc::SIGKILL) };
             if kill_ret == 0 {
-                log::info!(
-                    "kill_pid_on_port: SIGKILL pid={} on port={}",
-                    pid,
-                    port
-                );
+                log::info!("kill_pid_on_port: SIGKILL pid={} on port={}", pid, port);
                 killed_any = true;
             } else {
                 let err = std::io::Error::last_os_error();

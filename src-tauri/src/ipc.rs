@@ -178,7 +178,9 @@ pub fn get_server_port(state: State<AppState>) -> Result<u16, String> {
 #[allow(dead_code)]
 pub enum UpdateStatus {
     UpToDate,
-    Installed { version: String },
+    Installed {
+        version: String,
+    },
     /// v0.9.0 MAS: opened the Mac App Store storefront instead of polling
     /// latest.json. Frontend renders the "Updates ship through Apple"
     /// message. Gated to the `mas` feature so DMG/NSIS builds don't generate
@@ -237,67 +239,67 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
 
     #[cfg(not(feature = "mas"))]
     {
-    use tauri_plugin_notification::NotificationExt;
-    use tauri_plugin_updater::UpdaterExt;
+        use tauri_plugin_notification::NotificationExt;
+        use tauri_plugin_updater::UpdaterExt;
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(update)) => {
-            // Capture version before `download_and_install` consumes `update`.
-            // Field is a public `String` on `tauri_plugin_updater::Update` (verified
-            // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
-            // a `version()` method.
-            let new_version = update.version.clone();
+        let updater = app.updater().map_err(|e| e.to_string())?;
+        match updater.check().await {
+            Ok(Some(update)) => {
+                // Capture version before `download_and_install` consumes `update`.
+                // Field is a public `String` on `tauri_plugin_updater::Update` (verified
+                // against tauri-plugin-updater 2.10.1 src), so we clone rather than call
+                // a `version()` method.
+                let new_version = update.version.clone();
 
-            update
-                .download_and_install(|_, _| {}, || {})
-                .await
-                .map_err(|e| e.to_string())?;
+                update
+                    .download_and_install(|_, _| {}, || {})
+                    .await
+                    .map_err(|e| e.to_string())?;
 
-            // Strip quarantine attr on the running .app bundle so unsigned updates
-            // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
-            //
-            // Dev mode caveat: `current_exe()` returns the dev target binary
-            // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
-            // returns None and the xattr block silently skips. In production it
-            // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
-            // ancestors() walks up to the .app bundle.
-            //
-            // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
-            // dispatch a TOAST telling the user the update installed but Gatekeeper
-            // will reappear, with the right-click → Open workaround.
-            #[cfg(target_os = "macos")]
-            {
-                use tokio::process::Command;
-                let mut xattr_failed = false;
-                if let Ok(exe) = std::env::current_exe() {
-                    if let Some(bundle) = find_app_bundle(&exe) {
-                        match Command::new("xattr")
-                            .args(["-dr", "com.apple.quarantine"])
-                            .arg(bundle)
-                            .output()
-                            .await
-                        {
-                            Ok(out) if out.status.success() => {
-                                log::info!("Stripped quarantine from {:?}", bundle);
-                            }
-                            Ok(out) => {
-                                log::warn!(
-                                    "xattr exited non-zero stripping quarantine: {}",
-                                    String::from_utf8_lossy(&out.stderr)
-                                );
-                                xattr_failed = true;
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to invoke xattr: {}", e);
-                                xattr_failed = true;
+                // Strip quarantine attr on the running .app bundle so unsigned updates
+                // don't re-trigger Gatekeeper. macOS-only path; harmless on other platforms.
+                //
+                // Dev mode caveat: `current_exe()` returns the dev target binary
+                // (e.g., src-tauri/target/debug/clauge), so the `.app` ancestor lookup
+                // returns None and the xattr block silently skips. In production it
+                // resolves to /Applications/Clauge.app/Contents/MacOS/clauge and
+                // ancestors() walks up to the .app bundle.
+                //
+                // If xattr fails (non-zero exit OR invocation error), per spec §7.2 we
+                // dispatch a TOAST telling the user the update installed but Gatekeeper
+                // will reappear, with the right-click → Open workaround.
+                #[cfg(target_os = "macos")]
+                {
+                    use tokio::process::Command;
+                    let mut xattr_failed = false;
+                    if let Ok(exe) = std::env::current_exe() {
+                        if let Some(bundle) = find_app_bundle(&exe) {
+                            match Command::new("xattr")
+                                .args(["-dr", "com.apple.quarantine"])
+                                .arg(bundle)
+                                .output()
+                                .await
+                            {
+                                Ok(out) if out.status.success() => {
+                                    log::info!("Stripped quarantine from {:?}", bundle);
+                                }
+                                Ok(out) => {
+                                    log::warn!(
+                                        "xattr exited non-zero stripping quarantine: {}",
+                                        String::from_utf8_lossy(&out.stderr)
+                                    );
+                                    xattr_failed = true;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to invoke xattr: {}", e);
+                                    xattr_failed = true;
+                                }
                             }
                         }
                     }
-                }
 
-                if xattr_failed {
-                    if let Err(e) = app
+                    if xattr_failed {
+                        if let Err(e) = app
                         .notification()
                         .builder()
                         .title("Clauge update issue")
@@ -306,32 +308,32 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateStatus, St
                     {
                         log::warn!("Failed to dispatch xattr-fail notification: {}", e);
                     }
+                    }
                 }
-            }
 
-            // User-visible notification that update is installed (spec §6.5).
-            // Platform-agnostic; capability `notification:default` is granted in
-            // src-tauri/capabilities/main.json.
-            if let Err(e) = app
-                .notification()
-                .builder()
-                .title("Clauge updated")
-                .body(format!(
-                    "Updated to v{}. Restart the app to apply.",
-                    new_version
-                ))
-                .show()
-            {
-                log::warn!("Failed to dispatch update notification: {}", e);
-            }
+                // User-visible notification that update is installed (spec §6.5).
+                // Platform-agnostic; capability `notification:default` is granted in
+                // src-tauri/capabilities/main.json.
+                if let Err(e) = app
+                    .notification()
+                    .builder()
+                    .title("Clauge updated")
+                    .body(format!(
+                        "Updated to v{}. Restart the app to apply.",
+                        new_version
+                    ))
+                    .show()
+                {
+                    log::warn!("Failed to dispatch update notification: {}", e);
+                }
 
-            Ok(UpdateStatus::Installed {
-                version: new_version,
-            })
+                Ok(UpdateStatus::Installed {
+                    version: new_version,
+                })
+            }
+            Ok(None) => Ok(UpdateStatus::UpToDate),
+            Err(e) => Err(e.to_string()),
         }
-        Ok(None) => Ok(UpdateStatus::UpToDate),
-        Err(e) => Err(e.to_string()),
-    }
     }
 }
 
@@ -797,7 +799,10 @@ pub async fn grant_claude_dir_access(app: tauri::AppHandle) -> Result<(), String
         // so MAS_CLAUDE_DIR is None and we must populate it here. On re-select
         // (subsequent launches with bookmark already present), supervisor
         // already populated it and we don't need to re-acquire.
-        if crate::security_scoped_bookmark::MAS_CLAUDE_DIR.get().is_none() {
+        if crate::security_scoped_bookmark::MAS_CLAUDE_DIR
+            .get()
+            .is_none()
+        {
             let app_for_acquire = app.clone();
             let acquire_result = tauri::async_runtime::spawn_blocking(move || {
                 crate::security_scoped_bookmark::acquire_scoped_path(&app_for_acquire)
@@ -814,8 +819,7 @@ pub async fn grant_claude_dir_access(app: tauri::AppHandle) -> Result<(), String
                     // the guard's Drop impl would fire on this function's
                     // return and revoke filesystem access immediately —
                     // making the whole exercise pointless.
-                    if let Ok(mut holder) =
-                        crate::security_scoped_bookmark::MAS_SCOPE_HOLDER.lock()
+                    if let Ok(mut holder) = crate::security_scoped_bookmark::MAS_SCOPE_HOLDER.lock()
                     {
                         *holder = Some(guard);
                     }
