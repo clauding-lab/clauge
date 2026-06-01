@@ -37,6 +37,22 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-01 — v0.9.10 | CI red on `cargo fmt` after Apple acceptance — "5 validators pass" ≠ full `npm run check`
+
+**Trigger:** Apple ACCEPTED build 5. On resuming to merge PR #11 → main, `gh pr checks 11` showed the `check` workflow RED. The prior session's close-out had said "all 5 repo validators pass," which read as CI-clean. It wasn't — the red gate had sat undetected from the build-5 push (2026-05-30) until the merge attempt (2026-06-01).
+
+**What went wrong:** CI runs `npm run check` = `check:validators && check:fmt && check:lint && check:rust-test && npm test`. The build-5 hand edits across `autostart_mas.rs`, `ipc.rs`, `port_discovery.rs`, `security_scoped_bookmark.rs`, and `sidecar.rs` were never run through `cargo fmt`, so `check:fmt` (`cargo fmt --check`) failed and the `&&` chain short-circuited — clippy/tests never ran. The session's "5 validators pass" referred only to `check:validators` (the 5 `.cjs` scripts), which is the FIRST of five links; it runs no formatter, linter, or tests. A green subset was mistaken for a green whole.
+
+**Lesson:** A passing subset of checks is not a passing CI gate — before claiming "CI green" or merging, run the exact full command CI runs, not the quick local validators.
+
+**Prevention:** `AGENTS.md` landmine #29 — the 5 `.cjs` validators are a SUBSET; the CI gate is `npm run check` (validators + `cargo fmt --check` + `cargo clippy -D warnings` + `cargo test` + `npm test`). Run `npm run check` locally before pushing a release branch or claiming CI-green (needs sidecar binaries at `src-tauri/binaries/`). Any close-out "checks pass" claim must name *which* checks ran. Hand edits to `src-tauri/src/*.rs` must be run through `cargo fmt` — it's CI's first, short-circuiting gate.
+
+**Hotfix:** `cargo fmt` on the 5 files → commit `ae922b8` (`style(mas): apply cargo fmt to MAS-flavor sources`, formatting-only, no behavior change) → full `npm run check` green locally (clippy `-D warnings` + 65 rust + 245 node tests) → CI green (run 26748593024) → PR #11 merged to `main` (merge commit `0445e04`). Build 5 itself was unaffected — the MAS pkg Apple accepted was already built + signed; the fmt drift only blocked the repo-side merge.
+
+**Cross-references:** `AGENTS.md` § 29; auto-memory `feedback_full_check_before_merge`; global rulebook 2026-06-01 entry. Follows the build-5 acceptance recorded in `project_v0_9_10_build5_second_rejection`.
+
+---
+
 ## 2026-05-31 — v0.9.10 build 5 | Apple's SECOND rejection — three findings, including one the prior fix CREATED
 
 **Trigger:** Apple rejected v0.9.10 **build 4** (2026-05-30) with three findings: **2.4.5(iii)** (auto-launches at login without consent), **3.1.1** (appears to sell/access paid content via non-IAP), and **4 / Design** (a window cuts off text — the popover heatmap).

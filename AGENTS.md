@@ -627,6 +627,18 @@ Rules for the MAS flavor:
 - The popover's `#autostart-toggle` (Preferences panel, `popover/index.html`) is **hidden** as of build 5. It was never wired on any flavor: the native NSPopover hosts a raw `WKWebView` with **no `__TAURI__` injected** (it talks to Rust only via `webkit.messageHandlers.clauge` → `native_popover.rs`, which handles `open_dashboard`/`resize` and nothing else), so `ClaugeBridge`/Tauri-invoke calls cannot work there. Wiring it needs a new `set_autostart` native message handler + an initial-state read — tracked for v0.9.11. Until then, keep it hidden rather than ship a dead control.
 - Any new autostart surface (wizard, settings) defaults to OFF and registers only on explicit enable.
 
+### 29. The 5 `.cjs` validators are a SUBSET of CI — the gate is `npm run check`
+
+`scripts/validate-*.cjs` (run via `npm run check:validators`) are only the FIRST of five links in the CI gate. CI (`.github/workflows/check.yml`) runs `npm run check` = `check:validators && check:fmt && check:lint && check:rust-test && npm test`:
+
+1. `check:validators` — the 5 `.cjs` scripts (ipc-triple-register, no-console-log, no-hardcoded-port, copy-registry, html-facade-loads)
+2. `check:fmt` — `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+3. `check:lint` — `cargo clippy --all-targets -- -D warnings`
+4. `check:rust-test` — `cargo test`
+5. `npm test` — the Node test suite
+
+The `&&` chain short-circuits: if `check:fmt` fails, clippy/tests never run — so "the validators pass" says nothing about fmt/clippy/tests. **Before pushing a release branch or claiming CI is green, run the full `npm run check`** (it needs the sidecar binaries at `src-tauri/binaries/` so `build.rs` compiles — `npm run build:sidecar` if missing). Hand edits to `src-tauri/src/*.rs` especially must be run through `cargo fmt`, since fmt is CI's first, short-circuiting gate. This bit the build-5 → main merge (v0.9.10, 2026-06-01): CI sat red on fmt drift for ~2 days while the session believed "validators pass" = clean. See `AGENT_LEARNINGS.md` 2026-06-01.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
