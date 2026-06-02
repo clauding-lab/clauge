@@ -87,6 +87,7 @@ if command -v jq >/dev/null 2>&1; then
 else
   VERSION="$(node -p "require('$REPO_ROOT/package.json').version")"
 fi
+MAS_BUNDLE_VERSION=$(jq -r '.bundle.macOS.bundleVersion' "$REPO_ROOT/src-tauri/tauri.mas.conf.json")
 PKG_OUT="/tmp/Clauge-MAS-${VERSION}.pkg"
 PKG_UNSIGNED="/tmp/Clauge-MAS-${VERSION}-unsigned.pkg"
 
@@ -183,7 +184,7 @@ cat > "$HELPER_APP_PATH/Contents/Info.plist" <<PLIST
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>${MAS_BUNDLE_VERSION}</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
