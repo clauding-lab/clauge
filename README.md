@@ -195,4 +195,4 @@ Plenty of tools track Claude usage, but none give **token-level analytics for Cl
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Built by [clauding-lab](https://github.com/clauding-lab).
+MIT — see [LICENSE](LICENSE). Built by **Adnan Rashid** · Copyright © 2026 Adnan Rashid.
