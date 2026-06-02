@@ -1,236 +1,142 @@
 <p align="center">
-  <img src="docs/icons/clauge-icon-512.svg" alt="Clauge" width="128" height="128" />
+  <img src="docs/icons/clauge-icon-512.svg" alt="Clauge" width="120" height="120" />
 </p>
 
 <h1 align="center">Clauge</h1>
 
 <p align="center">
-  Token analytics and subscription value dashboard for <strong>Claude Code</strong> + <strong>claude.ai</strong>.<br/>
-  Native menu-bar app for macOS and Windows desktop app. Browser extension auto-syncs claude.ai plan usage.
+  <strong>Know what your Claude subscription is actually worth.</strong><br/>
+  A native macOS menu-bar app (and Windows desktop app) that turns your local Claude&nbsp;Code logs and claude.ai plan usage into one glanceable dashboard — cost, plan limits, cache savings, and subscription ROI.
 </p>
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/clauge/id6770303247"><img src="https://img.shields.io/badge/Mac_App_Store-Download-0D96F6?logo=apple&logoColor=white" alt="Download on the Mac App Store" /></a>
   <a href="https://github.com/clauding-lab/clauge/releases/latest"><img src="https://img.shields.io/github/v/release/clauding-lab/clauge?label=release&color=d97757" alt="Latest release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/npm/l/clauge.svg" alt="license" /></a>
+  <a href="https://github.com/clauding-lab/clauge/actions/workflows/check.yml"><img src="https://img.shields.io/github/actions/workflow/status/clauding-lab/clauge/check.yml?branch=main&label=CI" alt="CI status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
 </p>
 
 ![Clauge — your Claude usage, at a glance](docs/screenshots/v1.0.0/hero.png)
 
-<p align="center">
-  <img src="docs/screenshots/v1.0.0/dashboard.png" alt="Clauge v1.0.0 dashboard" width="860" />
-</p>
+---
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. **v0.9.2** flips the popover to dismiss on outside click, matching the macOS menu-bar convention. **v0.9.3** ships the Companion CLI (`clauge config get` / `providers` / `enable` / `disable` / `set-api-key` / `reset-trial`). **v0.9.4** adds a GitHub-style **activity heatmap** on both surfaces with current/longest streak stats, an **opaque-vibrancy** treatment so the wallpaper hue bleeds faintly through both the dashboard window and the popover, a bundled `clauge` CLI at `/Applications/Clauge.app/Contents/Resources/clauge-cli` (no Homebrew required to use it), and a fix for the dashboard EXTRA USAGE card so it mirrors the popover's `consumerOverage`-first preference instead of stalling on "Temporarily gated by Anthropic" when the OAuth-API feature is org-gated. **v0.9.5** is a cleanup + polish release: the popover activity heatmap now has visible day/month axis labels (Mon/Wed/Fri on the left, Jan/Feb/.../May on top) and all cells render at uniform size — previously columns under 3-letter month labels were silently wider because of HTML auto table-layout. The engineering layer also routes Tauri IPC calls through a centralized facade and popover strings through a shared registry for future localization. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`. **v1.0.0 is now on the [Mac App Store](https://apps.apple.com/us/app/clauge/id6770303247)** (alongside the DMG + Windows builds): it drops the retired *Claude Design* usage bucket (hidden when Anthropic stops reporting it), shows the **local reset time** beneath each usage countdown, rebalances the dashboard gauges, and hardens the local server (loopback-only CORS, trimmed path exposure, and impersonation-resistant sidecar discovery).
+Clauge reads usage data your own tools have already written to your machine and presents it as analytics. There is **no login screen, no API key field, and no telemetry** — it is a local reader, closer to Activity Monitor than to a SaaS app. Your usage data never leaves your computer.
+
+- **Claude Code** — token usage, cost, cache savings, models, tools, and projects, parsed from the local session logs at `~/.claude/projects/`.
+- **claude.ai** — plan limits (session / weekly / Sonnet), prepaid balance, and overage spend, synced from your signed-in browser tab by the optional [Clauge Sync](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) extension.
 
 ## Install
 
-Three steps to a working setup: install the app, install the browser extension (optional but recommended for full claude.ai data), stay signed in to claude.ai.
+### macOS
 
-### Step 1 — Install the app
+| Method | Command / link |
+|---|---|
+| **Mac App Store** *(recommended — sandboxed, auto-updates through the Store)* | [**Download Clauge**](https://apps.apple.com/us/app/clauge/id6770303247) |
+| Homebrew | `brew install --cask clauding-lab/tap/clauge` |
+| Direct download | Universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest) → drag `Clauge.app` to Applications |
 
-**Option A — Native macOS app (recommended for the v3 menu-bar experience):**
+Clauge lives in your menu bar. **Left-click** for the glanceable popover; **right-click** for Dashboard (⌘D), Preferences, Check for Updates, and Quit.
 
-**Mac App Store** (easiest — sandboxed, auto-updates through the Store): [**Download Clauge on the Mac App Store**](https://apps.apple.com/us/app/clauge/id6770303247).
+<p align="center">
+  <img src="docs/screenshots/v1.0.0/popover.png" alt="Clauge menu-bar popover" width="300" />
+</p>
 
-Or via Homebrew (one line):
+The popover shows paired **Session** + **Weekly** gauges (each with its local reset time), the **Sonnet** weekly limit, daily routine runs, month-to-date overage and prepaid balance, a 30-day spend chart, and a 180-day activity heatmap.
 
-```bash
-brew install --cask clauding-lab/tap/clauge
-```
+> **First launch.** A short Welcome wizard explains the one permission Clauge needs on macOS: read access to the OAuth credential Claude&nbsp;Code already stored in your Keychain. macOS will prompt *"Clauge wants to use … 'Claude Code-credentials' …"* — click **Always Allow**. Clauge never sees your Anthropic password, API key, or session token; it reads only the credential blob Claude&nbsp;Code itself wrote. You can skip this and grant it later from **Settings → Connections → ↻ Refresh**.
 
-Or download the latest universal DMG from [Releases](https://github.com/clauding-lab/clauge/releases/latest), drag `Clauge.app` to Applications, and launch.
+### Windows
 
-The app sits in your menu bar:
-- **Left-click** the menu-bar icon → glanceable popover. v0.9.4 layout: paired **Session** + **Weekly** circle gauges (each with a time-elapsed needle marker on the rim — orange fill past the needle = burning faster than the clock), weekly bars for **Sonnet only** / **Claude Design** / **Daily Routines**, an **Extra usage (MTD)** bar with real claude.ai consumer overage data + balance + auto-reload state, a 2-column **today / last 30 days** stats grid, a 30-day spend mini-chart, and a **180-day activity heatmap** with current + longest streak stats. Footer: **Dashboard** (⌘D) / **About Clauge** / **Quit** (⌘Q). The v0.9.4 streamlining retired the Add Account / Usage Dashboard / Status / Refresh / Settings entries — Settings is on the tray right-click menu, and auto-refresh runs every 10s.
-- **Right-click** → Open Dashboard / Preferences / Check for Updates / Quit
-- **Auto-updates** from gh-pages on every launch. When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** in Settings → Updates (or wait for the macOS notification). v0.7.3+ also self-heals across updates: if the previous version's sidecar is still running, the new launch detects the version mismatch and evicts it before adopting a fresh one.
+Download `Clauge_<version>_x64-setup.exe` from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it. The installer is **per-user (no admin prompt)** and installs to `%LOCALAPPDATA%\Clauge`.
 
-#### First launch — the Welcome wizard
+The Windows build is not yet code-signed, so you'll click through two first-run warnings (Authenticode signing is planned):
 
-A 5-step Welcome wizard explains the one permission Clauge needs (read access to Claude Code's OAuth credentials) and walks you through installing the optional Clauge Sync browser extension. Walk through:
+1. **Browser download** — Edge/Chrome may flag the `.exe` as "uncommon." Expand the bar → **Keep** (Chrome) or **More info → Keep anyway** (Edge).
+2. **SmartScreen on launch** — "Windows protected your PC" → **More info** → **Run anyway**.
 
-1. **Welcome** — what Clauge does
-2. **macOS Keychain Access** — sets expectations for the system prompt that's about to fire
-3. **Other Permissions** — Notifications, Launch at Login, optional claude.ai sign-in
-4. **Install Clauge Sync** (v0.8.1+) — one-click open to the Chrome Web Store; the wizard auto-advances when the extension's first heartbeat arrives
-5. **Ready to Connect** — click **Connect ✓** (or **Skip for now**)
+Clauge is open source and reproducible from each tagged release, so you can audit or rebuild it yourself. Two notes on the current Windows build: there is **no system-tray icon** (close the dashboard window to quit; relaunch from the Start Menu), and the in-app claude.ai sign-in is **macOS-only** — on Windows, use the [Clauge Sync extension](#browser-extension-for-claudeai-data) for plan data. Auto-updates work the same as on macOS (Settings → Updates → Check Now).
 
-On Connect, macOS shows its standard Keychain prompt:
-
-> "Clauge wants to use your confidential information stored in 'Claude Code-credentials' in your keychain."
-
-Click **Always Allow**. The wizard closes and the dashboard appears with your data. Clauge never sees your Anthropic password, API key, or session token — it just reads the OAuth blob Claude Code itself wrote to your Keychain.
-
-> **Note for v0.7.x DMG flavor:** the build ships ad-hoc-signed (no Apple Developer ID yet — coming in v0.8.0 with the Mac App Store flavor). macOS Keychain can't durably remember "Always Allow" without a stable code-signing identity, so the prompt may reappear on each launch. The wizard's Step 2 explains this; v0.8.0 fixes it permanently. v0.7.2's in-memory cache means it only fires once per launch (down from once per 30s poll in older builds), and the **↻ Refresh** button next to the Claude Code row in Settings → Connections lets you re-trigger the read on demand (e.g., after running `claude /login` to rotate your token).
-
-If you click **Skip for now** instead, the dashboard appears immediately with Claude Code shown as "Not Installed". Click the **↻ Refresh** button on that row whenever you're ready to grant Keychain access — same Always Allow prompt fires.
-
-**Option B — Native Windows app (v0.8.0+):**
-
-Download `Clauge_<version>_x64-setup.exe` (latest is v0.9.4) from [Releases](https://github.com/clauding-lab/clauge/releases/latest) and run it.
-
-You'll click through two "unknown publisher" warnings on the first install — this is normal for unsigned indie apps. Authenticode code-signing is on the v0.8.x roadmap; until then:
-
-1. **Browser download warning** — Edge / Chrome may flag the `.exe` as "uncommon" and block the download. Expand the bar and choose **Keep** (Chrome) or **More info → Keep anyway** (Edge).
-2. **SmartScreen on launch** — Windows shows a blue **"Windows protected your PC"** dialog. Click **More info**, then **Run anyway**.
-
-Clauge is open-source and reproducible from each tagged release on GitHub — you can audit the source or rebuild from the tag yourself if you'd rather not trust the published binary.
-
-The NSIS installer runs as **per-user, no UAC** (no admin prompt). When it finishes, you'll have:
-- Install location: `%LOCALAPPDATA%\Clauge`
-- A **Clauge** entry in your Start Menu (and an optional desktop shortcut, your choice during install)
-- An auto-launched dashboard window at 1100×800
-
-There is **no Windows system-tray icon in v0.8.0** — the macOS menu-bar percentage chiclet has no cheap Windows equivalent (Win32 tray icons can't render dynamic numbers without per-frame ICO compositing, which is deferred to a later v0.8.x). On Windows, just **close the dashboard window to quit** the app; relaunch from the Start Menu.
-
-The 5-step Welcome wizard (described above) applies to Windows too — same window, same flow. The one difference: **the "macOS Keychain Access" step is a no-op on Windows.** Claude Code on Windows stores its OAuth credentials in a per-user file (`%USERPROFILE%\.claude\.credentials.json`) instead of a system keychain, so there's no permission prompt to click through. Walk past Step 2, click **Connect ✓** on Step 4, and the dashboard populates.
-
-**Auto-updates work the same as macOS.** Settings → Updates → **Check Now** queries the shared `gh-pages/latest.json` manifest (which now lists `darwin-aarch64`, `darwin-x86_64`, **and** `windows-x86_64` entries side-by-side). When a new version downloads, click **↻ Restart Now to apply vX.Y.Z** — the running app exits and the new installer takes over.
-
-> **Verify the download (optional, advanced):** the GitHub Release page lists the SHA-256 of `Clauge_0.9.4_x64-setup.exe`. In PowerShell: `Get-FileHash Clauge_0.9.4_x64-setup.exe -Algorithm SHA256` and compare against the value on the Releases page.
-
-> **Known Windows limitations in v0.8.0:**
-> - The SmartScreen "publisher unknown" warning fires until Authenticode signing lands. Reputation accrues over time even on an unsigned cert, but the cleanest fix is a paid EV/OV code-signing certificate (v0.8.x).
-> - **No claude.ai sign-in yet on Windows.** Architecture A (the native claude.ai OAuth pop-up planned for v0.8.x) is deferred — Windows v0.8.0 is Claude Code CLI integration only. The claude.ai connection row in the dashboard will read "Not Connected" with no Sign-in button. To still see plan-ring data, install the [Clauge Sync browser extension](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) (Step 2 below) — it works on Edge / Chrome / Brave on Windows just like on macOS.
-
-**Option C — Legacy browser dashboard via npx (Linux, headless servers):**
+### Linux / headless
 
 ```bash
-npx clauge
+npx clauge   # serves the dashboard at http://localhost:3456
 ```
 
-Launches a Hono server at **http://localhost:3456**. **Note:** the npm package is frozen at the V2-era release (v0.2.2) and lacks the V3+ features of the native apps — no menu-bar surface, no native popover, no claude.ai sign-in, no first-launch wizard, no auto-updater, no Clauge Sync extension integration. Suitable for headless/Linux installs where the native app isn't available; otherwise prefer Option A (macOS) or Option B (Windows).
+The npm package is a legacy browser-dashboard build (no menu bar, no native popover, no auto-updater). Use it for headless or Linux setups; prefer the native apps elsewhere.
 
-Either path reads from `~/.claude/projects/` (where Claude Code writes its session logs). **No sign-in needed for Claude Code data — it's already on your disk.** If you've ever used Claude Code on this machine, your dashboard populates immediately on first open.
+> Claude&nbsp;Code analytics need **no sign-in** on any platform — the data is already on disk. If you've used Claude&nbsp;Code on this machine, the dashboard populates on first open.
 
-### Step 2 — Install the Clauge Sync browser extension (optional, recommended)
+## Browser extension (for claude.ai data)
 
-Step 1 covers Claude Code (CLI) data. To also see your **claude.ai plan usage and prepaid balance** in the dashboard, install the Clauge Sync browser extension. It runs in your already-authenticated claude.ai tab and syncs your plan numbers to your local Clauge once a minute.
+The Claude&nbsp;Code metrics work on their own. To also see your **claude.ai plan usage and balance**, install **Clauge Sync** — it runs in your already-authenticated claude.ai tab and posts a usage snapshot to your local Clauge once a minute.
 
-**Install from Chrome Web Store (recommended):**
+→ **[Clauge Sync on the Chrome Web Store](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga)** (Chrome, Edge, Brave, Arc, any Chromium browser)
 
-→ [Clauge Sync on the Chrome Web Store](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga)
+Then just stay signed in to [claude.ai](https://claude.ai) in that browser profile. The extension rides your existing session — **it never asks for an API key, password, or token.** If you sign out, it goes quiet until you sign back in.
 
-Click "Add to Chrome." Works on Chrome, Edge, Brave, Arc, and any other Chromium-based browser.
+*Why an extension?* claude.ai sits behind Cloudflare's bot protection, so a server-side request from Clauge can't reach it. The extension runs *inside* your browser, where Cloudflare already trusts you — the well-behaved equivalent of checking your own plan page once a minute. There is no public API for personal-plan claude.ai usage, which is why Clauge has no API-key flow at all.
 
-**Manual install (developer mode — only needed if you can't use the Web Store):**
+## How your data stays private
 
-1. Clone this repo: `git clone https://github.com/clauding-lab/clauge.git`
-2. Open `chrome://extensions` in your browser
-3. Toggle **Developer mode** (top-right corner)
-4. Click **Load unpacked** and pick the `extension/` folder from this repo
+Clauge holds **no account, no Anthropic credentials, and no session tokens** — so there's nothing to leak, rotate, or phish.
 
-After install, pin the Clauge Sync icon to your toolbar so you can see sync status at a glance. Click the icon any time to force an immediate sync. Right-click → **Options** to change port or polling interval.
-
-### Step 3 — Sign in to claude.ai (and stay signed in)
-
-The extension uses your **existing claude.ai browser session** — it never asks you for an Anthropic API key, password, or token. Just:
-
-1. Open [claude.ai](https://claude.ai) in the same browser profile where you installed the extension
-2. Sign in with your Anthropic account as you normally would
-3. Stay signed in (don't sign out, don't run claude.ai in incognito mode unless you explicitly enable the extension in incognito)
-
-The extension polls `claude.ai/api/organizations/{uuid}/usage` once a minute *while you have an active claude.ai session* and POSTs the snapshot to your local Clauge dashboard. If you sign out of claude.ai, the extension goes quiet until you sign back in.
-
-## How Clauge gets your data
-
-Clauge has **no login screen, no API key field, no Anthropic auth flow**. It is fundamentally different from a SaaS app.
-
-Think of it less like Notion / Linear / Slack (where you sign in to *their* server) and more like **Activity Monitor** or a **bash-history viewer** — a *reader* over data your other tools have already written to your machine. There's no remote service to authenticate against, so there's nothing to "sign in" to.
-
-### Two data sources, both auth-free
-
-| Source | What it covers | Where it comes from | Auth needed |
+| Source | Covers | Comes from | Auth |
 |---|---|---|---|
-| Claude Code CLI logs | Per-session token usage, costs, models, tools, projects | `~/.claude/projects/**/*.jsonl` written by Claude Code itself | None — file-system access only |
-| claude.ai plan data | Plan rings (Session/All/Sonnet/Opus), prepaid balance, billing cap | Clauge Sync browser extension running in your claude.ai tab, riding your existing browser cookies | Your normal claude.ai login — Clauge never sees your password |
+| Claude&nbsp;Code logs | Per-session tokens, cost, models, tools, projects | `~/.claude/projects/**/*.jsonl` (written by Claude&nbsp;Code) | None — local file read |
+| claude.ai plan data | Session/weekly/Sonnet limits, balance, overage | Clauge Sync, riding your browser session | Your normal claude.ai login |
 
-The extension hitchhikes on **your** already-authenticated claude.ai session. Anthropic sees a request from your browser (where you're already signed in). Clauge sees an HTTP POST to its own port. **Clauge never holds an Anthropic API key, password, or session token.**
+Anthropic sees a request from *your* browser; Clauge sees a local HTTP POST to its own port. No telemetry, no phone-home — Clauding-Lab doesn't know you exist. The full policy is in [PRIVACY.md](PRIVACY.md).
 
-This is the architectural elegance: nothing to leak, nothing to rotate, nothing to phish. It also means Clauge is **strictly local** — your usage data never leaves your machine. (Privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md).)
+## Features
 
-### What this means in practice
+The dashboard (⌘D, or right-click → Open Dashboard) is the full view — plan capacity, an analytics digest, cost-over-time, and peak hours:
 
-- **No account creation, no Anthropic credentials.** A 5-step first-launch wizard (v0.8.1+) explains the one macOS Keychain permission Clauge needs to read Claude Code's OAuth blob. It never asks for an account, password, or API key. After **Connect**, your data appears immediately — provided you've used Claude Code on this machine.
-- **No accounts, no plans, no passwords held by Clauge.** Compromise the binary, you compromise nothing about your Anthropic identity.
-- **No telemetry.** Clauge never phones home — Clauding-Lab does not know you exist.
-- **The extension is optional.** The dashboard works fine without it; you just won't see claude.ai plan-ring data (the Claude Code CLI metrics are unaffected).
+<p align="center">
+  <img src="docs/screenshots/v1.0.0/dashboard.png" alt="Clauge dashboard" width="860" />
+</p>
 
-## What it does
+**Claude Code analytics** (from local logs)
 
-### Claude Code analytics (from local JSONL)
+- Per-session tracking — tokens, cost, model, cache-hit rate, primary task type
+- Per-project rollup — cost · sessions · messages · tools · hit %
+- Per-model cost split (Opus / Sonnet / Haiku) with cache-hit rates
+- Task classification — coding / debug / test / plan / git / build / exploration (deterministic)
+- Cache analytics — corrected hit rate and **net savings** (5-minute vs 1-hour tiers, minus write overhead)
+- Tool / shell / MCP usage, peak-hours distribution, and a 180-day **activity heatmap** with streaks
+- **Subscription value** — how much retail API spend your usage would have cost, with honest framing
+- Period (Today / 7d / 30d / Month / All) and project filters; CSV / JSON export
 
-- **Per-session tracking** — tokens, cost, model, cache hit, primary task type
-- **Per-project breakdown** — cost · sessions · messages · tools · tokens · hit %
-- **Activity heatmap** *(new in v0.9.4)* — GitHub-style 7-row × variable-column grid of daily usage intensity in the dashboard (range dropdown: 180d / 365d / All) and a compact 180-day grid in the popover. Reports active days, current streak, and longest streak.
-- **Per-model cost split** — Opus / Sonnet / Haiku, each with cache hit rate
-- **Task classification** — Coding / Debugging / Testing / Planning / Git Ops / Build / Exploration / Conversation (heuristic, deterministic)
-- **Cache analytics** — corrected hit-rate formula and **net cache savings** (subtracts cache-write overhead, distinguishes 5-minute vs 1-hour cache tiers)
-- **Tool / shell / MCP analytics** — what Claude Code actually does
-- **Peak hours** — UTC hourly distribution of calls and cost
-- **Subscription value** — how much retail API spend your subscription replaces, with honest framing
-- **Period filtering** — Today / 7d / 30d / Month / All Time
-- **Project filter** — case-insensitive substring match
-- **Export** — CSV and JSON for any period + project filter
+**claude.ai plan tracking** (via the extension)
 
-### claude.ai plan tracking (via browser extension)
+- Live **plan gauges** — Session (5h), Weekly (7d), and Sonnet (7d) — color-coded by usage, each with the **local reset time** beneath its countdown
+- Prepaid **balance** and **month-to-date overage** against your cap
+- Refreshes about once a minute and updates in place
 
-- **5 ring gauges** — Session (5h), All models (7d), Sonnet (7d), Opus (7d), Claude Design — green/amber/red by 60/85% thresholds, with reset countdowns
-- **Extra-usage card** — your billing cap with progress bar
-- **Auto-refresh every minute** via the [Clauge Sync](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) browser extension; the dashboard polls the local store and updates the gauges in place
+## Command-line interface
 
-### From source
+The same binary that backs the dashboard doubles as a CLI — handy for scripting and headless setups.
 
 ```bash
-git clone https://github.com/clauding-lab/clauge.git
-cd clauge && npm install && cp .env.example .env
-node server.js
+clauge config get                              # config as JSON (HTTP-first, falls back to disk)
+clauge config providers [--json]               # list providers + enabled state
+clauge config enable  --provider claude-ai-session
+clauge config disable --provider clauge-sync
+echo "$KEY" | clauge config set-api-key --provider anthropic-admin --stdin
+clauge --help    |    clauge --version
 ```
 
-Set `NO_OPEN=1` to skip the auto-open. Set `CLAUDE_DIR=~/somewhere-else` to read from a non-default location.
-
-## Why claude.ai data needs the extension (background)
-
-claude.ai sits behind Cloudflare's bot challenge, so a plain server-side `fetch` from Clauge cannot reach claude.ai's API directly — the request would be challenged or blocked. The extension solves this by running *inside* your already-authenticated browser tab, where Cloudflare sees you as the legitimate user. The extension's only job: fetch usage from your own session and POST the snapshot to your local Clauge.
-
-This is also why there's no "API key field" anywhere in Clauge. There's no API key flow available to third parties for the personal-plan claude.ai endpoints — the only legitimate caller is the user's own browser. The extension is the well-behaved equivalent of "the user manually checking their plan page once a minute."
-
-## How it works
-
-```
-~/.claude/projects/{path-encoded-dir}/{session_uuid}.jsonl
-    │
-    ▼                                 ┌────────────────────────┐
-JSONL stream parser (lib/parser.js)   │  Browser extension     │
-    │  dedups assistant turns by      │  (or bookmarklet)      │
-    │  .requestId                     │  reads claude.ai usage │
-    ▼                                 │  with user's cookies   │
-Per-turn extractor → aggregator       └────────────┬───────────┘
-    │                                              │
-    └──────────────► Hono REST API ◄───────────────┘
-                            │
-                            ▼
-                     HTML dashboard
-                     (http://localhost:3456)
-```
-
-**The single most important invariant:** Claude Code emits 1–3 JSONL lines per assistant request (one per content-block type: thinking / text / tool_use), each with **identical** `usage` numbers. The parser dedups by `requestId` — without this, every cost is multiplied 2-3×. See `lib/parser.js` and `test/parser.test.js`.
-
-**Pricing:** model rates come from [LiteLLM's `model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) (cached locally for 24h, with a bundled offline fallback). Two-tier cache writes (`ephemeral_5m` vs `ephemeral_1h`) are priced separately. The `costUSD` field is never read — cost is always recomputed so rate-preset changes propagate to history.
-
-**Subscription value framing:** the headline number tells you how much retail API spend your subscription replaces *at observed token usage*. It does **not** tell you whether your plan is worth keeping — most users would cut back if they paid retail rates. Card copy includes this caveat.
+The Mac App bundle ships the CLI at `Contents/Resources/clauge-cli`; symlink it onto your `PATH`, or let the dashboard install the symlink for you. Homebrew installs put `clauge` on `PATH` automatically. `set-api-key` only accepts the key via stdin (never on the command line) and is macOS-only for now.
 
 ## Configuration
 
-`.env` (optional — copy from `.env.example`):
+Optional `.env` (copy from `.env.example`):
 
-```
+```bash
 PORT=3456                 # dashboard port
-CLAUDE_DIR=~/.claude      # source directory
-SUBSCRIPTION_COST=200     # for the API replacement value calc
+CLAUDE_DIR=~/.claude      # source directory for Claude Code logs
+SUBSCRIPTION_COST=200     # monthly cost used for the API-replacement-value calc
 
-# Per-1M-token rate fallbacks for models LiteLLM doesn't have
+# Per-1M-token fallback rates for models LiteLLM doesn't list
 RATE_INPUT=3.00
 RATE_OUTPUT=15.00
 RATE_CACHE_READ=0.30
@@ -238,109 +144,55 @@ RATE_CACHE_CREATE=3.75
 RATE_CACHE_CREATE_1H=6.00
 ```
 
-## Command-line interface (v0.9.3+)
+## How it works
 
-Power-user equivalent of the menu-bar UI. The same Node binary that backs the dashboard also acts as a CLI when invoked with a verb. Useful for scripting, troubleshooting, and headless setups.
-
-```bash
-# Print Clauge config as JSON (HTTP-first; falls back to settings.json on disk if Clauge isn't running)
-clauge config get
-
-# List providers + their enabled state — tabular by default, --json for machines
-clauge config providers
-clauge config providers --json
-
-# Flip a provider on/off
-clauge config enable  --provider claude-ai-session
-clauge config disable --provider clauge-sync
-
-# Store an admin API key in macOS Keychain (forward-looking — v0.10.0 will consume it)
-echo "$ANTHROPIC_ADMIN_KEY" | clauge config set-api-key --provider anthropic-admin --stdin
-
-# Wipe the trial counter (dev-mode only; three locks)
-CLAUGE_DEV=1 clauge config reset-trial --yes
-
-### Where the `clauge` CLI lives after a DMG install (v0.9.4+)
-
-The `.app` bundle ships the CLI at a stable path inside `Resources/`. You can
-call it directly without any setup:
-
-```bash
-/Applications/Clauge.app/Contents/Resources/clauge-cli config get
+```
+~/.claude/projects/<dir>/<session>.jsonl ──► JSONL parser ──► aggregator ──┐
+                                                                            ▼
+claude.ai usage (via extension, your cookies) ──────────────► Hono REST API
+                                                                            │
+                                                                            ▼
+                                                              dashboard + menu-bar UI
 ```
 
-To put it on `PATH`, symlink it once:
+- **Dedup invariant:** Claude&nbsp;Code emits 1–3 JSONL lines per assistant request (one per content block) with identical `usage` numbers; the parser dedups by `requestId`. Without it, every cost is 2–3× too high.
+- **Pricing:** model rates come from [LiteLLM](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) (cached 24h, with a bundled offline fallback), with 5-minute vs 1-hour cache tiers priced separately. The `costUSD` field in the logs is never trusted — cost is always recomputed.
+- **Local only:** the sidecar binds to `127.0.0.1`; read endpoints are restricted to the app's own loopback origins, and the app only ever trusts a sidecar it launched itself.
 
-```bash
-sudo ln -s "/Applications/Clauge.app/Contents/Resources/clauge-cli" /usr/local/bin/clauge
-```
+### API
 
-Or use the `install_cli_symlink` Tauri IPC (forward-looking — a one-click
-wizard step will land in v0.9.5). Homebrew installs already place `clauge` on
-`PATH` via the cask formula.
-
-# Help + version
-clauge --help
-clauge --version
-```
-
-**Notes:**
-- `set-api-key` and `reset-trial` are **macOS-only** — they shell out to `security`. Windows (`cmdkey` / `keytar`) and Linux (libsecret) coverage is tracked for v0.9.5+.
-- `set-api-key` rejects API keys passed on the command line. Always pipe via stdin so the key doesn't land in shell history.
-- The CLI talks to a running Clauge over HTTP when possible (via `~/Library/Caches/Clauge/active-port`). When Clauge isn't running, read commands fall back to the on-disk settings file; write commands write directly to disk (`enable`/`disable`) or to Keychain (`set-api-key` / `reset-trial`).
-- When installed via Homebrew, the `clauge` command is on your `PATH`. From source: `node server.js config get`.
+The local server (`http://localhost:3456`) exposes a small read API — `GET /api/summary`, `/sessions`, `/sessions/expensive`, `/sessions/:id`, `/projects`, `/daily`, `/models`, `/tasks`, `/tools`, `/cache`, `/hours`, `/roi`, `/activity`, `/usage`, `/export`, `/bookmarklet`, `/health`, `/config` — plus two writes: `POST /api/usage/ingest` (the extension target, origin-restricted to claude.ai + extension origins) and `POST /api/config/providers/:name` (the provider toggle the CLI uses).
 
 ## Development
 
 ```bash
-npm test          # unit tests via Node's built-in test runner
-npm run dev       # auto-restart server on changes
-npm start         # plain start
-npm run check     # canonical gate: cargo fmt + clippy + cargo test + npm test
+git clone https://github.com/clauding-lab/clauge.git
+cd clauge && npm install
+node server.js        # run the dashboard locally (NO_OPEN=1 to skip auto-open)
+
+npm test              # Node test runner
+npm run dev           # auto-restart on changes
+npm run check         # full CI gate: validators + cargo fmt + clippy + cargo test + npm test
 ```
 
-## API
+The native shell is [Tauri 2](https://tauri.app) (`src-tauri/`); the dashboard/popover are served by a Node sidecar bundled as a single executable. See [AGENTS.md](AGENTS.md) for build/release conventions and [CHANGELOG.md](CHANGELOG.md) for version history.
 
-| Endpoint | Returns |
-|---|---|
-| `GET /api/summary?period=7d&project=X` | totals, primary model, message/tool/subagent counts |
-| `GET /api/sessions?period=7d` | list of session summaries |
-| `GET /api/sessions/expensive?limit=5` | top-N most expensive sessions |
-| `GET /api/sessions/:id` | one session summary |
-| `GET /api/projects?period=7d` | per-project rollup |
-| `GET /api/daily?period=30d` | daily totals + per-project breakdown |
-| `GET /api/models?period=7d` | per-model cost + cache hit |
-| `GET /api/tasks?period=7d` | task category breakdown |
-| `GET /api/tools?period=7d` | core tools / shell commands / MCP servers |
-| `GET /api/cache?period=30d` | hit rate + net savings + daily trend |
-| `GET /api/hours?period=7d` | 24-hour activity distribution (UTC) |
-| `GET /api/roi?period=7d` | API replacement value |
-| `GET /api/export?format=csv&period=7d` | CSV / JSON export |
-| `GET /api/usage` | latest claude.ai plan-usage snapshot |
-| `POST /api/usage/ingest` | extension/bookmarklet target — CORS-restricted to claude.ai + extension origins |
-| `GET /api/bookmarklet` | the bookmarklet code as `javascript:` href + readable source |
-| `GET /api/health`, `/api/config` | service info |
+## Roadmap
 
-## What's coming
+- **Code signing** — DMG notarization (macOS) and Authenticode (Windows) to remove the unidentified-developer / SmartScreen warnings on the direct-download builds.
+- **claude.ai sign-in on Windows** — native OAuth parity with macOS (Windows currently relies on the extension for plan data).
+- **Linux build** — needs a dedicated menu-bar / tray surface design.
+- **Pace projections** — reset-aware guidance (approaching cap, session reset imminent, weekly-vs-Sonnet routing).
 
-- **Authenticode code-signing for Windows (v0.8.x)** — eliminates the SmartScreen "publisher unknown" click-through on the Windows installer. EV/OV certificate path TBD.
-- **claude.ai sign-in on Windows (v0.8.x)** — Architecture A native OAuth pop-up parity with the macOS surface. v0.8.0 ships Windows with Claude Code CLI integration only.
-- **Intelligence banner** with pace projections (priority rules: extra usage near cap, session reset imminent, weekly-vs-Sonnet routing hints, etc.)
-- **One-shot success rate** per task category
-- **Per-project drill-down view** with sessions, files edited, tools used
-- **Linux build** — separate menu-bar surface design (libappindicator vs Wayland portal) needed before this is real
+## Why Clauge
 
-## Why
-
-Five apps track Claude usage. None provide token-level analytics for Claude Code. None compute subscription value vs API equivalent at observed usage. None tell you what to do about your usage. Clauge does the first two natively, plus pulls claude.ai plan utilisation into the same dashboard so you see Code spend and plan limits side-by-side.
+Plenty of tools track Claude usage, but none give **token-level analytics for Claude&nbsp;Code**, and none compute what your **subscription is worth versus retail API pricing** at your real usage. Clauge does both natively and puts your Claude&nbsp;Code spend and claude.ai plan limits side by side.
 
 ## Contributing & security
 
-- Want to send a patch? See [CONTRIBUTING.md](CONTRIBUTING.md) — short read, covers commit style, `npm run check`, and where issues go.
-- Found a vulnerability? See [SECURITY.md](SECURITY.md). Do **not** file a public issue.
+- Patches: see [CONTRIBUTING.md](CONTRIBUTING.md) — commit style, `npm run check`, and where issues go.
+- Found a vulnerability? See [SECURITY.md](SECURITY.md) — please don't open a public issue.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Privacy policy in [docs/PRIVACY.md](docs/PRIVACY.md).
-
-Built by [clauding-lab](https://github.com/clauding-lab).
+MIT — see [LICENSE](LICENSE). Built by [clauding-lab](https://github.com/clauding-lab).
