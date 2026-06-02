@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-02 — v0.9.10 | Phantom "Claude Design" usage bucket shipped after Anthropic removed it
+
+**Trigger:** Adnan noticed the menu bar + dashboard still showed a "Claude Design" usage bar/ring at a permanent 0% after Anthropic dropped that weekly bucket around the Opus 4.8 release.
+
+**What went wrong:** Clauge had speculatively built UI for an anticipated upstream bucket (codename `omelette` → public "Claude Design"). The render functions defaulted a missing window to 0% (`popover.js renderDesign`: `const pct = design?.pct ?? 0`) and the dashboard ring was a static gauge keyed off `plan.sevenDayOmelette`. When the live `/api/usage` payload returned `claudeDesign: null` (and `unknownSevenDayKeys: []` — Anthropic isn't even sending the key anymore), both surfaces rendered a phantom "0% used · resets —". A second, methodology gap: the first verification hit the stale `public/popover/` build mirror instead of the edited `popover/` source, so the fix looked like it didn't work until the mirror was regenerated.
+
+**Lesson:** Never render a usage/quota category from a value that can legitimately be absent — gate the display on data presence, not a `?? 0` default. Speculative UI for upstream API fields that may never ship (or later get removed) becomes a phantom.
+
+**Prevention:** Hide a section/ring when its bucket is null/absent (data-gated render); keep the resolver so it reappears automatically if the bucket returns. Verify render changes against REAL `null`-bucket data (e.g. the live `/api/usage`), and account for the `popover/` → `public/popover/` mirror (landmine #30) when testing a running dev sidecar.
+
+**Hotfix:** Branch `fix/hide-claude-design-bucket` (commit `2ccfabc`): popover section is `hidden` when `claudeDesign` is null; dashboard ring is conditionally omitted with a shape-flag guard (no re-render flicker, per the v0.9.9 lesson). Bundled the dashboard ring rebalance (centered count-adaptive flex, 88→120px, wider gaps) + a local reset-time line beneath each "resets in …" countdown. Full `npm run check` green; verified live via Playwright on both surfaces.
+
+**Cross-references:** AGENTS.md landmine #30 (popover/ vs public/popover/ mirror); auto-memory `project_claude_design_phantom_fix`; global `~/.claude/AGENT_LEARNINGS.md` (the data-gating rule generalizes).
+
 ## 2026-06-01 — v0.9.10 | CI red on `cargo fmt` after Apple acceptance — "5 validators pass" ≠ full `npm run check`
 
 **Trigger:** Apple ACCEPTED build 5. On resuming to merge PR #11 → main, `gh pr checks 11` showed the `check` workflow RED. The prior session's close-out had said "all 5 repo validators pass," which read as CI-clean. It wasn't — the red gate had sat undetected from the build-5 push (2026-05-30) until the merge attempt (2026-06-01).
