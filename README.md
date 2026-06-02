@@ -10,16 +10,22 @@
 </p>
 
 <p align="center">
+  <a href="https://apps.apple.com/us/app/clauge/id6770303247"><img src="https://img.shields.io/badge/Mac_App_Store-Download-0D96F6?logo=apple&logoColor=white" alt="Download on the Mac App Store" /></a>
+  <a href="https://github.com/clauding-lab/clauge/releases/latest"><img src="https://img.shields.io/github/v/release/clauding-lab/clauge?label=release&color=d97757" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/clauge.svg" alt="license" /></a>
 </p>
 
-![Clauge dashboard](docs/screenshots/v0.9.5/dashboard.png)
+![Clauge — your Claude usage, at a glance](docs/screenshots/v1.0.0/hero.png)
 
 <p align="center">
-  <img src="docs/screenshots/v0.9.5/popover.png" alt="Clauge menu-bar popover" width="300" />
+  <img src="docs/screenshots/v1.0.0/dashboard.png" alt="Clauge dashboard" width="760" />
 </p>
 
-> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. **v0.9.2** flips the popover to dismiss on outside click, matching the macOS menu-bar convention. **v0.9.3** ships the Companion CLI (`clauge config get` / `providers` / `enable` / `disable` / `set-api-key` / `reset-trial`). **v0.9.4** adds a GitHub-style **activity heatmap** on both surfaces with current/longest streak stats, an **opaque-vibrancy** treatment so the wallpaper hue bleeds faintly through both the dashboard window and the popover, a bundled `clauge` CLI at `/Applications/Clauge.app/Contents/Resources/clauge-cli` (no Homebrew required to use it), and a fix for the dashboard EXTRA USAGE card so it mirrors the popover's `consumerOverage`-first preference instead of stalling on "Temporarily gated by Anthropic" when the OAuth-API feature is org-gated. **v0.9.5** is a cleanup + polish release: the popover activity heatmap now has visible day/month axis labels (Mon/Wed/Fri on the left, Jan/Feb/.../May on top) and all cells render at uniform size — previously columns under 3-letter month labels were silently wider because of HTML auto table-layout. The engineering layer also routes Tauri IPC calls through a centralized facade and popover strings through a shared registry for future localization. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`.
+<p align="center">
+  <img src="docs/screenshots/v1.0.0/popover.png" alt="Clauge menu-bar popover" width="300" />
+</p>
+
+> Status: **V3 — native macOS + Windows app** (universal Apple Darwin DMG, Windows x64 NSIS installer, unified auto-updater). v0.7.x shipped the guided first-launch wizard for macOS Keychain access, an in-memory keychain cache (one prompt per launch instead of every poll), and an in-app **↻ Restart Now** button so auto-updates take effect on click. v0.8.0 added the Windows port (per-user install at `%LOCALAPPDATA%\Clauge`, dashboard-only — no tray icon on Windows yet). v0.8.1 added a splash screen for first-launch and a new wizard step that walks users through installing the Clauge Sync browser extension; v0.8.2 surfaces Anthropic's `disabled_reason` on the EXTRA USAGE card when the feature is temporarily gated server-side. **v0.9.1** redesigns the popover: paired Session + Weekly circle gauges with time-elapsed needles, weekly bars for Sonnet / Claude Design / Daily Routines, real claude.ai consumer overage spend (via Clauge Sync v0.2.0+), a 30-day spend mini-chart, and a translucent vibrancy background. **v0.9.2** flips the popover to dismiss on outside click, matching the macOS menu-bar convention. **v0.9.3** ships the Companion CLI (`clauge config get` / `providers` / `enable` / `disable` / `set-api-key` / `reset-trial`). **v0.9.4** adds a GitHub-style **activity heatmap** on both surfaces with current/longest streak stats, an **opaque-vibrancy** treatment so the wallpaper hue bleeds faintly through both the dashboard window and the popover, a bundled `clauge` CLI at `/Applications/Clauge.app/Contents/Resources/clauge-cli` (no Homebrew required to use it), and a fix for the dashboard EXTRA USAGE card so it mirrors the popover's `consumerOverage`-first preference instead of stalling on "Temporarily gated by Anthropic" when the OAuth-API feature is org-gated. **v0.9.5** is a cleanup + polish release: the popover activity heatmap now has visible day/month axis labels (Mon/Wed/Fri on the left, Jan/Feb/.../May on top) and all cells render at uniform size — previously columns under 3-letter month labels were silently wider because of HTML auto table-layout. The engineering layer also routes Tauri IPC calls through a centralized facade and popover strings through a shared registry for future localization. Installable via Homebrew: `brew install --cask clauding-lab/tap/clauge`. **v1.0.0 is now on the [Mac App Store](https://apps.apple.com/us/app/clauge/id6770303247)** (alongside the DMG + Windows builds): it drops the retired *Claude Design* usage bucket (hidden when Anthropic stops reporting it), shows the **local reset time** beneath each usage countdown, rebalances the dashboard gauges, and hardens the local server (loopback-only CORS, trimmed path exposure, and impersonation-resistant sidecar discovery).
 
 ## Install
 
@@ -29,7 +35,9 @@ Three steps to a working setup: install the app, install the browser extension (
 
 **Option A — Native macOS app (recommended for the v3 menu-bar experience):**
 
-Via Homebrew (one line):
+**Mac App Store** (easiest — sandboxed, auto-updates through the Store): [**Download Clauge on the Mac App Store**](https://apps.apple.com/us/app/clauge/id6770303247).
+
+Or via Homebrew (one line):
 
 ```bash
 brew install --cask clauding-lab/tap/clauge
