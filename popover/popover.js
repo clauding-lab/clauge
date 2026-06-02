@@ -101,6 +101,21 @@ function fmtRelative(iso, nowMs = Date.now()) {
   return `${m}m`;
 }
 
+// Absolute local reset time to pair beneath the relative "resets in …" line.
+// Smart: time-only when the reset is today (e.g. "8:07 PM"), weekday + time when
+// it's a later day (e.g. "Thu 5:00 AM"). Uses the machine's local timezone.
+function fmtResetClock(iso, nowMs = Date.now()) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date(nowMs);
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return sameDay ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+}
+
 /**
  * Compute how much of a fixed-duration window has elapsed, as a 0..100
  * percentage. `resetsAt` is the END of the window; subtracting `windowMs`
@@ -353,6 +368,7 @@ function renderSession(plan, nowMs) {
   // Compact meta for the paired hero gauges: "Xh Ym of 5h" + "resets in Yh Zm".
   document.getElementById('session-elapsed').textContent = formatElapsedCompact(resetsAt, FIVE_HOURS_MS, 'session', nowMs);
   document.getElementById('session-reset').textContent = t('session.resetsIn', { duration: fmtRelative(resetsAt, nowMs) });
+  document.getElementById('session-reset-clock').textContent = fmtResetClock(resetsAt, nowMs);
 }
 
 function renderWeekly(plan, nowMs) {
@@ -368,6 +384,7 @@ function renderWeekly(plan, nowMs) {
   });
   document.getElementById('weekly-elapsed').textContent = formatElapsedCompact(resetsAt, SEVEN_DAYS_MS, 'weekly', nowMs);
   document.getElementById('weekly-reset').textContent = t('session.resetsIn', { duration: fmtRelative(resetsAt, nowMs) });
+  document.getElementById('weekly-reset-clock').textContent = fmtResetClock(resetsAt, nowMs);
 }
 
 function renderSonnet(plan, nowMs) {
@@ -378,14 +395,21 @@ function renderSonnet(plan, nowMs) {
   document.getElementById('sonnet-reset').textContent = sonnet?.resetsAt
     ? t('session.resetsIn', { duration: fmtRelative(sonnet.resetsAt, nowMs) })
     : '';
+  document.getElementById('sonnet-reset-clock').textContent = fmtResetClock(sonnet?.resetsAt, nowMs);
 }
 
 function renderDesign(plan, nowMs) {
   const design = plan?.claudeDesign;
-  const pct = design?.pct ?? 0;
+  // Anthropic dropped the Claude Design weekly bucket; when the payload has no
+  // claudeDesign window, hide the whole section instead of showing a phantom
+  // "0% used · resets —" bar. It reappears automatically if the bucket returns.
+  const section = document.getElementById('design-section');
+  if (section) section.hidden = !design;
+  if (!design) return;
+  const pct = design.pct ?? 0;
   renderSimpleBar({ fillId: 'design-fill', usagePct: pct });
   document.getElementById('design-pct').textContent = t('sonnet.percentUsed', { percent: Math.round(pct) });
-  document.getElementById('design-reset').textContent = design?.resetsAt
+  document.getElementById('design-reset').textContent = design.resetsAt
     ? t('session.resetsIn', { duration: fmtRelative(design.resetsAt, nowMs) })
     : '';
 }
@@ -401,6 +425,7 @@ function renderRoutines(plan, nowMs) {
   document.getElementById('routines-reset').textContent = r?.resetsAt
     ? t('session.resetsIn', { duration: fmtRelative(r.resetsAt, nowMs) })
     : '';
+  document.getElementById('routines-reset-clock').textContent = fmtResetClock(r?.resetsAt, nowMs);
 }
 
 function renderExtra(plan, nowMs) {
