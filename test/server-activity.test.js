@@ -114,9 +114,13 @@ describe('GET /api/activity', () => {
     assert.equal(body.tz, 'Asia/Dhaka');
   });
 
-  it('responds to OPTIONS with permissive CORS (read-only endpoint)', async () => {
+  it('responds to OPTIONS without wildcard CORS (read-only endpoint, loopback-restricted)', async () => {
     const res = await fetch(`${BASE}/api/activity`, { method: 'OPTIONS' });
     assert.ok(res.status === 204 || res.status === 200, `OPTIONS got ${res.status}`);
-    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    // CORS is now restricted to the app's own loopback origins (S2). A request
+    // with no Origin header (as fetch sends here) receives no ACAO at all.
+    const acao = res.headers.get('access-control-allow-origin');
+    assert.notEqual(acao, '*', 'wildcard CORS removed');
+    assert.equal(acao, null, 'no Origin header -> no ACAO');
   });
 });
