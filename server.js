@@ -175,8 +175,21 @@ const READ_ONLY_API_PATHS = [
   '/api/export',
   '/api/activity',
 ];
+// Read-only endpoints are reachable cross-origin ONLY by Clauge's own webviews,
+// which load from http://127.0.0.1:<port> or http://localhost:<port> (any port —
+// the sidecar can land on a crash-respawn fallback). Reflect those origins;
+// deny everything else (a website you visit can no longer read local data).
+function isAllowedReadOrigin(origin) {
+  if (!origin) return false; // same-origin simple GET: no ACAO needed
+  try {
+    const u = new URL(origin);
+    return u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+}
 const readOnlyCors = cors({
-  origin: '*',
+  origin: (origin) => (isAllowedReadOrigin(origin) ? origin : null),
   allowMethods: ['GET', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type'],
 });
