@@ -129,30 +129,27 @@ function totalTokens(t) {
 const app = new Hono();
 
 // CORS strategy:
-//   - Global wildcard CORS for READ-ONLY endpoints (Bug #2 fix). The Tauri
-//     popover loads from `tauri://localhost` (Tauri 2.x asset protocol) and
-//     fetches `http://127.0.0.1:<port>/api/...` cross-origin. Without these
-//     headers, WKWebView silently drops the response and the popover renders
-//     empty.
-//   - TIGHTER per-route allowlist for `/api/usage/ingest` (the only write
-//     endpoint exposed to other origins). Defined later in this file via
-//     its own `app.use('/api/usage/ingest', …)` middleware. Wildcard there
-//     would let any web page POST usage data.
-//
-// Wildcard origin is safe for read-only endpoints because:
-//   - the server binds explicitly to 127.0.0.1 (loopback only) — see the
-//     `hostname: '127.0.0.1'` arg passed to `serve()` in `listenWithRetry`
-//     below. No remote attacker on the LAN can reach the listener; only
-//     processes on this machine can. Without that explicit bind, @hono/
-//     node-server would default to 0.0.0.0 (all interfaces) and the wildcard
-//     CORS would become a LAN data-exposure regression. The bind and the
-//     wildcard are coupled — do not change one without the other.
-//   - Tauri's `tauri://localhost` is dynamic per-window so an exact-match
-//     allowlist is impractical
-//   - all GET responses are non-credentialed (no cookies, no auth headers)
+//   - READ-ONLY endpoints use a REFLECTING ALLOWLIST limited to Clauge's own
+//     loopback origins: protocol `http`, host `127.0.0.1` or `localhost`, ANY
+//     port (the sidecar can crash-respawn onto a fallback port). See
+//     `isAllowedReadOrigin` / `readOnlyCors` below. The matched origin is
+//     echoed back as `Access-Control-Allow-Origin`; everything else is denied,
+//     so a website you visit can't read your local usage data. The Tauri
+//     popover loads from one of those loopback origins and fetches
+//     `http://127.0.0.1:<port>/api/...`, so it stays allowed.
+//   - The explicit `127.0.0.1` bind is STILL load-bearing on its own: it keeps
+//     the listener off the LAN (see the `hostname: '127.0.0.1'` arg passed to
+//     `serve()` in `listenWithRetry` below). Without it, @hono/node-server
+//     would default to 0.0.0.0 (all interfaces) and expose the server to the
+//     local network regardless of CORS. The allowlist + the bind are
+//     independent defences — keep both.
+//   - TIGHTER, SEPARATE per-route allowlist for `/api/usage/ingest` (the only
+//     write endpoint exposed to other origins). Defined later in this file via
+//     its own `app.use('/api/usage/ingest', …)` middleware — it permits only
+//     claude.ai + browser-extension origins, not loopback.
 //
 // Implementation note: we list the read-only paths explicitly rather than
-// using `app.use('*', cors(...))` because a global wildcard would override
+// using `app.use('*', cors(...))` because a global matcher would override
 // the ingest-specific OPTIONS handler (Hono short-circuits OPTIONS in the
 // cors() middleware — the per-route OPTIONS handler never runs once the
 // global one fires).
@@ -241,7 +238,6 @@ app.get('/api/health', async (c) => {
     status: 'ok',
     version: APP_VERSION,
     pid: process.pid,
-    claudeDir: CLAUDE_DIR,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     subscriptionCost: SUBSCRIPTION_COST,
     extensionLastSeenAt: record?.ingestedAt ?? null,
@@ -665,10 +661,11 @@ async function listenWithRetry(startPort) {
     let ss;
     try {
       const s = await new Promise((resolve, reject) => {
-        // hostname: '127.0.0.1' is LOAD-BEARING — combined with the wildcard
-        // CORS origin on read-only endpoints, this is what keeps the server
-        // off the LAN. Defaulting to 0.0.0.0 (all interfaces) + `origin: '*'`
-        // would expose every dashboard read to anyone on the local network.
+        // hostname: '127.0.0.1' is LOAD-BEARING — it keeps the server off the
+        // LAN independently of CORS. Defaulting to 0.0.0.0 (all interfaces)
+        // would expose every dashboard read to anyone on the local network,
+        // since the loopback CORS allowlist only governs cross-origin browser
+        // reads, not direct network reachability.
         ss = serve({ fetch: app.fetch, port: tryPort, hostname: '127.0.0.1' }, () => resolve(ss));
         // @hono/node-server returns the http.Server directly; bind error
         // event for EADDRINUSE detection.
