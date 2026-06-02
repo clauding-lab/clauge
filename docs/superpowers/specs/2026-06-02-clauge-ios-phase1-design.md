@@ -139,7 +139,7 @@ This is the highest-risk area (Anthropic can change/remove the internal endpoint
 
 ## 11. Open questions / decisions deferred to build or later phases
 
-- **Repo placement:** does the iOS app live in a **new `clauge-ios` repo** or an **`ios/` subdir of `clauge`**? Recommendation: a separate `clauge-ios` repo (distinct Xcode/SwiftUI toolchain from the Tauri desktop), with this spec cross-referenced. Decide at build kickoff.
+- **Repo placement — DECIDED (2026-06-02): a separate `clauge-ios` repo** (distinct Xcode/SwiftUI toolchain from the Tauri desktop). This spec + the implementation plan live in the `clauge` repo's `docs/`; the iOS Swift code lives in `clauge-ios`. Keep the iOS Claude.ai client in sync with the desktop's `extension/background.js` endpoint contracts (cross-repo discipline).
 - **Exact endpoint contracts:** confirm against `extension/background.js` on the Mac during build (it has the working calls).
 - **Multi-account / org edge cases:** basic org switcher in v1; richer handling later if needed.
 - **Apple review framing:** present as read-only access to the user's *own* account data; have a fallback (TestFlight) if review balks.
