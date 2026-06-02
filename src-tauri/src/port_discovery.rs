@@ -82,6 +82,15 @@ fn version_matches_self(health_response: &str) -> bool {
     server_version == env!("CARGO_PKG_VERSION")
 }
 
+/// Whether to adopt an already-running EXTERNAL sidecar instead of spawning our
+/// own. Release builds NEVER adopt: a port-squatter can forge the public version
+/// string and serve impostor content into a privileged webview (see the v1.0.0
+/// security spec). Set `CLAUGE_ALLOW_EXTERNAL=1` to re-enable adoption for local
+/// dev (e.g. a hand-run `node server.js`); the version check still gates it.
+fn should_adopt_external(health_response: &str, allow_external: bool) -> bool {
+    allow_external && version_matches_self(health_response)
+}
+
 /// Find any PIDs listening on the given TCP port and kill them with SIGKILL.
 ///
 /// macOS: walks `libproc::proc_pid::listpids` and, for each PID, enumerates
@@ -302,20 +311,27 @@ pub async fn discover() -> DiscoveryResult {
 
 /// Inner discovery loop with a retry budget for orphan-sidecar eviction.
 ///
-/// First call is `discover_with_retry(true)`. If we find an existing sidecar
-/// whose `/api/health` reports a version that mismatches our compile-time
-/// `CARGO_PKG_VERSION`, we kill the PID listening on port 3456 and re-run
-/// ourselves with `false`. The second call falls through to `SpawnAt` even
-/// if the orphan is still alive (the supervisor's bind will fail and the
-/// crash-respawn-backoff handles it). This bounded recursion guarantees
-/// termination even if `lsof` is missing.
+/// First call is `discover_with_retry(true)`. We only ADOPT an existing server
+/// on port 3456 when `should_adopt_external` says so — which in release builds
+/// is never (a port-squatter can forge the version string), and in dev only
+/// when `CLAUGE_ALLOW_EXTERNAL=1` AND the version matches. Otherwise — whether
+/// the occupant is a genuine orphan with a mismatched version OR a
+/// version-matching server we still refuse to trust — we kill the PID listening
+/// on port 3456 and re-run ourselves with `false`. The second call falls
+/// through to `SpawnAt` even if the occupant is still alive (the supervisor's
+/// bind will fail and the crash-respawn-backoff handles it). This bounded
+/// recursion guarantees termination even if `lsof` is missing.
 async fn discover_with_retry(allow_orphan_kill: bool) -> DiscoveryResult {
+    let allow_external = std::env::var("CLAUGE_ALLOW_EXTERNAL")
+        .map(|v| v == "1")
+        .unwrap_or(false);
     if let Some(body) = probe_with_body(3456).await {
-        if version_matches_self(&body) {
+        if should_adopt_external(&body, allow_external) {
             return DiscoveryResult::External(3456);
         }
         log::warn!(
-            "Orphan sidecar detected on port 3456: version mismatch (self={})",
+            "Not adopting external server on port 3456 (allow_external={}, self={}) — reclaiming the port and spawning our own",
+            allow_external,
             env!("CARGO_PKG_VERSION")
         );
         if allow_orphan_kill {
@@ -440,18 +456,39 @@ mod tests {
         assert!(probe_with_body(port).await.is_none());
     }
 
-    #[tokio::test]
-    async fn discover_with_retry_returns_external_on_version_match() {
-        // We can't easily test against port 3456 (the hardcoded default)
-        // from a test without race risks. This test validates the
-        // version-matching branch of version_matches_self in isolation,
-        // since version_matches_self is exercised directly by the dedicated
-        // unit tests above. discover_with_retry's port=3456 hardcode is
-        // verified by the manual smoke gate (Task 8).
+    #[test]
+    fn should_adopt_external_false_in_release_even_on_version_match() {
         let body = format!(
             r#"{{"service":"clauge","version":"{}"}}"#,
             env!("CARGO_PKG_VERSION")
         );
-        assert!(version_matches_self(&body));
+        assert!(!should_adopt_external(&body, false));
+    }
+
+    #[test]
+    fn should_adopt_external_true_in_dev_on_version_match() {
+        let body = format!(
+            r#"{{"service":"clauge","version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        assert!(should_adopt_external(&body, true));
+    }
+
+    #[test]
+    fn should_adopt_external_false_in_dev_on_version_mismatch() {
+        let body = r#"{"service":"clauge","version":"0.0.0-nope"}"#;
+        assert!(!should_adopt_external(body, true));
+    }
+
+    #[tokio::test]
+    async fn release_default_does_not_adopt_external_on_version_match() {
+        let body = format!(
+            r#"{{"service":"clauge","version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        // Release default (allow_external = false): a version-matching external
+        // server is NOT adopted — we reclaim the port and spawn our own.
+        assert!(!should_adopt_external(&body, false));
+        assert!(should_adopt_external(&body, true)); // dev escape hatch still adopts
     }
 }
