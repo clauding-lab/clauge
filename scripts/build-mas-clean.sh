@@ -161,8 +161,9 @@ mkdir -p "$HELPER_APP_PATH/Contents/Resources"
 #     helper apps (vs BNDL which is for loadable plug-ins).
 #   - LSUIElement=true + LSBackgroundOnly=true: no Dock icon, no menu bar,
 #     not in Cmd+Tab. Helper runs invisible to the user.
-#   - CFBundleVersion=4 must match tauri.mas.conf.json::bundle.macOS.
-#     bundleVersion (Apple's monotonic build counter for CFBundleVersion).
+#   - CFBundleVersion: templated from tauri.mas.conf.json::bundle.macOS.
+#     bundleVersion (Apple's monotonic build counter) so it can never drift
+#     from the parent app.
 #   - CFBundleShortVersionString: matches package.json $VERSION.
 #   - LSMinimumSystemVersion=12.0: matches main app's
 #     tauri.conf.json::bundle.macOS.minimumSystemVersion.
@@ -335,5 +336,6 @@ ls -la "$PKG_OUT"
 echo
 echo "==> DONE. .pkg at $PKG_OUT"
 echo "    Next: open Transporter.app, drag the .pkg in, click Deliver."
-echo "    Then in App Store Connect, attach build $VERSION (CFBundleVersion $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist" 2>/dev/null)) to the"
-echo "    existing submission 32193453-1524-407a-b705-c16ae62fbbd3 and resubmit."
+echo "    Then in App Store Connect: create a NEW version record for $VERSION, attach the"
+echo "    uploaded build (CFBundleVersion $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist" 2>/dev/null)), confirm Trader Status, and submit."
+echo "    (This is a new version, NOT a resubmission of a prior build.)"
