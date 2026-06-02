@@ -292,6 +292,13 @@ html, body {
   color: var(--text-3);
   font-size: 10px;
 }
+/* Absolute local reset time beneath the relative "resets in …" line. */
+.gauge-meta-stack .gauge-meta-clock {
+  color: var(--text-3);
+  font-size: 9.5px;
+  opacity: 0.72;
+}
+.gauge-meta-clock:empty { display: none; }
 
 /* ── Needle bar (Weekly) ───────────────────────────────────── */
 .needle-bar {
@@ -374,6 +381,12 @@ html, body {
   margin-top: 2px;
   color: var(--text-3);
 }
+.bar-meta-sub .reset-clock {
+  font-size: 9.5px;
+  opacity: 0.8;
+}
+/* Drop the whole sub-row when there's no reset clock (e.g. a null bucket). */
+.bar-meta-sub:has(.reset-clock:empty) { display: none; }
 
 /* ── 2x2 stats grid ────────────────────────────────────────── */
 .sect-stats { padding-top: 16px; }
@@ -475,6 +488,10 @@ html, body {
   color: var(--text-3);
   font-size: 10px;
 }
+
+/* A usage section with no upstream bucket (e.g. Claude Design after Anthropic
+   dropped it) is hidden rather than shown as a phantom 0% bar. */
+.sect[hidden] { display: none; }
 
 /* ── Preferences panel (preserved from v0.8) ───────────────── */
 .prefs-panel[hidden] { display: none; }

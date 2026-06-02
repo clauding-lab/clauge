@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0] — 2026-06-02
+
+### Added
+
+- Local reset time shown beneath each "resets in …" countdown (popover + dashboard), in your local timezone.
+
+### Changed
+
+- Dashboard plan-usage rings: larger, centered, evenly spaced; the removed "Claude Design" bucket no longer renders a phantom 0%.
+
+### Security
+
+- Read-only local API restricted to the app's own loopback origins (a website you visit can no longer read your local usage/paths).
+- Removed the home-folder path from `/api/health` and per-session file paths from `/api/sessions`.
+- The app now only ever trusts the sidecar it launched itself (a port-squatter can no longer impersonate Clauge).
+
+---
+
 ## [0.9.10] — 2026-05-29
 
 ### Build 5 (2026-05-30) — fixes for Apple's second rejection

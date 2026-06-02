@@ -639,6 +639,16 @@ Rules for the MAS flavor:
 
 The `&&` chain short-circuits: if `check:fmt` fails, clippy/tests never run — so "the validators pass" says nothing about fmt/clippy/tests. **Before pushing a release branch or claiming CI is green, run the full `npm run check`** (it needs the sidecar binaries at `src-tauri/binaries/` so `build.rs` compiles — `npm run build:sidecar` if missing). Hand edits to `src-tauri/src/*.rs` especially must be run through `cargo fmt`, since fmt is CI's first, short-circuiting gate. This bit the build-5 → main merge (v0.9.10, 2026-06-01): CI sat red on fmt drift for ~2 days while the session believed "validators pass" = clean. See `AGENT_LEARNINGS.md` 2026-06-01.
 
+### 30. `popover/` is the SOURCE; `public/popover/` is a gitignored build mirror — edit the source, not the mirror
+
+The popover assets live in **two** places: `popover/` at the repo root (git-tracked, the source of truth) and `public/popover/` (gitignored — listed in `.gitignore`). `scripts/build-sidecar.mjs` step 0 copies `popover/* → public/popover/*` so the SEA's `serveStatic('/*', root: 'public')` route (and the bundled `sea-bootstrap.cjs` ASSETS list) can serve them. Consequences:
+
+1. **Edit `popover/` (root), never `public/popover/`** — a direct edit to the mirror is overwritten on the next `build:sidecar` and is invisible to git. The `validate-html-facade-loads.cjs` validator scans `popover/` and explicitly **excludes** `public/popover` (confirming the source-of-truth direction).
+2. **A running `node server.js` (dev sidecar) serves `public/popover/`, the mirror — NOT your edited source.** So after editing `popover/`, the dev sidecar shows the OLD popover until you regenerate the mirror: run `npm run build:sidecar` (full) or copy just the changed files (`cp popover/<f> public/popover/<f>`). The production DMG/MAS build runs `build:sidecar`, so shipping is automatic — this gotcha only bites local dev/verification.
+3. The **dashboard** (`public/index.html`, `public/app.js`, `public/styles.css`) is served directly from `public/` — no mirror, edit in place.
+
+(Hit live 2026-06-02 verifying the Claude Design hide-fix: the dev sidecar kept showing the phantom because the test was hitting the stale `public/popover/` mirror. See `AGENT_LEARNINGS.md` 2026-06-02.)
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

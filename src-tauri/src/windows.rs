@@ -36,18 +36,9 @@ pub fn create_dashboard(app: &tauri::AppHandle) -> tauri::Result<()> {
     // server. Returning `true` only for the SEA server's host:port pins the
     // webview to its intended content.
     //
-    // External links (`target="_blank"`) status: currently broken — and this
-    // handler is NOT what fixes them. Verified against wry-0.55.1 and
-    // tauri-runtime-wry-2.11.1: `target="_blank"` clicks route through
-    // wry's new-window request handler (createWebViewForNavigationAction on
-    // macOS), which Tauri only installs when `pending.new_window_handler`
-    // is `Some`. We don't call `.on_new_window(...)` below, so that handler
-    // is `None`, so the macOS WKWebView delegate returns `nil` and silently
-    // drops the new window. Anchor clicks pointing at claude.ai / github.com
-    // inside the install-extension panel are presently no-ops. This is a
-    // pre-existing v0.3.0 issue — NOT caused by this on_navigation handler
-    // — and is deferred to v0.3.2 (which will wire `.on_new_window(...)` to
-    // shell-open external URLs).
+    // External links (target="_blank" / window.open) are routed to the OS browser
+    // by the on_new_window handler below (see ~L126). Works on macOS (WKWebView)
+    // and Windows (WebView2). Confirm on a real Windows build at release QA.
     //
     // Port read: pulled live from AppState on EVERY navigation rather than
     // captured at dashboard creation. Sidecar crash-respawn (T30) can land

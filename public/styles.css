@@ -921,22 +921,26 @@ td.ok { color: var(--ok); }
 @keyframes pulse { 50% { opacity: 0.35; } }
 
 .plan-body {
-  /* 4 columns — Opus ring removed in v0.4.4. */
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
+  /* Ring count is dynamic — 3 normally, 4 if Anthropic returns the Claude Design
+     bucket. Center the row so a missing bucket leaves balanced margins, not the
+     one-sided gap a fixed 4-column grid would leave. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: clamp(64px, 12vw, 176px);
   position: relative;
 }
 .ring-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 5px 2px;
 }
 .big-ring {
-  width: 88px;
-  height: 88px;
+  width: 120px;
+  height: 120px;
   position: relative;
 }
 .big-ring svg {
@@ -960,7 +964,7 @@ td.ok { color: var(--ok); }
   line-height: 1;
 }
 .ring-pct .big {
-  font-size: 28px;
+  font-size: 38px;
   font-weight: 600;
   letter-spacing: -0.04em;
   background: linear-gradient(180deg, #fff8f0, #f0d8c4);
@@ -970,11 +974,11 @@ td.ok { color: var(--ok); }
   line-height: 1;
 }
 .ring-pct .pct-sym {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--text-3);
   margin-left: 2px;
   align-self: center;
-  transform: translateY(-7px);
+  transform: translateY(-10px);
 }
 .ring-meta { text-align: center; }
 .ring-label {
@@ -1001,6 +1005,15 @@ td.ok { color: var(--ok); }
   color: var(--text-3);
   margin-top: 3px;
 }
+/* Absolute local reset time, beneath the relative "resets in …" countdown. */
+.ring-reset-clock {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-4, var(--text-3));
+  opacity: 0.72;
+  margin-top: 1px;
+}
+.ring-reset-clock:empty { display: none; }
 
 .plan-side {
   display: grid;

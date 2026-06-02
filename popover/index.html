@@ -47,6 +47,7 @@
         <div class="gauge-meta-stack">
           <span class="mono" id="session-elapsed">— of 5h</span>
           <span class="mono gauge-meta-sub" id="session-reset">resets in —</span>
+          <span class="mono gauge-meta-clock" id="session-reset-clock"></span>
         </div>
       </div>
       <div class="hero-gauge-col">
@@ -57,6 +58,7 @@
         <div class="gauge-meta-stack">
           <span class="mono" id="weekly-elapsed">Day — of 7</span>
           <span class="mono gauge-meta-sub" id="weekly-reset">resets in —</span>
+          <span class="mono gauge-meta-clock" id="weekly-reset-clock"></span>
         </div>
       </div>
     </section>
@@ -71,10 +73,14 @@
         <span class="bar-meta-pct mono" id="sonnet-pct">— used</span>
         <span class="mono" id="sonnet-reset">resets —</span>
       </div>
+      <div class="bar-meta bar-meta-sub">
+        <span></span>
+        <span class="mono reset-clock" id="sonnet-reset-clock"></span>
+      </div>
     </section>
 
-    <!-- ── Claude Design ──────────────────────────────────────── -->
-    <section class="sect">
+    <!-- ── Claude Design (hidden when Anthropic doesn't return the bucket) ── -->
+    <section class="sect" id="design-section">
       <h2 class="sect-label">Claude Design</h2>
       <div class="simple-bar">
         <div class="simple-bar-fill" id="design-fill"></div>
@@ -94,6 +100,10 @@
       <div class="bar-meta">
         <span class="bar-meta-pct mono" id="routines-count">— of 15 runs today</span>
         <span class="mono" id="routines-reset">resets —</span>
+      </div>
+      <div class="bar-meta bar-meta-sub">
+        <span></span>
+        <span class="mono reset-clock" id="routines-reset-clock"></span>
       </div>
     </section>
 

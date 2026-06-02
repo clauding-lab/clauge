@@ -111,6 +111,21 @@ const fmtRelative = (iso) => {
   return `${m}m`;
 };
 
+// Absolute local reset time to pair beneath the relative "resets in …" line.
+// Smart: time-only when the reset is today (e.g. "8:07 PM"), weekday + time when
+// it's a later day (e.g. "Thu 5:00 AM"). Uses the machine's local timezone.
+const fmtResetClock = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return sameDay ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+};
+
 const TZ_LABEL = (() => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'local';
@@ -216,6 +231,7 @@ function bigRingHtml({ label, sub, metric, gradId }) {
       <div class="ring-meta">
         <div class="ring-label">${escapeHtml(label)} <span class="ring-window">${escapeHtml(sub)}</span></div>
         <div class="ring-reset">resets in ${escapeHtml(reset)}</div>
+        <div class="ring-reset-clock">${escapeHtml(fmtResetClock(metric?.resetsAt))}</div>
       </div>
     </div>`;
 }
@@ -252,6 +268,7 @@ function inlineMiniRingHtml({ pct, label }) {
 let __planCardMode = null;          // 'placeholder' | 'ingested' | null
 let __planStatusTone = null;        // 'crit' | 'amber' | 'healthy' | 'idle'
 let __planInlineHasBalance = null;  // true if the bal line is rendered
+let __planGaugeShape = null;        // gauge count — re-render (not surgical-update) when it changes
 
 function renderPlanCapacity() {
   const usage = state.data.usage;
@@ -269,7 +286,7 @@ function renderPlanCapacity() {
       //  - claude.ai signed-in (Architecture A — Mac only in v0.8.0)
       //  - Clauge Sync browser extension (cross-platform, only path on Windows)
       const isWindows = /windows/i.test(navigator.userAgent || '');
-      const placeholders = ['Session', 'Weekly', 'Sonnet', 'Design']
+      const placeholders = ['Session', 'Weekly', 'Sonnet']
         .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
         .join('');
       const walkthrough = `
@@ -302,9 +319,20 @@ function renderPlanCapacity() {
     { label: 'Session',    sub: '5h', metric: plan.fiveHour },
     { label: 'Weekly all', sub: '7d', metric: plan.sevenDay },
     { label: 'Sonnet',     sub: '7d', metric: plan.sevenDaySonnet },
-    { label: 'Design',     sub: '7d', metric: plan.sevenDayOmelette },
   ];
-  if (__planCardMode !== 'ingested') {
+  // Claude Design weekly bucket: Anthropic dropped it, so claudeDesign is null in
+  // current payloads. Omit the ring rather than show a phantom 0% — it reappears
+  // automatically if the bucket returns. Use the resolved claudeDesign (covers all
+  // codename variants), not the raw sevenDayOmelette.
+  if (plan.claudeDesign) {
+    gauges.push({ label: 'Design', sub: '7d', metric: plan.claudeDesign });
+  }
+
+  // A change in the gauge count is a structural transition — re-render once. A
+  // surgical in-place update on a changed set would leave a stale ring (and
+  // restart the .dot-live pulse, the v0.9.9 flicker). Equal count → update in place.
+  const shapeChanged = __planGaugeShape !== gauges.length;
+  if (__planCardMode !== 'ingested' || shapeChanged) {
     body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
     __planCardMode = 'ingested';
   } else {
@@ -342,12 +370,17 @@ function renderPlanCapacity() {
   const balance = plan.claudeBalance?.currentBalance;
   const hasBalance = balance != null;
   inline.hidden = false;
-  if (__planInlineHasBalance !== hasBalance) {
+  // Mirror the big-ring set: include the Design mini-ring only when the bucket
+  // is present. Rebuild on a balance-line change OR a gauge-count change.
+  const designMini = plan.claudeDesign
+    ? inlineMiniRingHtml({ pct: plan.claudeDesign.pct, label: 'Design' })
+    : '';
+  if (__planInlineHasBalance !== hasBalance || shapeChanged) {
     inline.innerHTML = `
       ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
       ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
       ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
-      ${inlineMiniRingHtml({ pct: plan.sevenDayOmelette?.pct, label: 'Design' })}
+      ${designMini}
       <span class="sep"></span>
       <span class="num-lbl" data-role="period-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
       <span class="num" data-role="period-cost">${escapeHtml(sevenDayCost != null ? fmtUSD(sevenDayCost) : '—')}</span>
@@ -357,6 +390,9 @@ function renderPlanCapacity() {
   } else {
     updatePlanInline(inline, gauges, sevenDayCost, balance);
   }
+  // Record the rendered gauge count last, after both ring sets have consumed
+  // `shapeChanged` for this tick.
+  __planGaugeShape = gauges.length;
 }
 
 function renderFinanceSide() {
@@ -477,6 +513,7 @@ function updateBigRings(body, gauges) {
     setAttrIfChanged(progressCircle, 'stroke-dashoffset', offset.toFixed(2));
     setTextIfChanged(card.querySelector('.ring-pct .big'), pctNum);
     setTextIfChanged(card.querySelector('.ring-reset'), `resets in ${reset}`);
+    setTextIfChanged(card.querySelector('.ring-reset-clock'), fmtResetClock(metric?.resetsAt));
   }
 }
 
