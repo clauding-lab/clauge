@@ -649,6 +649,16 @@ The popover assets live in **two** places: `popover/` at the repo root (git-trac
 
 (Hit live 2026-06-02 verifying the Claude Design hide-fix: the dev sidecar kept showing the phantom because the test was hitting the stale `public/popover/` mirror. See `AGENT_LEARNINGS.md` 2026-06-02.)
 
+### 31. Release builds NEVER adopt an external sidecar — dev iteration on a hand-run `node server.js` needs `CLAUGE_ALLOW_EXTERNAL=1`
+
+The v1.0.0 S8 (impersonation) fix made port discovery refuse to *adopt* a sidecar it didn't launch. `should_adopt_external(health_response, allow_external)` (`src-tauri/src/port_discovery.rs:90`) returns `allow_external && version_matches_self(...)`, and `allow_external` is read from the `CLAUGE_ALLOW_EXTERNAL=1` env var (`port_discovery.rs:325`, default `false`). Rationale: a port-squatter on 3456 can forge the public version string in `/api/health` and serve impostor content into a privileged webview, so a release build must own the process it trusts. Consequences for AI agents and local dev:
+
+1. **A hand-run `node server.js` on port 3456 will be KILLED, not reused, by any build that lacks the flag.** `discover_with_retry` (`port_discovery.rs:324`) probes 3456; when `should_adopt_external` says no, it logs `"Not adopting external server on port 3456 …"`, SIGKILLs the PID listening on the port (`kill_pid_on_port`), and spawns its own sidecar. So the classic dev loop — start `node server.js` in one terminal to iterate on the API, then launch the app — silently loses your hand-run server unless you `export CLAUGE_ALLOW_EXTERNAL=1` first.
+2. **The flag is necessary but not sufficient — the version must also match.** Even with `CLAUGE_ALLOW_EXTERNAL=1`, adoption only happens when the external server's reported version equals `CARGO_PKG_VERSION` (`version_matches_self`). A stale-version hand-run server is refused (and killed) regardless of the flag.
+3. **This is a dev escape hatch only — NEVER set `CLAUGE_ALLOW_EXTERNAL` in a shipped build, in CI, or in a workflow.** It re-opens the impersonation hole the fix closed. It belongs in an interactive dev shell only.
+
+Locked by tests in the same file (`should_adopt_external_false_in_release_even_on_version_match`, `release_default_does_not_adopt_external_on_version_match`, plus the dev-hatch counterparts, `port_discovery.rs:460-492`). Introduced as security fix S8 in v1.0.0 (commit `f47d1cf`); rationale in `docs/superpowers/specs/2026-06-02-clauge-v1.0.0-security-release-design.md`.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
