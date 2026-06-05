@@ -23,6 +23,15 @@ mod security_scoped_bookmark;
 // tauri-plugin-autostart (LaunchAgent) instead — see the builder chain.
 #[cfg(feature = "mas")]
 mod autostart_mas;
+// Phase ②b, MAS flavor only: coordinated atomic write of the analytics
+// snapshot into the app's iCloud Drive container (read by the companion iOS
+// app). DMG flavor does not publish to iCloud and does not compile this module.
+#[cfg(feature = "mas")]
+mod icloud_writer;
+// Phase ②b, MAS flavor only: drives the periodic publish of the analytics
+// snapshot into the app's iCloud container (sibling to the sidecar supervisor).
+#[cfg(feature = "mas")]
+mod icloud_publish;
 mod sidecar;
 mod tray;
 mod windows;
@@ -334,6 +343,19 @@ pub fn run() {
                     }
                 }
             });
+
+            // Phase ②b (MAS only): publish the analytics snapshot to the app's
+            // iCloud container on a cadence so the companion iOS app can mirror
+            // the desktop analytics. Runs as a SIBLING to the sidecar supervisor
+            // (NOT inside its loop, whose shutdown/respawn invariants are
+            // delicate) and exits cleanly on quit via AppState::shutdown.
+            #[cfg(feature = "mas")]
+            {
+                let publish_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::icloud_publish::run(publish_handle).await;
+                });
+            }
 
             // v0.9.0 MAS flavor: skip the launch-time updater poll. The
             // `ipc::check_for_updates` FUNCTION stays defined (the Settings

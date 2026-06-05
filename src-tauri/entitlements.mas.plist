@@ -37,5 +37,30 @@
          team-identifier entitlement. -->
     <key>com.apple.developer.team-identifier</key>
     <string>CY4FK9S7X9</string>
+    <!-- Phase ②b iCloud Documents (build 7): the parent writes a small analytics
+         snapshot into the app's own iCloud Drive container so the companion iOS
+         app can mirror the desktop Claude-Code analytics. ONLY these 3 keys — the
+         minimal set for iCloud Documents — are declared. The regenerated
+         "Clauge Mac App Store v0.9.0" profile ALLOWS a superset (CloudKit, KVS,
+         dev-container, environment), so this is a safe subset (AGENTS landmine
+         #34: declare ⊆ the profile, never a key the profile lacks). These keys
+         are on the PARENT ONLY — the sidecar helper inherits the sandbox via
+         com.apple.security.inherit and declares no entitlements of its own
+         (landmine #33). -->
+    <!-- icloud-container-identifiers: the app's ubiquity container id. -->
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.clauding.clauge</string>
+    </array>
+    <!-- ubiquity-container-identifiers: what URLForUbiquityContainerIdentifier resolves. -->
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.com.clauding.clauge</string>
+    </array>
+    <!-- icloud-services: iCloud Documents only (no CloudKit database). -->
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudDocuments</string>
+    </array>
 </dict>
 </plist>
