@@ -35,6 +35,7 @@ import {
 } from './lib/aggregator.js';
 import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
+import { buildSnapshot } from './lib/snapshot.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
 import { listProviders, PROVIDERS } from './lib/providers.js';
@@ -166,6 +167,7 @@ const READ_ONLY_API_PATHS = [
   '/api/tools',
   '/api/cache',
   '/api/roi',
+  '/api/snapshot',
   '/api/config',
   '/api/usage',          // GET + DELETE — reading or wiping local usage
   '/api/bookmarklet',
@@ -530,6 +532,21 @@ app.get('/api/roi', async (c) => {
       extraUsageSpend: 0,
     }),
   });
+});
+
+// Phase ②b: one compact, curated analytics snapshot the Tauri parent fetches
+// over loopback, stamps with seq+writerId, and writes (coordinated) into the
+// app's iCloud container for the companion iOS app. Read-only; covered by the
+// same loopback CORS allowlist as the other GET endpoints.
+app.get('/api/snapshot', async (c) => {
+  const tz = c.req.query('tz') ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+  const snapshot = await buildSnapshot({
+    store,
+    usageStore,
+    subscriptionCost: SUBSCRIPTION_COST,
+    tz,
+  });
+  return c.json(snapshot);
 });
 
 app.get('/api/config', async (c) => {
