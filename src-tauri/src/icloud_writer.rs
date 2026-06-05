@@ -138,8 +138,7 @@ mod tests {
     #[ignore = "writes to the real iCloud container; run manually with --ignored on a Mac signed into iCloud"]
     fn coordinated_write_lands_in_real_icloud_container() {
         let home = std::env::var("HOME").expect("HOME is set");
-        let container_path =
-            format!("{home}/Library/Mobile Documents/iCloud~com~clauding~clauge");
+        let container_path = format!("{home}/Library/Mobile Documents/iCloud~com~clauding~clauge");
         let url = NSURL::fileURLWithPath(&NSString::from_str(&container_path));
 
         let payload =
