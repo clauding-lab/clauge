@@ -1,8 +1,8 @@
 # Clauge Privacy Policy
 
-**Last updated:** 2026-05-17
+**Last updated:** 2026-06-06
 
-Clauge is a macOS menu bar utility that displays the user's own Anthropic Claude Code and claude.ai usage. This document explains what data the app touches, where it lives, and what network requests it makes.
+Clauge is a free, read-only app for viewing your own Anthropic Claude Code and claude.ai usage, on **macOS** (a menu-bar utility, `com.clauding.clauge`) and **iPhone** (a companion app, `com.clauding.clauge.ios`). This document explains what data the apps touch, where it lives, and what network requests they make. Clauge is an independent, unofficial companion and is **not affiliated with, endorsed by, or sponsored by Anthropic.**
 
 **Short version:** Clauge has no backend, no analytics, no telemetry, and no third-party data collection. Everything stays on your Mac. The only network requests Clauge makes are to Anthropic's own servers using your own credentials.
 
@@ -71,6 +71,18 @@ Clauge does NOT request the following permissions:
 - Camera, microphone, location, contacts, calendar, reminders, photos, full disk access, or any other personal-data entitlement
 
 ---
+
+## Clauge for iPhone (iOS)
+
+Clauge for iPhone (`com.clauding.clauge.ios`) is a free, read-only companion that shows your own Claude usage on your phone. It has the same privacy posture as the Mac app: **no backend, no analytics, no tracking, and no data collection.**
+
+- **Sign-in.** You log in once to *your own* claude.ai account inside the app (email magic code or Sign in with Apple). The captured claude.ai session is stored in the **iOS Keychain**, on your device only, excluded from backups, and is used solely to fetch your own usage from claude.ai. It is never sent anywhere else — there is no Clauge server.
+- **Analytics via iCloud.** If you also run Clauge for Mac under the same Apple ID, the Mac app publishes a small analytics summary into **your own private iCloud** (container `iCloud.com.clauding.clauge`, iCloud Documents). The iPhone app reads that file to mirror your analytics. It is a single-user private container — no public database, no cross-user access. The file contains only your own computed statistics (counts, costs, activity), never credentials or message content.
+- **Network.** The iPhone app connects only to **claude.ai** (your own account) and **Apple iCloud** (your own storage). It has no other network destinations.
+- **No tracking / no IDFA / no third-party SDKs.** The app's privacy manifest declares no tracking and no collected data types.
+- **Sample preview.** A "Take a look with sample data" option lets you explore the app with clearly-labelled example data and requires no account; it transmits nothing.
+
+App Store privacy label: **Data Not Collected.**
 
 ## Children's privacy
 
