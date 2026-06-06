@@ -1,4 +1,4 @@
-//! Coordinated, atomic iCloud snapshot write (Phase ②b, MAS flavor only).
+//! Coordinated, atomic iCloud snapshot write (Phase ②b, both flavors).
 //!
 //! The companion iOS app reads a small analytics snapshot from the app's own
 //! iCloud Drive container. This module performs the Mac-side write the right
@@ -11,11 +11,11 @@
 //!   * **Atomic** — `NSData writeToURL:atomically:YES` writes to a temp file
 //!     then renames, so a reader never observes a half-written file.
 //!
-//! The PARENT process owns this write (it holds the iCloud entitlement and is
-//! the single long-lived process), which structurally avoids the two-writer
-//! race a sidecar-owned write would hit during sidecar respawn. The sidecar
-//! only assembles the JSON; the parent stamps freshness metadata and calls
-//! this.
+//! The PARENT process owns this write (it resolves the container — via the
+//! ubiquity API on MAS, or the direct unsandboxed path on DMG — and is the
+//! single long-lived process), which structurally avoids the two-writer race a
+//! sidecar-owned write would hit during sidecar respawn. The sidecar only
+//! assembles the JSON; the parent stamps freshness metadata and calls this.
 //!
 //! THREADING (AGENTS landmine #36): `NSFileCoordinator` blocks the calling
 //! thread on `filecoordinationd`. Callers MUST invoke `write_snapshot_coordinated`
@@ -24,7 +24,7 @@
 //! thread (the binding's `Fn(NonNull<NSURL>) + '_` has no `Send` bound), so the
 //! `Cell<bool>` write-result flag captured by the closure is safe.
 
-#![cfg(feature = "mas")]
+#![cfg(target_os = "macos")]
 
 use std::cell::Cell;
 use std::ptr::NonNull;
@@ -35,6 +35,42 @@ use objc2_foundation::{
     NSData, NSError, NSFileCoordinator, NSFileCoordinatorWritingOptions, NSFileManager, NSString,
     NSURL,
 };
+
+/// Dotted iCloud container identifier (matches the MAS ubiquity entitlement).
+/// Only the MAS resolver below references it — the DMG resolver uses the direct
+/// `iCloud~com~clauding~clauge` path component instead — so gate it to `mas`,
+/// or clippy's `-D warnings` flags it as dead code in the DMG build.
+#[cfg(feature = "mas")]
+const ICLOUD_CONTAINER_ID: &str = "iCloud.com.clauding.clauge";
+
+/// Resolve the app's iCloud ubiquity container as a live `NSURL`.
+/// MAS / sandboxed: `URLForUbiquityContainerIdentifier` is the ONLY correct source
+/// — under the App Sandbox `$HOME` redirects to the container, so a home-derived
+/// path would silently dead-write (AGENTS landmine #34). THREADING (landmine #35):
+/// may block on first use; call inside spawn_blocking.
+#[cfg(feature = "mas")]
+pub fn resolve_icloud_container() -> Option<Retained<NSURL>> {
+    let fm = NSFileManager::defaultManager();
+    let id = NSString::from_str(ICLOUD_CONTAINER_ID);
+    fm.URLForUbiquityContainerIdentifier(Some(&id))
+}
+
+/// Resolve the iCloud container by direct filesystem path (DMG / un-sandboxed).
+/// The ②a spike proved an un-sandboxed app with NO iCloud entitlement can write to
+/// `~/Library/Mobile Documents/iCloud~com~clauding~clauge/Documents/` and the OS
+/// syncs it. SAFE ONLY because this build is NOT sandboxed; the
+/// `#[cfg(not(feature = "mas"))]` gate makes the home-path version uncompilable for
+/// MAS, so it can never reintroduce the sandbox dead-write (landmine #34). Returns
+/// `None` if `$HOME` is unset or the container dir is absent (iCloud Drive off → skip).
+#[cfg(not(feature = "mas"))]
+pub fn resolve_icloud_container() -> Option<Retained<NSURL>> {
+    let home = std::env::var("HOME").ok()?;
+    let container_path = format!("{home}/Library/Mobile Documents/iCloud~com~clauding~clauge");
+    if !std::path::Path::new(&container_path).exists() {
+        return None;
+    }
+    Some(NSURL::fileURLWithPath(&NSString::from_str(&container_path)))
+}
 
 /// Subdirectory inside the ubiquity container. iCloud Drive surfaces files
 /// under `Documents/` to the user and to other devices; the ②a spike proved
@@ -124,6 +160,26 @@ pub fn write_snapshot_coordinated(container_url: &NSURL, payload: &[u8]) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DMG resolver returns `None` when the iCloud container dir is absent.
+    /// Points `$HOME` at a tempdir with no `Library/Mobile Documents/...`
+    /// subtree, so the existence check short-circuits to `None` (the "iCloud
+    /// Drive off / not signed in → skip this publish tick" path). `#[serial]`
+    /// because it mutates the process-global `$HOME`. Only compiled in the DMG
+    /// (non-mas) build, where this resolver variant exists.
+    #[cfg(not(feature = "mas"))]
+    #[test]
+    #[serial_test::serial]
+    fn dmg_resolve_returns_none_when_container_absent() {
+        let tmp = std::env::temp_dir().join("clauge-no-icloud-test-XYZ");
+        let prev = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+        assert!(resolve_icloud_container().is_none());
+        match prev {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+    }
 
     /// Exercises the REAL coordinated write against the live iCloud container,
     /// run UN-sandboxed. `cargo test` has no iCloud entitlement, so we bypass

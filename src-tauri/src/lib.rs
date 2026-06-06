@@ -23,14 +23,16 @@ mod security_scoped_bookmark;
 // tauri-plugin-autostart (LaunchAgent) instead — see the builder chain.
 #[cfg(feature = "mas")]
 mod autostart_mas;
-// Phase ②b, MAS flavor only: coordinated atomic write of the analytics
-// snapshot into the app's iCloud Drive container (read by the companion iOS
-// app). DMG flavor does not publish to iCloud and does not compile this module.
-#[cfg(feature = "mas")]
+// Phase ②b: coordinated atomic write of the analytics snapshot into the app's
+// iCloud Drive container (read by the companion iOS app). BOTH flavors publish:
+// MAS resolves the container via NSFileManager::URLForUbiquityContainerIdentifier
+// (sandbox-correct), the DMG resolves it by the direct unsandboxed path. Cocoa-
+// based, so gated to macOS (must stay off Windows), not to the MAS feature.
+#[cfg(target_os = "macos")]
 mod icloud_writer;
-// Phase ②b, MAS flavor only: drives the periodic publish of the analytics
-// snapshot into the app's iCloud container (sibling to the sidecar supervisor).
-#[cfg(feature = "mas")]
+// Phase ②b: drives the periodic publish of the analytics snapshot into the
+// app's iCloud container (sibling to the sidecar supervisor). Both flavors.
+#[cfg(target_os = "macos")]
 mod icloud_publish;
 mod sidecar;
 mod tray;
@@ -344,12 +346,14 @@ pub fn run() {
                 }
             });
 
-            // Phase ②b (MAS only): publish the analytics snapshot to the app's
-            // iCloud container on a cadence so the companion iOS app can mirror
-            // the desktop analytics. Runs as a SIBLING to the sidecar supervisor
-            // (NOT inside its loop, whose shutdown/respawn invariants are
-            // delicate) and exits cleanly on quit via AppState::shutdown.
-            #[cfg(feature = "mas")]
+            // Phase ②b: publish the analytics snapshot to the app's iCloud
+            // container on a cadence so the companion iOS app can mirror the
+            // desktop analytics. BOTH flavors publish — MAS resolves the
+            // container via the ubiquity API (sandbox-correct), the DMG by the
+            // direct unsandboxed path. Runs as a SIBLING to the sidecar
+            // supervisor (NOT inside its loop, whose shutdown/respawn invariants
+            // are delicate) and exits cleanly on quit via AppState::shutdown.
+            #[cfg(target_os = "macos")]
             {
                 let publish_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {

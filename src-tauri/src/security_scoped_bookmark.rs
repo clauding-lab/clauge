@@ -31,8 +31,7 @@ use std::sync::OnceLock;
 use objc2::rc::Retained;
 use objc2::runtime::Bool;
 use objc2_foundation::{
-    NSData, NSFileManager, NSString, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions,
-    NSURL,
+    NSData, NSString, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions, NSURL,
 };
 
 /// Process-wide cache for the resolved ~/.claude/ path.
@@ -357,49 +356,6 @@ pub fn clear_bookmark(app: &tauri::AppHandle) -> Result<(), BookmarkError> {
 }
 
 // -----------------------------------------------------------------------------
-// iCloud ubiquity-container resolution (Phase ②b)
-// -----------------------------------------------------------------------------
-//
-// The companion iOS app reads a small analytics snapshot the Mac publishes into
-// the app's own iCloud Drive container. The container is granted by the
-// `com.apple.developer.*icloud*` entitlements (NOT a user gesture), so unlike
-// the ~/.claude/ bookmark above there is no security scope to start/stop and no
-// persisted blob — we just ask Cocoa to resolve the container URL.
-//
-// CRITICAL (AGENTS landmine #35): NEVER derive this path from $HOME /
-// NSHomeDirectory. Under the App Sandbox both redirect to the container Data
-// dir, so a home-relative path silently dead-writes inside the sandbox. The
-// ONLY correct source is NSFileManager::URLForUbiquityContainerIdentifier.
-
-/// Dotted iCloud container identifier. MUST match the
-/// `com.apple.developer.ubiquity-container-identifiers` entitlement value and
-/// the App ID's attached container in the Developer portal.
-const ICLOUD_CONTAINER_ID: &str = "iCloud.com.clauding.clauge";
-
-/// Resolve the app's iCloud ubiquity container as a live `NSURL`.
-///
-/// Returns `None` when the container can't be resolved — which cleanly covers
-/// BOTH "iCloud entitlement missing / build not signed for iCloud" and "user
-/// isn't signed into iCloud / iCloud Drive off". Callers treat `None` as "skip
-/// this publish tick", never as a hard error. Re-resolve fresh each tick (cheap
-/// after first use) rather than caching, so a user who signs into iCloud AFTER
-/// launch starts syncing without an app restart.
-///
-/// The returned `Retained<NSURL>` is what the coordinated write must use
-/// directly — build child paths via `NSURL::URLByAppendingPathComponent`
-/// (AGENTS landmine #37), NEVER by round-tripping through `path()` + string
-/// concat (`NSURL::path()` is percent-decoded).
-///
-/// THREADING (AGENTS landmine #36): `URLForUbiquityContainerIdentifier` may
-/// block on first use while Cocoa provisions the container, so every caller
-/// MUST invoke this inside `tauri::async_runtime::spawn_blocking`.
-pub fn resolve_icloud_container() -> Option<Retained<NSURL>> {
-    let fm = NSFileManager::defaultManager();
-    let id = NSString::from_str(ICLOUD_CONTAINER_ID);
-    fm.URLForUbiquityContainerIdentifier(Some(&id))
-}
-
-// -----------------------------------------------------------------------------
 // Internal helpers (not pub) — store I/O and path defaulting
 // -----------------------------------------------------------------------------
 
@@ -567,22 +523,5 @@ mod tests {
         // there's no such code path yet (Task 6 wires it), so the static
         // stays empty for the test's duration.
         assert!(MAS_CLAUDE_DIR.get().is_none());
-    }
-
-    #[test]
-    #[ignore = "requires an entitled + signed .app (iCloud container entitlement); \
-                `cargo test` runs unsigned/unentitled so the resolve returns None. \
-                Verified from the built local-test .app in Task 6 instead."]
-    fn icloud_container_resolves_when_entitled() {
-        // When run from the entitled, signed local-test .app on a Mac signed
-        // into iCloud, the container resolves to a path ending in the
-        // file-provider-mangled container name.
-        let url = resolve_icloud_container()
-            .expect("iCloud container should resolve from an entitled build");
-        let path = url.path().expect("resolved NSURL should have a POSIX path");
-        assert!(
-            path.to_string().contains("iCloud~com~clauding~clauge"),
-            "unexpected container path: {path}"
-        );
     }
 }
