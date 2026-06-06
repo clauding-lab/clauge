@@ -667,9 +667,15 @@ Phase ②b publishes an analytics snapshot into the app's own iCloud container (
 
 Adding iCloud to the App ID in the Developer portal invalidates the existing distribution profile; it MUST be regenerated and re-downloaded to `src-tauri/embedded.provisionprofile`, or the build/Transporter rejects the entitlement. The profile is the source of truth for WHICH iCloud keys are allowed — Apple's generator emits a superset (CloudKit, KVS, dev-container, environment). The app's entitlements must be a SUBSET: declaring a key the profile lacks is the Transporter 90889 rejection vector, not a missing one. GUARD (before editing the plist): `security cms -D -i src-tauri/embedded.provisionprofile | plutil -extract Entitlements xml1 -o - - | grep -iE "icloud|ubiquity"` must return the keys; if empty, STOP and regenerate. (The "Clauge Mac App Store v0.9.0" profile carries iCloud as of build 7.)
 
-### 34. NEVER derive the iCloud container path from `$HOME` / `NSHomeDirectory()` — only `URLForUbiquityContainerIdentifier` is correct under the sandbox
+### 34. iCloud container resolution is FLAVOR-SPLIT: MAS uses `URLForUbiquityContainerIdentifier` (NEVER `$HOME`); DMG uses the direct `~/Library/Mobile Documents` path — cfg-gated so it can't apply to MAS
 
-Under the App Sandbox, `$HOME` and `NSHomeDirectory()` redirect to `~/Library/Containers/com.clauding.clauge/Data`, so a home-relative path to `~/Library/Mobile Documents/…` SILENTLY DEAD-WRITES inside the sandbox container (the file never reaches iCloud). The only correct source is `NSFileManager::URLForUbiquityContainerIdentifier(Some("iCloud.com.clauding.clauge"))` (`src-tauri/src/security_scoped_bookmark.rs::resolve_icloud_container`). The ②a spike's `scripts/icloud-spike-write.cjs` worked ONLY because it ran un-sandboxed under DMG. GUARD: grep the snapshot write path for any `homedir` / `Mobile Documents` string-building — there must be none.
+Under the App Sandbox (MAS), `$HOME`/`NSHomeDirectory()` redirect to `~/Library/Containers/com.clauding.clauge/Data`, so a home-relative path to `~/Library/Mobile Documents/…` SILENTLY DEAD-WRITES inside the sandbox container (the file never reaches iCloud). So the MAS resolver MUST use `NSFileManager::URLForUbiquityContainerIdentifier(Some("iCloud.com.clauding.clauge"))`.
+
+Both resolvers now live in `src-tauri/src/icloud_writer.rs::resolve_icloud_container`, cfg-branched (relocated from `security_scoped_bookmark.rs` in v1.1.0):
+- `#[cfg(feature = "mas")]` → the ubiquity API (sandbox-correct).
+- `#[cfg(not(feature = "mas"))]` → the DMG build is UN-sandboxed, so it INTENTIONALLY resolves the container by the direct path `~/Library/Mobile Documents/iCloud~com~clauding~clauge` (returns `None` if `$HOME` unset or the dir is absent). The ②a spike proved an un-sandboxed app writes there with NO iCloud entitlement and the OS syncs it. SAFE ONLY because the `cfg(not(mas))` gate makes the home-path version **uncompilable in the MAS build** — it can never reintroduce the sandbox dead-write.
+
+GUARD: the `~/Library/Mobile Documents` string must appear ONLY inside a `#[cfg(not(feature = "mas"))]` block (or an `#[ignore]` integration test). If it ever appears in MAS-reachable code, that's the dead-write bug. (Enabled DMG iCloud publishing in v1.1.0; DMG entitlements still carry NO iCloud keys — the unsandboxed filesystem write needs none.)
 
 ### 35. `NSFileCoordinator` resolve + write run in `spawn_blocking`; use `NSFileCoordinator::new()`; the `Retained<NSURL>` never crosses threads
 
