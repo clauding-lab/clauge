@@ -1,4 +1,4 @@
-//! iCloud snapshot publisher (Phase ②b, MAS flavor only).
+//! iCloud snapshot publisher (Phase ②b, both flavors).
 //!
 //! Runs as a SIBLING task to the sidecar supervisor (see lib.rs setup) — NOT
 //! inside `spawn_and_supervise`, whose shutdown/respawn/crash-breaker invariants
@@ -14,8 +14,12 @@
 //!
 //! The loop exits cleanly on quit by racing `AppState::shutdown` (the same
 //! `Notify` the supervisor uses) and checking the `shutting_down` flag.
+//!
+//! BOTH flavors run this loop: MAS resolves the iCloud container via the
+//! sandbox-correct ubiquity API, the DMG via the direct unsandboxed path
+//! (`icloud_writer::resolve_icloud_container`, cfg-branched by flavor).
 
-#![cfg(feature = "mas")]
+#![cfg(target_os = "macos")]
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -84,7 +88,7 @@ async fn publish_once(
     // thread (landmine #36). `None` cleanly covers "not signed in" / "no
     // entitlement" — skip the tick quietly rather than erroring loudly.
     let available = tauri::async_runtime::spawn_blocking(|| {
-        crate::security_scoped_bookmark::resolve_icloud_container().is_some()
+        crate::icloud_writer::resolve_icloud_container().is_some()
     })
     .await
     .map_err(|e| format!("resolve join failed: {e}"))?;
@@ -120,7 +124,7 @@ async fn publish_once(
     // Resolve + coordinated write on ONE blocking thread so the Retained<NSURL>
     // never crosses threads (landmine #36).
     tauri::async_runtime::spawn_blocking(move || {
-        match crate::security_scoped_bookmark::resolve_icloud_container() {
+        match crate::icloud_writer::resolve_icloud_container() {
             Some(container) => crate::icloud_writer::write_snapshot_coordinated(&container, &bytes),
             None => Err("iCloud container vanished before write".to_string()),
         }

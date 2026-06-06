@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0] — 2026-06-06
+
+### Added
+
+- **Companion sync to iPhone.** Clauge now publishes a small private analytics snapshot to your own iCloud so the new **Clauge — Token Analytics** app for iPhone can show the same usage on the go — ROI, spend, your 180-day activity heatmap, and by-model and by-project breakdowns. It refreshes automatically in the background (~every 5 minutes), stays in your own private iCloud, and contains only your locally-computed stats — no credentials, cookies, or API keys. Everything Clauge does on your Mac still runs locally; no account, nothing sold.
+
+---
+
 ## [1.0.0] — 2026-06-02
 
 ### Added
