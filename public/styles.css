@@ -1257,6 +1257,34 @@ body.loading { cursor: progress; }
 .conn-cta:focus-visible { outline: 2px solid var(--brand-2, #4a9eff); outline-offset: 2px; }
 .conn-cta[hidden] { display: none; }
 
+/* v1.2.0 Item 4: iCloud sync-to-iPhone row states. ok = delivered,
+   pending = written-not-yet-confirmed (neutral), error/stale = needs attention.
+   Reuses the existing dashboard palette tokens (no new colors). */
+.connection-row[data-state="ok"] .conn-dot { color: var(--ok); }
+.connection-row[data-state="pending"] .conn-dot { color: oklch(60% 0 0); }
+.connection-row[data-state="error"] .conn-dot,
+.connection-row[data-state="stale"] .conn-dot { color: var(--crit); }
+.connection-row[data-state="unknown"] .conn-dot { color: var(--text-4); }
+
+/* v1.2.0 Item 4: net-new sync-health banner on the dashboard main view.
+   Shown only for error/stale (connections.js toggles `hidden`). Warn-tinted
+   glass card — matches the dashboard's depth/glass language. */
+.sync-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  border-radius: var(--r-md);
+  background: var(--warn-tint);
+  border: 1px solid rgba(232, 176, 106, 0.28);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.sync-banner[hidden] { display: none; }
+.sync-banner-icon { color: var(--warn); font-size: 15px; line-height: 1; }
+.sync-banner-text { flex: 1 1 auto; }
+
 /* v0.7.2: Refresh button on Claude Code connection row.
    Manually re-triggers the keychain read after `claude /login`. */
 .conn-refresh {
