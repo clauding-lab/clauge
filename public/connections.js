@@ -47,6 +47,16 @@ const STATE_LABELS = {
     granted: 'Granted — Clauge can read ~/.claude/ credentials + transcripts.',
     not_granted: 'Not granted — Clauge cannot read transcripts until you re-select the folder.',
   },
+  // v1.2.0 Item 4: iCloud sync-to-iPhone row. The {n} placeholder is filled
+  // with a human "Nm/Nh ago" string by renderSyncRow; the static strings here
+  // are fallbacks when the age is unknown.
+  sync: {
+    ok: 'Synced to iCloud — your iPhone has the latest snapshot.',
+    pending: 'Uploading to iCloud…',
+    error: 'Upload failing — your iPhone may be showing stale data.',
+    stale: 'No upload in 24h+ — your iPhone may be showing stale data.',
+    unknown: 'Not publishing yet (sign in to iCloud Drive to sync your iPhone).',
+  },
 };
 
 // State name shown to assistive tech via aria-label on .conn-dot
@@ -62,6 +72,11 @@ const A11Y_DOT_LABEL = {
   not_connected: 'not connected',
   not_detected: 'not connected',
   not_granted: 'not connected',
+  ok: 'synced',
+  pending: 'uploading',
+  error: 'upload failing',
+  stale: 'upload stale',
+  unknown: 'not syncing',
 };
 
 async function refreshConnections() {
@@ -74,6 +89,16 @@ async function refreshConnections() {
     return;
   }
   applyStatus(status);
+
+  // v1.2.0 Item 4: iCloud sync-health is a separate, cheap IPC (persisted
+  // state only). It's macOS+Tauri-only; a reject (Windows / no command) just
+  // leaves the row at "unknown" and the banner hidden.
+  try {
+    const health = await ClaugeBridge.getSyncHealth();
+    renderSyncRow(health);
+  } catch (e) {
+    console.warn('[connections] sync-health unavailable', e);
+  }
 }
 
 function applyStatus(status) {
@@ -174,6 +199,48 @@ function applyClaudeCodeLogsRow(logs) {
     dot.setAttribute('aria-label', label);
     dot.removeAttribute('aria-hidden');
   }
+}
+
+// v1.2.0 Item 4: render the iCloud sync-to-iPhone row + drive the main-view
+// banner. `health` = { state, lastSeq, lastPublishedAt, detail } from
+// get_sync_health. The banner shows ONLY for error/stale (the actionable
+// states); ok/pending/unknown hide it.
+function renderSyncRow(health) {
+  if (!health || typeof health.state !== 'string') return;
+  const state = health.state;
+  applyRow('conn-icloud-sync', state, STATE_LABELS.sync);
+
+  // Overlay a human "synced Nm ago" on the healthy state so the row is
+  // concrete, not just "synced".
+  if (state === 'ok' && typeof health.lastPublishedAt === 'number') {
+    const row = document.getElementById('conn-icloud-sync');
+    const statusEl = row && row.querySelector('.conn-status');
+    if (statusEl) {
+      statusEl.textContent = `Synced to iCloud ${syncAgo(health.lastPublishedAt)} — your iPhone has the latest.`;
+    }
+  }
+
+  // Banner: actionable states only. Prefer the backend's privacy-safe `detail`
+  // (already generic per landmine #34); fall back to the row label.
+  const banner = document.getElementById('sync-banner');
+  const bannerText = document.getElementById('sync-banner-text');
+  if (!banner || !bannerText) return;
+  const show = state === 'error' || state === 'stale';
+  banner.hidden = !show;
+  if (show) {
+    bannerText.textContent = health.detail || STATE_LABELS.sync[state] || '';
+  }
+}
+
+// Pure: seconds-since-epoch → a short "Nm ago" / "Nh ago" / "Nd ago" string.
+function syncAgo(epochSecs) {
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - epochSecs);
+  if (secs < 60) return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function applyRow(rowId, state, labelMap) {

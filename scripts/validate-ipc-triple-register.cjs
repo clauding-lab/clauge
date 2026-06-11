@@ -65,11 +65,15 @@ function findTauriCommands(rustFiles) {
 
 function readInvokeHandlerCommands(libRsPath) {
   const src = fs.readFileSync(libRsPath, 'utf8');
-  const m = src.match(/generate_handler!\[([\s\S]*?)\]/);
+  // Strip inner attribute blocks (e.g. a cfg-gated entry like
+  // `#[cfg(target_os = "macos")]`) BEFORE locating the macro body. Their `]`
+  // would otherwise truncate the non-greedy body capture early and hide the
+  // command listed beneath them. Stripping first also keeps the attribute's
+  // tokens (cfg, target_os, macos) out of the harvested command-name set.
+  const deAttributed = src.replace(/#\[[^\]]*\]/g, '');
+  const m = deAttributed.match(/generate_handler!\[([\s\S]*?)\]/);
   if (!m) throw new Error('generate_handler![] block not found in lib.rs');
-  const body = m[1]
-    .replace(/\/\/[^\n]*/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const body = m[1].replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const names = new Set();
   for (const n of collectMatches(body, /(?:[a-zA-Z_][a-zA-Z0-9_]*::)*([a-zA-Z_][a-zA-Z0-9_]*)/g)) {
     names.add(n[1]);

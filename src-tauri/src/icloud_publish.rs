@@ -38,6 +38,10 @@ const FIRST_PUBLISH_DELAY_SECS: u64 = 20;
 /// Tauri-store keys (in the parent's own settings.json — sandbox-local under MAS).
 const SEQ_KEY: &str = "icloud_snapshot_seq";
 const WRITER_ID_KEY: &str = "icloud_writer_id";
+/// v1.2.0 Item 4: persisted sync-health state, read cheaply by get_sync_health.
+const LAST_PUBLISHED_AT_KEY: &str = "icloud_last_published_at";
+const LAST_UPLOAD_OK_KEY: &str = "icloud_last_upload_ok";
+const LAST_UPLOAD_ERROR_KEY: &str = "icloud_last_upload_error_present";
 
 /// Drive the publish loop until the app shuts down.
 pub async fn run(app: tauri::AppHandle) {
@@ -108,6 +112,21 @@ async fn publish_once(
             "iCloud container not resolvable (not signed in or no entitlement)".to_string(),
         ));
     }
+
+    // v1.2.0 Item 4: read the PREVIOUS cycle's upload status (the file the last
+    // tick wrote) BEFORE this tick's write — IsUploaded reads false right after
+    // a fresh write, so we read the older file's settled state. Same thread as
+    // the future write (landmine #35); cheap enough to do per tick.
+    let (upload_ok, upload_error) =
+        tauri::async_runtime::spawn_blocking(
+            || match crate::icloud_writer::resolve_icloud_container() {
+                Some(container) => crate::icloud_writer::read_upload_status(&container),
+                None => (false, false),
+            },
+        )
+        .await
+        .map_err(|e| PublishError::Failure(format!("upload-status join failed: {e}")))?;
+    persist_upload_status(app, upload_ok, upload_error);
 
     // Read the sidecar port (None until the sidecar binds it).
     let port = {
@@ -180,6 +199,21 @@ fn persist_seq(app: &tauri::AppHandle, seq: u64) {
         store.set(SEQ_KEY, serde_json::json!(seq));
         if let Err(e) = store.save() {
             log::warn!("iCloud publish: failed to persist seq {seq}: {e}");
+        }
+    }
+}
+
+/// Persist the previous-cycle upload status + a publish timestamp so the cheap
+/// `get_sync_health` IPC can derive state without touching the container.
+/// Best-effort: a failure only delays the next health read by one tick.
+fn persist_upload_status(app: &tauri::AppHandle, upload_ok: bool, upload_error: bool) {
+    if let Ok(store) = app.store("settings.json") {
+        let now = chrono::Utc::now().timestamp();
+        store.set(LAST_PUBLISHED_AT_KEY, serde_json::json!(now));
+        store.set(LAST_UPLOAD_OK_KEY, serde_json::json!(upload_ok));
+        store.set(LAST_UPLOAD_ERROR_KEY, serde_json::json!(upload_error));
+        if let Err(e) = store.save() {
+            log::warn!("iCloud publish: failed to persist upload status: {e}");
         }
     }
 }

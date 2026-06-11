@@ -36,6 +36,11 @@ mod icloud_writer;
 #[cfg(target_os = "macos")]
 mod icloud_publish;
 mod sidecar;
+// v1.2.0 Item 4: iCloud upload-confirmation health (sync-health). macOS-only
+// (reads iCloud resource values via Cocoa); both flavors. Pure derivation is
+// unit-tested; the native read runs behind icloud_publish's spawn_blocking.
+#[cfg(target_os = "macos")]
+mod sync_health;
 mod tray;
 mod windows;
 
@@ -399,6 +404,8 @@ pub fn run() {
             ipc::is_mas_flavor,
             ipc::grant_claude_dir_access,
             ipc::has_claude_dir_bookmark,
+            #[cfg(target_os = "macos")]
+            sync_health::get_sync_health,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

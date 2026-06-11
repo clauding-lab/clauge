@@ -58,6 +58,14 @@
 
 <main>
 
+<!-- v1.2.0 Item 4: iCloud sync-health banner. Hidden by default; connections.js
+     unhides it ONLY when sync state ∈ {error, stale}. Reuses the glass + warn
+     tokens — the one net-new UI piece this release. -->
+<div class="sync-banner" id="sync-banner" role="status" hidden>
+  <span class="sync-banner-icon" aria-hidden="true">⚠</span>
+  <span class="sync-banner-text" id="sync-banner-text"></span>
+</div>
+
 <!-- ═══════════════════════════════ OVERVIEW ═══════════════════════════════ -->
 <section data-panel="overview">
 
@@ -479,6 +487,18 @@
               </div>
               <div class="conn-actions">
                 <button type="button" class="conn-cta" id="regrant-claude-code-logs">Re-select folder</button>
+              </div>
+            </div>
+
+            <!-- Row 5: iCloud sync to iPhone (v1.2.0 Item 4). Driven by the
+                 get_sync_health IPC on the same 30s connections poll. data-state
+                 ∈ ok|pending|error|stale|unknown drives the dot color; the
+                 .conn-status text reports last-upload age / wedge advice. -->
+            <div class="connection-row" id="conn-icloud-sync" data-state="unknown">
+              <span class="conn-dot" aria-hidden="true">●</span>
+              <div class="conn-body">
+                <div class="conn-title">iCloud sync to iPhone</div>
+                <div class="conn-status">Checking…</div>
               </div>
             </div>
           </section>

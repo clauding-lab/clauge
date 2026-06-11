@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-sync-health"
+description = "Enables the get_sync_health command without any pre-configured scope."
+commands.allow = ["get_sync_health"]
+
+[[permission]]
+identifier = "deny-get-sync-health"
+description = "Denies the get_sync_health command without any pre-configured scope."
+commands.deny = ["get_sync_health"]
