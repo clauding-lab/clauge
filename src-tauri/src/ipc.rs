@@ -467,7 +467,11 @@ pub async fn proxy_fetch(
     let url = format!("http://127.0.0.1:{}{}", port, path);
     // Method-pinned GET. DO NOT switch to a method parameter without re-reviewing
     // the IPC threat model — DELETE /api/usage exists on the sidecar.
-    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let resp = crate::http_client::LOCAL_CLIENT
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {} for {}", resp.status(), path));
     }
@@ -569,11 +573,12 @@ pub async fn get_connection_status(
         .and_then(|g| *g)
         .unwrap_or(3456);
     let url = format!("http://127.0.0.1:{}/api/health", port);
-    let client = reqwest::Client::builder()
+    match crate::http_client::LOCAL_CLIENT
+        .get(&url)
         .timeout(LOCAL_HEALTH_TIMEOUT)
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    match client.get(&url).send().await {
+        .send()
+        .await
+    {
         Ok(res) => match res.json::<serde_json::Value>().await {
             Ok(json) => {
                 if let Some(ts) = json.get("extensionLastSeenAt").and_then(|v| v.as_str()) {

@@ -45,11 +45,12 @@ pub async fn probe(port: u16) -> bool {
 /// helper stays a pure function that accepts any string for unit testing.
 async fn probe_with_body(port: u16) -> Option<String> {
     let url = format!("http://127.0.0.1:{}/api/health", port);
-    let client = reqwest::Client::builder()
+    let resp = crate::http_client::LOCAL_CLIENT
+        .get(&url)
         .timeout(Duration::from_secs(1))
-        .build()
+        .send()
+        .await
         .ok()?;
-    let resp = client.get(&url).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
     }

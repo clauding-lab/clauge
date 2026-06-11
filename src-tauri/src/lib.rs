@@ -6,6 +6,7 @@ pub mod anthropic_oauth;
 #[cfg(not(feature = "mas"))]
 mod claude_ai_session;
 pub mod connections;
+mod http_client;
 mod ipc;
 mod keychain;
 mod keychain_cache;

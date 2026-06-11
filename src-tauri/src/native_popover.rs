@@ -678,7 +678,7 @@ fn spawn_tray_title_poller(app_handle: tauri::AppHandle) {
                 .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
             let Some(port) = port else { continue };
             let url = format!("http://127.0.0.1:{}/api/usage", port);
-            let pct = match reqwest::get(&url).await {
+            let pct = match crate::http_client::LOCAL_CLIENT.get(&url).send().await {
                 Ok(resp) => match resp.json::<serde_json::Value>().await {
                     Ok(json) => json
                         .get("plan")
