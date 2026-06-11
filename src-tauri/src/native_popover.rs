@@ -237,6 +237,18 @@ fn handle_script_message(body: &objc2::runtime::AnyObject) {
                 });
             }
         }
+        "quit" => {
+            // v1.2.0: the ✕ Quit button and ⌘Q have posted {cmd:'quit'} since
+            // the v0.5.0 native-popover migration, but no arm existed — the
+            // message died in the catch-all below. Mirrors menu_quit; sidecar
+            // teardown + port-file cleanup run downstream in lib.rs's
+            // RunEvent::ExitRequested handler.
+            if let Some(app) = APP_HANDLE_REF.get() {
+                app.exit(0);
+            } else {
+                log::warn!("native_popover: quit but APP_HANDLE_REF unset");
+            }
+        }
         other => log::warn!("native_popover: unknown script message cmd={}", other),
     }
 }
