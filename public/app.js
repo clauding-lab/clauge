@@ -269,6 +269,8 @@ let __planCardMode = null;          // 'placeholder' | 'ingested' | null
 let __planStatusTone = null;        // 'crit' | 'amber' | 'healthy' | 'idle'
 let __planInlineHasBalance = null;  // true if the bal line is rendered
 let __planGaugeShape = null;        // gauge count — re-render (not surgical-update) when it changes
+let __lastSuccessAt = null;         // epoch-ms of the last fully-successful refresh (SWR aging anchor)
+let __lastRefreshFailed = false;    // did the most recent refresh attempt fail (drives the not-live dot)
 
 function renderPlanCapacity() {
   const usage = state.data.usage;
@@ -361,8 +363,10 @@ function renderPlanCapacity() {
   }
 
   // Sync line — preserve the .dot-live element so its CSS pulse animation
-  // (styles.css: @keyframes pulse) doesn't restart at frame 0 every 60s.
-  updatePlanMeta(planMeta, fmtAgo(usage.ingestedAt));
+  // (styles.css: @keyframes pulse) doesn't restart at frame 0 every 60s. The
+  // text + dot state come from SWR's syncMeta (aging + fetch-success), no
+  // longer raw fmtAgo(ingestedAt) — data age and live-state are independent.
+  updatePlanMeta(planMeta);
 
   // Topbar inline plan summary — rebuild only when the balance line appears
   // or disappears; otherwise update values in place.
@@ -517,23 +521,36 @@ function updateBigRings(body, gauges) {
   }
 }
 
-function updatePlanMeta(planMeta, agoText) {
-  // Preserve the existing .dot-live element so the @keyframes pulse animation
-  // in styles.css doesn't restart at frame 0 each tick. Mutate only the
-  // trailing text node's .data — characterData mutation, not childList, so
-  // neighbouring elements are untouched.
-  const dot = planMeta.querySelector('.dot-live');
+function updatePlanMeta(planMeta) {
+  // SWR sync line. Recompute every tick (incl. failures) so "synced ago" keeps
+  // AGING and the dot reflects fetch-success, not data age. Preserve the
+  // existing .dot-live element so its @keyframes pulse doesn't restart at frame
+  // 0 (landmine #22 / v0.9.9 flicker): mutate the trailing text node's .data,
+  // and toggle the not-live styling on the dot in place (grey + animation:none).
+  const meta = window.ClaugeDashSwr.syncMeta({
+    lastSuccessAt: __lastSuccessAt,
+    lastRefreshFailed: __lastRefreshFailed,
+    nowMs: Date.now(),
+  });
+  let dot = planMeta.querySelector('.dot-live');
   if (!dot) {
-    planMeta.innerHTML = `<span class="dot-live"></span>synced ${escapeHtml(agoText)} · auto-refresh 60s`;
-    return;
-  }
-  const newText = `synced ${agoText} · auto-refresh 60s`;
-  let textNode = dot.nextSibling;
-  while (textNode && textNode.nodeType !== Node.TEXT_NODE) textNode = textNode.nextSibling;
-  if (textNode) {
-    if (textNode.data !== newText) textNode.data = newText;
+    planMeta.innerHTML = `<span class="dot-live"></span>${escapeHtml(meta.text)}`;
+    dot = planMeta.querySelector('.dot-live');
   } else {
-    planMeta.appendChild(document.createTextNode(newText));
+    let textNode = dot.nextSibling;
+    while (textNode && textNode.nodeType !== Node.TEXT_NODE) textNode = textNode.nextSibling;
+    if (textNode) {
+      if (textNode.data !== meta.text) textNode.data = meta.text;
+    } else {
+      planMeta.appendChild(document.createTextNode(meta.text));
+    }
+  }
+  // Live (pulsing green, default CSS) vs not-live (grey, no pulse) — the exact
+  // not-live variant the placeholder branch uses (app.js:282 / styles.css:921).
+  if (meta.live) {
+    setAttrIfChanged(dot, 'style', null);
+  } else {
+    setAttrIfChanged(dot, 'style', 'background:var(--text-3);box-shadow:none;animation:none');
   }
 }
 
@@ -1203,6 +1220,9 @@ async function refreshAll() {
 
     state.data = { health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi };
 
+    __lastSuccessAt = Date.now();
+    __lastRefreshFailed = false;
+
     renderHeaderMeta();
     renderPlanCapacity();
     renderFinanceSide();
@@ -1222,6 +1242,8 @@ async function refreshAll() {
     return true;
   } catch (err) {
     console.error('refreshAll failed', err);
+    __lastRefreshFailed = true;
+    renderPlanCapacity();
     return false;
   } finally {
     document.body.classList.remove('loading');
@@ -1326,10 +1348,14 @@ initialLoad();
 setInterval(async () => {
   try {
     state.data.usage = await api('/api/usage');
+    __lastSuccessAt = Date.now();
+    __lastRefreshFailed = false;
     renderPlanCapacity();
     renderFinanceSide();
     if (state.tab === 'settings') renderSettings();
   } catch (err) {
     console.error('plan auto-refresh', err);
+    __lastRefreshFailed = true;
+    renderPlanCapacity();
   }
 }, 60_000);

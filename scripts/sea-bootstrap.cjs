@@ -40,6 +40,7 @@ const ASSETS = [
   'package.json',
   'public/index.html',
   'public/app.js',
+  'public/swr.js',
   'public/connections.js',
   'public/styles.css',
   'public/clauge-icon-1024.svg',
