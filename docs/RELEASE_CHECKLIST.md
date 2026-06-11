@@ -18,7 +18,7 @@ A single source of truth for "where does each release-time identifier or secret 
 
 | Identifier | Lives in | Rotate via |
 |---|---|---|
-| `APPLE_TEAM_ID` (`CY4FK9S7X9`) | Apple Developer membership; surfaces in `tauri.mas.conf.json::providerShortName` (on `mas-implement-session` branch) | App Store Connect → Membership |
+| `APPLE_TEAM_ID` (`CY4FK9S7X9`) | Apple Developer membership; surfaces in `tauri.mas.conf.json::providerShortName` (on `main`, with the full MAS signing/config set) | App Store Connect → Membership |
 | `APPLE_ID` (`adnan_du@yahoo.com`) | Apple ID; surfaces in `xcrun notarytool` invocations | Apple ID account settings |
 | `APPLE_APP_SPECIFIC_PASSWORD` | GitHub Secret `APPLE_APP_SPECIFIC_PASSWORD` + local `.mac-release.env` | https://appleid.apple.com → App-Specific Passwords |
 | `BUNDLE_ID` (`com.clauding.clauge`) | `src-tauri/tauri.conf.json::bundle.identifier`; also load-bearing in keychain item names (see AGENTS.md landmine #4) | DO NOT rotate without coordinated migration of keychain items + ASC record |

@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0] — 2026-06-12
+
+### Added
+
+- **iCloud sync-health** — a new "iCloud sync to iPhone" status row in Settings → Connections shows whether the snapshot the Mac publishes is actually reaching iCloud, and a banner appears on the dashboard when it isn't (e.g. an iCloud sign-in issue), so a silent sync wedge is finally visible.
+- A quiet Settings line that flags when Anthropic adds a usage category Clauge doesn't yet recognize (so a new weekly bucket is noticed before it silently makes the dashboard incomplete).
+
+### Fixed
+
+- Menu-bar popover: the ✕ Quit button and ⌘Q now actually quit the app (both were silently dead since the v0.5.0 native-popover migration).
+- Connections panel: an expired Claude Code token now self-heals within one 30-second poll after Claude Code rotates it — no more permanent "re-run `claude /login`" until restart.
+- Every parent-side HTTP call now carries a timeout (shared 5-second client); a wedged sidecar response can no longer freeze the menu-bar percentage or the iCloud snapshot publisher forever. iCloud publish failures now log at warning level.
+- A failed refresh no longer wipes the popover to 0% — it keeps the last good data and shows an honest "as of" time instead of "just now"; on the dashboard, the "live" dot no longer keeps pulsing after a failed refresh and the "synced ago" timestamp keeps aging instead of freezing.
+- Frontend fetches now time out after 5 seconds (no more permanently stuck spinner), and a slow refresh can no longer overlap the next one.
+- Daily Routines no longer phantoms "0 of 15 runs" when its bucket is dropped from the data.
+
+---
+
 ## [1.1.0] — 2026-06-06
 
 ### Added
