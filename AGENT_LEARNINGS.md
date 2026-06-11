@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-12 — v1.2.0 | Popover Quit dead since v0.5.0: the comment described intent, not reality
+
+**Trigger:** Post-launch review board flagged the popover ✕ Quit button doing nothing; recon confirmed `{cmd:'quit'}` lands in `handle_script_message`'s catch-all (unknown script message cmd=quit).
+
+**What went wrong:** The v0.5.0 native-popover migration moved quit from Tauri IPC to the webkit message channel, but the Rust match arm was never written. Three artifacts described the nonexistent path as real: `popover.js`'s header comment listed quit as a supported message, `ipc::quit_app` stayed registered in `lib.rs` (invokable from nowhere — the native popover has no Tauri IPC), and the validator comment at `scripts/validate-ipc-triple-register.cjs` exempts `quit_app` as "popover-only".
+
+**Lesson:** A comment, a registered command, or a validator exemption describing a message protocol is not evidence the other side implements it. When a channel handler has a catch-all, every documented command needs a check against the real handler's match arms.
+
+**Prevention:** v1.2.0 adds the missing `"quit"` arm. Before trusting any JS-side doc about webkit-channel commands, grep `native_popover.rs::handle_script_message` for a matching arm. (`openSettings`'s `cmd:'open_settings'` is the SAME class of trap — unhandled in Rust, zero callers since v0.9.4; do not rewire it without adding the arm.)
+
+**Hotfix:** None needed — shipped broken for ~10 minor versions with the tray-menu Quit as the working path; fixed in v1.2.0.
+
+**Cross-references:** AGENTS.md landmines #9 (no macOS E2E), #11 (popover invariants); clauge-ios AGENT_LEARNINGS "a documented-dead code path that is still REACHABLE is a shipped bug" (same family, 2026-06-11).
+
 ## 2026-06-11 — v1.1.0 | iCloud per-container upload wedge: the Mac published every 5 minutes into a container that hadn't uploaded for a day
 
 **Trigger:** Adnan's iPhone Analytics tab stuck on "Synced 1 day ago. Open Clauge on your Mac to update." despite the Mac app running and publishing (seq incrementing).
