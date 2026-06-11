@@ -907,6 +907,24 @@ function renderSettings() {
   // About version line — populate from /api/health.
   const aboutVersion = document.getElementById('set-about-version');
   if (aboutVersion && health?.version) aboutVersion.textContent = `v${health.version}`;
+  // v1.2.0: quiet schema-drift line. Shown only when normalizeUsage flagged
+  // an unrecognized seven_day_* bucket (a new Anthropic weekly category, as
+  // Claude Design once was). Pure rule duplicated from lib/usage-store.js's
+  // unknownKeysNoticeText (public/ is HTTP-served, cannot import lib/).
+  const driftRow = document.getElementById('set-schema-drift-row');
+  const driftText = document.getElementById('set-schema-drift-text');
+  if (driftRow && driftText) {
+    const keys = usage?.plan?.unknownSevenDayKeys;
+    const n = Array.isArray(keys) ? keys.length : 0;
+    if (n > 0) {
+      const noun = n === 1 ? 'category' : 'categories';
+      driftText.textContent = `${n} unrecognized usage ${noun} — an update may track it`;
+      driftRow.hidden = false;
+    } else {
+      driftText.textContent = '';
+      driftRow.hidden = true;
+    }
+  }
   initSettingsGeneralControls();
 }
 

@@ -216,3 +216,30 @@ describe('unknownKeysWarning', () => {
     assert.equal(calls.length, 0);
   });
 });
+
+import { unknownKeysNoticeText } from '../lib/usage-store.js';
+
+describe('unknownKeysNoticeText', () => {
+  it('returns null when there are no unknown keys', () => {
+    assert.equal(unknownKeysNoticeText([]), null);
+  });
+
+  it('returns null for a null/absent field', () => {
+    assert.equal(unknownKeysNoticeText(null), null);
+    assert.equal(unknownKeysNoticeText(undefined), null);
+  });
+
+  it('uses the singular form for exactly one unknown key', () => {
+    assert.equal(
+      unknownKeysNoticeText(['seven_day_aubergine']),
+      '1 unrecognized usage category — an update may track it'
+    );
+  });
+
+  it('uses the plural form for two or more unknown keys', () => {
+    assert.equal(
+      unknownKeysNoticeText(['seven_day_aubergine', 'seven_day_quokka']),
+      '2 unrecognized usage categories — an update may track it'
+    );
+  });
+});
