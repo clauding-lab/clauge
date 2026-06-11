@@ -22,7 +22,7 @@ function loadDashSwr() {
   return factory({});
 }
 
-const { syncMeta } = loadDashSwr();
+const { syncMeta, shouldSkipTick } = loadDashSwr();
 
 describe('syncMeta — dashboard SWR sync-line + dot state', () => {
   const T0 = Date.parse('2026-06-12T10:00:00Z');
@@ -56,5 +56,14 @@ describe('syncMeta — dashboard SWR sync-line + dot state', () => {
     const m = syncMeta({ lastSuccessAt: null, lastRefreshFailed: true, nowMs: T0 });
     assert.equal(m.live, false);
     assert.equal(m.text, 'not synced');
+  });
+});
+
+describe('shouldSkipTick — refresh overlap guard', () => {
+  it('runs the tick when no refresh is in flight', () => {
+    assert.equal(shouldSkipTick(false), false);
+  });
+  it('skips the tick when a refresh is already in flight', () => {
+    assert.equal(shouldSkipTick(true), true);
   });
 });

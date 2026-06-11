@@ -11,6 +11,7 @@
 let serverPort = 3456;
 let serverVersion = '0.5.0';
 let lastGoodUsage = null;       // SWR keep-last-good cache for /api/usage
+let refreshInFlight = false;    // overlap guard: skip a tick if a refresh is still running
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -196,10 +197,17 @@ function burnState(usagePct, timeElapsedPctValue) {
 // ────────────────────────────────────────────────────────────
 // Fetch
 // ────────────────────────────────────────────────────────────
+const FETCH_TIMEOUT_MS = 5000; // frontend per-call abort budget (Item 6)
+
 async function fetchJson(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`fetch ${path} failed: ${res.status}`);
-  return await res.json();
+  const { signal, clear } = window.ClaugeSwr.fetchTimeoutSignal(FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(path, { signal });
+    if (!res.ok) throw new Error(`fetch ${path} failed: ${res.status}`);
+    return await res.json();
+  } finally {
+    clear();
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -672,6 +680,8 @@ function showLoading() {
 }
 
 async function refresh() {
+  if (window.ClaugeSwr.fetchTimeoutSignal && refreshInFlight) return;
+  refreshInFlight = true;
   let healthOk = false;
   let loadingHidden = false;
   const hideLoading = () => {
@@ -721,6 +731,7 @@ async function refresh() {
     console.error('[Clauge popover] refresh failed:', err);
     renderHeaderSubhead(lastGoodUsage?.ingestedAt ?? null, false, true);
   } finally {
+    refreshInFlight = false;
     hideLoading();
     resizeToContent();
   }
@@ -837,7 +848,12 @@ async function init() {
     }
   });
 
-  await refresh();
+  // Boot-order: the 5s per-call abort means the first fetch can no longer hang
+  // forever. Don't let a failed first refresh block setInterval — start the
+  // interval regardless so the popover self-heals on the next tick (the failed
+  // first refresh already lands on a recoverable state: hideLoading() runs in
+  // refresh()'s finally, and the keep-last-good/stale subhead path renders).
+  refresh().catch((err) => console.error('[Clauge popover] initial refresh failed:', err));
   setInterval(refresh, 10_000);
 }
 

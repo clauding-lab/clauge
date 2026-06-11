@@ -48,7 +48,18 @@
     return { key: 'header.updatedMinutes', params: { minutes }, stale: false };
   }
 
+  // Frontend fetch timeout: an AbortController that fires after budgetMs. The
+  // caller wires signal into fetch(...) and MUST call clear() in finally so a
+  // fast fetch never trips the abort. Shared by popover fetchJson; the
+  // dashboard duplicates the same ~4 lines inline (the facade boundary makes a
+  // cross-surface shared helper not worth it — spec Item 6).
+  function fetchTimeoutSignal(budgetMs) {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), budgetMs);
+    return { signal: ctrl.signal, clear: () => clearTimeout(id) };
+  }
+
   if (typeof window !== 'undefined') {
-    window.ClaugeSwr = { pickUsage, subheadState };
+    window.ClaugeSwr = { pickUsage, subheadState, fetchTimeoutSignal };
   }
 })();

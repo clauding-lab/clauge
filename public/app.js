@@ -135,12 +135,19 @@ const TZ_LABEL = (() => {
 })();
 
 // ─── API ──────────────────────────────────────────────────
+const API_TIMEOUT_MS = 5000; // frontend per-call abort budget (Item 6)
 async function api(path, params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = qs ? `${path}?${qs}` : path;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${path} → ${res.status}`);
-  return res.json();
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`${path} → ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(id);
+  }
 }
 function commonParams() { return { period: state.period }; }
 
@@ -1345,7 +1352,10 @@ initialLoad();
 
 // Auto-refresh the plan-usage card every 60s — picks up new bookmarklet/
 // extension ingest without a full dashboard refresh.
+let __autoRefreshInFlight = false;
 setInterval(async () => {
+  if (window.ClaugeDashSwr.shouldSkipTick(__autoRefreshInFlight)) return;
+  __autoRefreshInFlight = true;
   try {
     state.data.usage = await api('/api/usage');
     __lastSuccessAt = Date.now();
@@ -1357,5 +1367,7 @@ setInterval(async () => {
     console.error('plan auto-refresh', err);
     __lastRefreshFailed = true;
     renderPlanCapacity();
+  } finally {
+    __autoRefreshInFlight = false;
   }
 }, 60_000);

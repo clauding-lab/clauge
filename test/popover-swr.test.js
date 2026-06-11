@@ -23,7 +23,7 @@ function loadSwr() {
   return factory({});
 }
 
-const { pickUsage, subheadState } = loadSwr();
+const { pickUsage, subheadState, fetchTimeoutSignal } = loadSwr();
 
 describe('pickUsage — popover keep-last-good substitution', () => {
   it('returns the fresh usage and caches it when the fetch succeeded', () => {
@@ -78,5 +78,26 @@ describe('subheadState — honest freshness, never "just now" after a failed fet
   it('is stale with no data age when the fetch failed and there is no ingestedAt', () => {
     const s = subheadState({ ingestedAt: null, fetchFailed: true, nowMs: NOW });
     assert.deepEqual(s, { key: 'header.updatedStale', params: undefined, stale: true });
+  });
+});
+
+describe('fetchTimeoutSignal — frontend abort budget', () => {
+  it('returns a signal that is not aborted before the budget elapses', () => {
+    const { signal, clear } = fetchTimeoutSignal(5000);
+    assert.equal(signal.aborted, false);
+    clear();
+  });
+
+  it('aborts the signal once the budget elapses', async () => {
+    const { signal } = fetchTimeoutSignal(10);
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(signal.aborted, true);
+  });
+
+  it('clear() cancels the pending abort so a fast fetch is never aborted', async () => {
+    const { signal, clear } = fetchTimeoutSignal(10);
+    clear();
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(signal.aborted, false);
   });
 });

@@ -42,7 +42,13 @@
     return { live, text };
   }
 
+  // Refresh overlap guard: skip this interval tick if a prior refresh is still
+  // in flight, so a slow refresh can't stack on the next tick.
+  function shouldSkipTick(inFlight) {
+    return inFlight === true;
+  }
+
   if (typeof window !== 'undefined') {
-    window.ClaugeDashSwr = { syncMeta };
+    window.ClaugeDashSwr = { syncMeta, shouldSkipTick };
   }
 })();
