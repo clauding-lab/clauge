@@ -85,7 +85,7 @@ const SNAPSHOT_FILENAME: &str = "clauge-snapshot.json";
 ///
 /// `container_url` MUST be a live `Retained<NSURL>` from
 /// `security_scoped_bookmark::resolve_icloud_container` — child paths are built
-/// via `URLByAppendingPathComponent` on it (AGENTS landmine #37), never by
+/// via `URLByAppendingPathComponent` on it (AGENTS landmine #36), never by
 /// string-concatenating its percent-decoded `path()`.
 ///
 /// Returns `Err` if EITHER the coordinator surfaces an `NSError` OR the inner
@@ -95,7 +95,7 @@ pub fn write_snapshot_coordinated(container_url: &NSURL, payload: &[u8]) -> Resu
     let fm = NSFileManager::defaultManager();
 
     // Build child URLs by appending components to the retained container NSURL
-    // (landmine #37) — NOT by string concat over the percent-decoded path.
+    // (landmine #36) — NOT by string concat over the percent-decoded path.
     let docs_dir = container_url
         .URLByAppendingPathComponent(&NSString::from_str(DOCUMENTS_SUBDIR))
         .ok_or_else(|| "failed to build Documents/ URL under iCloud container".to_string())?;
@@ -142,7 +142,7 @@ pub fn write_snapshot_coordinated(container_url: &NSURL, payload: &[u8]) -> Resu
         &accessor,
     );
 
-    // Check BOTH layers (landmine #37): the coordinator's NSError AND the inner
+    // Check BOTH layers (landmine #36): the coordinator's NSError AND the inner
     // atomic-write bool. If the coordinator denied/timed out the accessor never
     // ran and `error` is populated; if it ran but the write failed `wrote`
     // stays false.
