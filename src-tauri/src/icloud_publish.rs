@@ -71,19 +71,30 @@ pub async fn run(app: tauri::AppHandle) {
         }
         match publish_once(&app, &server_port).await {
             Ok(seq) => log::info!("iCloud snapshot published (seq {seq})"),
-            Err(e) => log::debug!("iCloud publish skipped this tick: {e}"),
+            Err(PublishError::Skip(e)) => log::debug!("iCloud publish skipped this tick: {e}"),
+            Err(PublishError::Failure(e)) => log::warn!("iCloud publish FAILED this tick: {e}"),
         }
     }
     log::info!("iCloud publish loop exited");
 }
 
+/// Why a publish tick produced no snapshot.
+enum PublishError {
+    /// Expected idle states (not signed into iCloud, sidecar not up yet) —
+    /// logged at debug to keep non-iCloud users' logs quiet.
+    Skip(String),
+    /// Preconditions held but the publish itself failed — logged at warn
+    /// (v1.2.0: these were debug, which hid hard failures entirely).
+    Failure(String),
+}
+
 /// One publish attempt. Returns the published `seq` on success, or an `Err`
-/// describing why the tick was skipped (logged at debug — these are expected
-/// when the user isn't signed into iCloud or the sidecar isn't up yet).
+/// describing why the tick was skipped (Skip = expected idle states, logged
+/// debug; Failure = real breakage, logged warn — v1.2.0).
 async fn publish_once(
     app: &tauri::AppHandle,
     server_port: &Arc<Mutex<Option<u16>>>,
-) -> Result<u64, String> {
+) -> Result<u64, PublishError> {
     // Gate: is the iCloud container resolvable right now? Resolve on a blocking
     // thread (landmine #36). `None` cleanly covers "not signed in" / "no
     // entitlement" — skip the tick quietly rather than erroring loudly.
@@ -91,35 +102,46 @@ async fn publish_once(
         crate::icloud_writer::resolve_icloud_container().is_some()
     })
     .await
-    .map_err(|e| format!("resolve join failed: {e}"))?;
+    .map_err(|e| PublishError::Failure(format!("resolve join failed: {e}")))?;
     if !available {
-        return Err(
+        return Err(PublishError::Skip(
             "iCloud container not resolvable (not signed in or no entitlement)".to_string(),
-        );
+        ));
     }
 
     // Read the sidecar port (None until the sidecar binds it).
     let port = {
         let guard = server_port
             .lock()
-            .map_err(|e| format!("port lock poisoned: {e}"))?;
-        (*guard).ok_or_else(|| "sidecar port not yet set".to_string())?
+            .map_err(|e| PublishError::Failure(format!("port lock poisoned: {e}")))?;
+        (*guard).ok_or_else(|| PublishError::Skip("sidecar port not yet set".to_string()))?
     };
 
-    // Fetch the assembled snapshot over loopback (read-only GET; same surface as
-    // proxy_fetch but parent-internal, not webview-facing).
+    // Fetch the assembled snapshot over loopback. Shared 5s-timeout client
+    // (v1.2.0): this await sits OUTSIDE the loop's shutdown select!, so a
+    // hung response used to wedge publishing AND shutdown observation.
     let url = format!("http://127.0.0.1:{port}/api/snapshot");
-    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let resp = crate::http_client::LOCAL_CLIENT
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| PublishError::Failure(format!("snapshot fetch: {e}")))?;
     if !resp.status().is_success() {
-        return Err(format!("HTTP {} from /api/snapshot", resp.status()));
+        return Err(PublishError::Failure(format!(
+            "HTTP {} from /api/snapshot",
+            resp.status()
+        )));
     }
-    let mut snapshot: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let mut snapshot: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| PublishError::Failure(format!("snapshot body: {e}")))?;
 
     // Parent stamps freshness metadata (single authoritative writer).
     let seq = next_seq_value(read_current_seq(app));
-    let writer = writer_id(app)?;
+    let writer = writer_id(app).map_err(PublishError::Failure)?;
     stamp(&mut snapshot, seq, &writer);
-    let bytes = serde_json::to_vec(&snapshot).map_err(|e| e.to_string())?;
+    let bytes = serde_json::to_vec(&snapshot).map_err(|e| PublishError::Failure(e.to_string()))?;
 
     // Resolve + coordinated write on ONE blocking thread so the Retained<NSURL>
     // never crosses threads (landmine #36).
@@ -130,7 +152,8 @@ async fn publish_once(
         }
     })
     .await
-    .map_err(|e| format!("write join failed: {e}"))??;
+    .map_err(|e| PublishError::Failure(format!("write join failed: {e}")))?
+    .map_err(PublishError::Failure)?;
 
     // Persist `seq` only AFTER a successful write, so a failed write doesn't burn
     // a sequence number. (Gaps would be harmless, but this keeps seq == latest
