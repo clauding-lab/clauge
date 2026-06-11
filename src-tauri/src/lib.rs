@@ -36,6 +36,11 @@ mod icloud_writer;
 #[cfg(target_os = "macos")]
 mod icloud_publish;
 mod sidecar;
+// v1.2.0 Item 4: iCloud upload-confirmation health (sync-health). macOS-only
+// (reads iCloud resource values via Cocoa); both flavors. Pure derivation is
+// unit-tested; the native read runs behind icloud_publish's spawn_blocking.
+#[cfg(target_os = "macos")]
+mod sync_health;
 mod tray;
 mod windows;
 
