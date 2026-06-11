@@ -11,6 +11,9 @@
 //! - Empty at app start
 //! - First `get_or_load` reads + caches
 //! - Subsequent `get_or_load` calls return cached value (no prompt)
+//! - A cache hit whose creds are past `expires_at` triggers ONE re-read per
+//!   call (v1.2.0) — Claude Code may have rotated the token; a failed
+//!   re-read falls back to serving the stale value
 //! - `invalidate()` (called from OAuth 401 caller) clears the cache
 //! - `refresh()` (called from the Refresh button + wizard Connect) forces a
 //!   fresh read and replaces the cached value
@@ -46,17 +49,41 @@ impl KeychainCache {
     /// First caller on a cold cache reads (triggers macOS prompt if uncached);
     /// subsequent concurrent callers block briefly on the Mutex and return
     /// the cached value once the first caller completes.
+    /// Expired hits re-read once (see module doc).
     pub fn get_or_load(&self) -> Result<ClaudeCodeCreds, KeychainError> {
         let mut guard = self.inner.lock().map_err(|e| KeychainError::Framework {
             code: 0,
             message: format!("cache lock poisoned: {}", e),
         })?;
-        if let Some(creds) = guard.as_ref() {
-            return Ok(creds.clone());
+        match guard.as_ref().cloned() {
+            Some(creds) if !crate::keychain::is_expired(&creds) => Ok(creds),
+            Some(stale) => {
+                // Cached creds are past expires_at. Claude Code rotates the
+                // token in the Keychain on its own cadence — re-read once so
+                // the Connections panel self-heals without the manual ↻
+                // (v1.2.0). Prompt-safe: fires only while the cached creds
+                // are genuinely expired (the same read ↻ performs), and
+                // post-"Always Allow" reads are silent.
+                match (self.reader)() {
+                    Ok(fresh) => {
+                        *guard = Some(fresh.clone());
+                        Ok(fresh)
+                    }
+                    Err(e) => {
+                        // Serve the stale creds on a failed re-read: the UI
+                        // keeps reporting "expired" (pre-v1.2.0 behavior)
+                        // and the next call retries.
+                        log::debug!("keychain_cache: expired-creds re-read failed: {:?}", e);
+                        Ok(stale)
+                    }
+                }
+            }
+            None => {
+                let creds = (self.reader)()?;
+                *guard = Some(creds.clone());
+                Ok(creds)
+            }
         }
-        let creds = (self.reader)()?;
-        *guard = Some(creds.clone());
-        Ok(creds)
     }
 
     /// Force a fresh read, replacing the cached value.
@@ -98,6 +125,13 @@ mod tests {
                 rate_limit_tier: Some("default_claude_max_20x".to_string()),
             },
         }
+    }
+
+    /// Creds whose expires_at is long past (1970) — an expired cache entry.
+    fn expired_creds() -> ClaudeCodeCreds {
+        let mut creds = sample_creds();
+        creds.claude_ai_oauth.expires_at = Some(1_000);
+        creds
     }
 
     fn counting_reader() -> (KeychainCache, Arc<AtomicUsize>) {
@@ -171,5 +205,70 @@ mod tests {
         assert!(cache.get_or_load().is_err());
         // BOTH calls hit the reader because failures are not cached.
         assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn expired_hit_re_reads_and_returns_fresh_creds() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_for_closure = count.clone();
+        let cache = KeychainCache::with_reader(Box::new(move || {
+            let i = count_for_closure.fetch_add(1, Ordering::SeqCst);
+            if i == 0 {
+                Ok(expired_creds())
+            } else {
+                Ok(sample_creds()) // Claude Code rotated the token
+            }
+        }));
+        // Miss: reads + caches the (already expired) creds.
+        let first = cache.get_or_load().unwrap();
+        assert_eq!(first.claude_ai_oauth.expires_at, Some(1_000));
+        // Expired hit: re-reads once, caches + returns the rotated creds.
+        let second = cache.get_or_load().unwrap();
+        assert_eq!(
+            second.claude_ai_oauth.expires_at,
+            Some(1_900_000_000_000),
+            "expired hit must self-heal to the rotated creds"
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        // Fresh hit: cached, no further read (prompt safety).
+        let _ = cache.get_or_load().unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn expired_hit_with_failing_re_read_serves_stale_creds() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_for_closure = count.clone();
+        let cache = KeychainCache::with_reader(Box::new(move || {
+            let i = count_for_closure.fetch_add(1, Ordering::SeqCst);
+            if i == 0 {
+                Ok(expired_creds())
+            } else {
+                Err(KeychainError::NotFound)
+            }
+        }));
+        let _ = cache.get_or_load().unwrap();
+        // Re-read fails → still Ok with the stale creds: the Connections
+        // panel reports "expired" exactly as it did pre-v1.2.0, no new
+        // error path for consumers.
+        let stale = cache.get_or_load().expect("stale creds, not an error");
+        assert_eq!(stale.claude_ai_oauth.expires_at, Some(1_000));
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn expired_hit_re_reads_on_every_call_while_still_expired() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_for_closure = count.clone();
+        let cache = KeychainCache::with_reader(Box::new(move || {
+            count_for_closure.fetch_add(1, Ordering::SeqCst);
+            Ok(expired_creds())
+        }));
+        let _ = cache.get_or_load().unwrap(); // miss → read 1
+        let _ = cache.get_or_load().unwrap(); // expired hit → re-read 2
+        let _ = cache.get_or_load().unwrap(); // expired hit → re-read 3
+                                              // One read per call while genuinely expired — the 30s dashboard
+                                              // poll cadence makes this the manual-↻ read rate, prompt-safe.
+        assert_eq!(count.load(Ordering::SeqCst), 3);
     }
 }
