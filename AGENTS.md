@@ -88,7 +88,7 @@ gh workflow run auto-update.yml --repo clauding-lab/homebrew-tap -f version=X.Y.
 
 The tap also runs a daily 04:17 UTC cron as a safety net — even if dispatch and manual trigger are both missed, the cron catches it within 24 hours.
 
-**MAS build:** uses a separate `tauri.mas.conf.json` (lives on the `mas-implement-session` branch, not main). Don't merge or rebase that branch into main without explicit sign-off — it contains signing IDs and provisioning profile paths that are environment-specific.
+**MAS build:** uses a separate `tauri.mas.conf.json` — on main since the v1.1.0 ②b work, alongside `entitlements.mas.plist`, `embedded.provisionprofile`, and `scripts/build-mas-clean.sh` (the stale "lives on the mas-implement-session branch" claim was corrected 2026-06-11). Don't edit its signing identity, bundleVersion semantics, or provisioning-profile references without explicit sign-off — they are environment-specific and the MAS signing structure is delicate (landmines #24/#25/#32/#33).
 
 ## Coding style
 
