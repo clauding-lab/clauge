@@ -178,3 +178,41 @@ describe('normalizeUsage', () => {
     assert.deepEqual(out.unknownSevenDayKeys, []);
   });
 });
+
+import { unknownKeysWarning } from '../lib/usage-store.js';
+
+describe('unknownKeysWarning', () => {
+  it('fires the log once when unknownSevenDayKeys is non-empty', () => {
+    const calls = [];
+    const fired = unknownKeysWarning(
+      { unknownSevenDayKeys: ['seven_day_aubergine', 'seven_day_quokka'] },
+      (msg) => calls.push(msg)
+    );
+    assert.equal(fired, true);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /\[Clauge] schema-drift/);
+    assert.match(calls[0], /seven_day_aubergine/);
+    assert.match(calls[0], /seven_day_quokka/);
+  });
+
+  it('does NOT fire when unknownSevenDayKeys is empty', () => {
+    const calls = [];
+    const fired = unknownKeysWarning({ unknownSevenDayKeys: [] }, (msg) => calls.push(msg));
+    assert.equal(fired, false);
+    assert.equal(calls.length, 0);
+  });
+
+  it('does NOT fire when normalized is null (no usage ingested)', () => {
+    const calls = [];
+    const fired = unknownKeysWarning(null, (msg) => calls.push(msg));
+    assert.equal(fired, false);
+    assert.equal(calls.length, 0);
+  });
+
+  it('does NOT fire when the field is absent (older snapshot shape)', () => {
+    const calls = [];
+    const fired = unknownKeysWarning({ fiveHour: null }, (msg) => calls.push(msg));
+    assert.equal(fired, false);
+    assert.equal(calls.length, 0);
+  });
+});

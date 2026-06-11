@@ -22,6 +22,7 @@ import {
   normalizeUsage as normalizePlanUsage,
   normalizeBalance,
   normalizeOverageSpendLimit,
+  unknownKeysWarning,
 } from './lib/usage-store.js';
 import { bookmarkletHref, bookmarkletSource } from './lib/bookmarklet.js';
 import { loadPriceTable, envFallbackRates } from './lib/cost-calculator.js';
@@ -591,6 +592,7 @@ app.post('/api/usage/ingest', async (c) => {
     return c.json({ error: 'expected { org, usage }' }, 400);
   }
   const normalized = normalizePlanUsage(body.usage);
+  unknownKeysWarning(normalized, (msg) => console.warn(msg));
   const claudeBalance = normalizeBalance(body.claudeBalance, null);
   const apiBalance = normalizeBalance(body.balance, null);
   const consumerOverage = normalizeOverageSpendLimit(body.overageSpendLimit);
