@@ -34,6 +34,7 @@
     "allow-grant-claude-dir-access",
     "allow-has-claude-dir-bookmark",
     "allow-set-autostart",
-    "allow-get-autostart"
+    "allow-get-autostart",
+    "allow-get-sync-health"
   ]
 }

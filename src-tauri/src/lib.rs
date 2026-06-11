@@ -404,6 +404,8 @@ pub fn run() {
             ipc::is_mas_flavor,
             ipc::grant_claude_dir_access,
             ipc::has_claude_dir_bookmark,
+            #[cfg(target_os = "macos")]
+            sync_health::get_sync_health,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -78,6 +78,63 @@ pub fn derive_state(upload_ok: bool, upload_error: bool, age_secs: Option<i64>) 
 pub const UPLOAD_ERROR_DETAIL: &str =
     "iCloud upload issue — check that iCloud Drive is signed in and working.";
 
+/// Pure-ish: assemble a `SyncHealth` from the persisted fields + the current
+/// time. `now` is injected so the derivation stays unit-testable.
+pub fn health_from_persisted(
+    upload_ok: bool,
+    upload_error: bool,
+    last_published_at: Option<i64>,
+    last_seq: Option<u64>,
+    now: i64,
+) -> SyncHealth {
+    let age_secs = last_published_at.map(|t| now - t);
+    let state = derive_state(upload_ok, upload_error, age_secs);
+    let detail = if state == SyncHealthState::Error {
+        Some(UPLOAD_ERROR_DETAIL.to_string())
+    } else {
+        None
+    };
+    SyncHealth {
+        state,
+        last_seq,
+        last_published_at,
+        detail,
+    }
+}
+
+/// IPC: return the persisted sync-health snapshot. CHEAP — reads only the
+/// tauri-store keys the publish loop stamps (Item 4); never touches the iCloud
+/// container synchronously on the IPC path. Always `Ok` — a missing/unreadable
+/// store yields `Unknown`, never an error the dashboard has to handle.
+#[tauri::command]
+pub async fn get_sync_health(app: tauri::AppHandle) -> Result<SyncHealth, String> {
+    use tauri_plugin_store::StoreExt;
+    let (upload_ok, upload_error, last_published_at, last_seq) = match app.store("settings.json") {
+        Ok(store) => (
+            store
+                .get("icloud_last_upload_ok")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            store
+                .get("icloud_last_upload_error_present")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            store
+                .get("icloud_last_published_at")
+                .and_then(|v| v.as_i64()),
+            store.get("icloud_snapshot_seq").and_then(|v| v.as_u64()),
+        ),
+        Err(_) => (false, false, None, None),
+    };
+    Ok(health_from_persisted(
+        upload_ok,
+        upload_error,
+        last_published_at,
+        last_seq,
+        chrono::Utc::now().timestamp(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +188,36 @@ mod tests {
             derive_state(true, false, Some(DAY_SECS + 1)),
             SyncHealthState::Stale
         );
+    }
+
+    #[test]
+    fn health_from_persisted_maps_error_to_generic_detail() {
+        // upload_error true → Error state + the privacy-safe generic message.
+        let h = health_from_persisted(
+            /* upload_ok */ false,
+            /* upload_error */ true,
+            /* last_published_at */ Some(1_700_000_000),
+            /* last_seq */ Some(3),
+            /* now */ 1_700_000_100,
+        );
+        assert_eq!(h.state, SyncHealthState::Error);
+        assert_eq!(h.detail.as_deref(), Some(UPLOAD_ERROR_DETAIL));
+        assert_eq!(h.last_seq, Some(3));
+        assert_eq!(h.last_published_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn health_from_persisted_ok_has_no_detail() {
+        let h = health_from_persisted(true, false, Some(1_700_000_000), Some(9), 1_700_000_060);
+        assert_eq!(h.state, SyncHealthState::Ok);
+        assert!(h.detail.is_none());
+    }
+
+    #[test]
+    fn health_from_persisted_no_timestamp_is_unknown() {
+        let h = health_from_persisted(false, false, None, None, 1_700_000_000);
+        assert_eq!(h.state, SyncHealthState::Unknown);
+        assert!(h.last_published_at.is_none());
     }
 
     #[test]

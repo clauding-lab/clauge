@@ -62,6 +62,9 @@
     // plugin-only path, which silently no-ops in the MAS sandbox.
     setAutostart: (enabled) => call('set_autostart', { enabled }),
     getAutostart: () => call('get_autostart'),
+    // v1.2.0 Item 4: persisted iCloud upload-health for the dashboard's
+    // Connections "iCloud sync to iPhone" row + the stale/error banner.
+    getSyncHealth: () => call('get_sync_health'),
 
     // ── Popover-only commands (no APP_COMMANDS entry; tauri:// origin) ──
     openDashboard: () => call('open_dashboard'),
