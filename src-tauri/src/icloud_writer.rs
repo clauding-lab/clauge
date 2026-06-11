@@ -32,8 +32,9 @@ use std::ptr::NonNull;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2_foundation::{
-    NSData, NSError, NSFileCoordinator, NSFileCoordinatorWritingOptions, NSFileManager, NSString,
-    NSURL,
+    NSArray, NSCopying, NSData, NSError, NSFileCoordinator, NSFileCoordinatorWritingOptions,
+    NSFileManager, NSString, NSURLUbiquitousItemIsUploadedKey,
+    NSURLUbiquitousItemUploadingErrorKey, NSURL,
 };
 
 /// Dotted iCloud container identifier (matches the MAS ubiquity entitlement).
@@ -157,6 +158,63 @@ pub fn write_snapshot_coordinated(container_url: &NSURL, payload: &[u8]) -> Resu
     Ok(())
 }
 
+/// Read the EXISTING snapshot file's iCloud upload status (the PREVIOUS
+/// cycle's delivery state). Returns `(upload_ok, upload_error_present)`:
+///   * `upload_ok`            — NSURLUbiquitousItemIsUploadedKey == true
+///   * `upload_error_present` — NSURLUbiquitousItemUploadingErrorKey != nil
+///
+/// Honest timing (Item 4): immediately after a fresh coordinated write,
+/// `IsUploaded` legitimately reads `false` (queued for the daemon), so this
+/// is called at the START of each publish tick against the file the PREVIOUS
+/// tick wrote — eventually-consistent, no sleep. The wedge detector is the
+/// uploading-error key; `IsUploaded` is only the last-known-delivered flag.
+///
+/// PRIVACY (landmine #34): we return only a boolean for the error — the raw
+/// `NSError` string ("Couldn't access your iCloud account…") is NEVER echoed.
+///
+/// THREADING (landmine #35): the caller MUST invoke this inside the existing
+/// `spawn_blocking` on the same thread as the write — `Retained<NSURL>` is
+/// `!Send` and must not cross an `.await`.
+pub fn read_upload_status(container_url: &NSURL) -> (bool, bool) {
+    // Rebuild the snapshot file URL the same way write_snapshot_coordinated
+    // does (landmine #36 — append components, never string-concat the path).
+    let Some(docs_dir) =
+        container_url.URLByAppendingPathComponent(&NSString::from_str(DOCUMENTS_SUBDIR))
+    else {
+        return (false, false);
+    };
+    let Some(target_url) =
+        docs_dir.URLByAppendingPathComponent(&NSString::from_str(SNAPSHOT_FILENAME))
+    else {
+        return (false, false);
+    };
+
+    let keys = NSArray::from_retained_slice(&[
+        unsafe { NSURLUbiquitousItemIsUploadedKey }.copy(),
+        unsafe { NSURLUbiquitousItemUploadingErrorKey }.copy(),
+    ]);
+
+    // `resourceValuesForKeys_error` is a safe binding (the per-key `unsafe`
+    // above is only for referencing the extern `NSURLResourceKey` statics).
+    let values = match target_url.resourceValuesForKeys_error(&keys) {
+        Ok(dict) => dict,
+        // File absent (no prior publish) / value unavailable → no data yet.
+        Err(_) => return (false, false),
+    };
+
+    let upload_ok = values
+        .objectForKey(unsafe { NSURLUbiquitousItemIsUploadedKey })
+        .and_then(|v| v.downcast::<objc2_foundation::NSNumber>().ok())
+        .map(|n| n.boolValue())
+        .unwrap_or(false);
+
+    let upload_error_present = values
+        .objectForKey(unsafe { NSURLUbiquitousItemUploadingErrorKey })
+        .is_some();
+
+    (upload_ok, upload_error_present)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +263,20 @@ mod tests {
         let text = std::fs::read_to_string(&snapshot_path).expect("snapshot file should exist");
         assert!(text.contains("\"seq\":99"), "unexpected content: {text}");
         assert!(text.contains("local-rust-test"));
+    }
+
+    /// Reads the EXISTING snapshot file's iCloud resource values (the previous
+    /// cycle's state) against the live container, un-sandboxed. `#[ignore]` so
+    /// CI (no iCloud) skips it; run manually on a Mac signed into iCloud after
+    /// at least one publish has landed:
+    ///   cargo test -- --ignored reads_existing_upload_status
+    #[test]
+    #[ignore = "reads real iCloud resource values; run manually with --ignored on a Mac signed into iCloud"]
+    fn reads_existing_upload_status_for_snapshot_file() {
+        let home = std::env::var("HOME").expect("HOME is set");
+        let container_path = format!("{home}/Library/Mobile Documents/iCloud~com~clauding~clauge");
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&container_path));
+        // (upload_ok: bool, upload_error_present: bool)
+        let (_ok, _err) = read_upload_status(&url);
     }
 }
