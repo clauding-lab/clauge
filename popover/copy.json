@@ -11,6 +11,7 @@
     "name": "Clauge",
     "updatedJustNow": "Updated just now",
     "updatedMinutes": "Updated {minutes}m ago",
+    "updatedStale": "Reconnecting — last update {minutes}m ago",
     "offline": "Offline",
     "planUnknown": "—",
     "planMax": "Max"

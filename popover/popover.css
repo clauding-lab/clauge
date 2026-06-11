@@ -161,6 +161,7 @@ html, body {
 .po-head-text { display: flex; flex-direction: column; gap: 1px; }
 .po-name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
 .po-subhead { color: var(--text-3); font-size: 10px; }
+.po-subhead-stale { opacity: 0.55; font-style: italic; }
 
 .po-plan-badge {
   padding: 3px 9px;
