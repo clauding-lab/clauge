@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-11 — v1.1.0 | iCloud per-container upload wedge: the Mac published every 5 minutes into a container that hadn't uploaded for a day
+
+**Trigger:** Adnan's iPhone Analytics tab stuck on "Synced 1 day ago. Open Clauge on your Mac to update." despite the Mac app running and publishing (seq incrementing).
+
+**What went wrong:** macOS's iCloud daemon (bird) lost upload authorization for the `iCloud.com.clauding.clauge` container ONLY — general iCloud Drive uploaded instantly, container downloads still worked, quota was fine, no Apple status incident. Every coordinated write SUCCEEDED locally (so the icloud_writer's two-layer error contract could never fire — the failure lives entirely inside bird, after our write returns). File-level truth via `URLResourceValues`: `uploaded=false, uploading=true, uploadError="Couldn't access your iCloud account…"`. Survived `killall bird` AND a fresh file record (delete + republish). Fixed by signing out of iCloud on the Mac and back in.
+
+**Lesson:** a successful `NSFileCoordinator` write proves NOTHING about delivery — bird-level upload failures are invisible to the app's own logging, and `brctl status` can report "caught-up" while uploads are wedged. The only honest signal is the file's `NSURLUbiquitousItemIsUploadedKey` / `UploadingErrorKey` after the fact.
+
+**Prevention:** the post-publish upload-state check belongs IN the product: after each publish tick, query `ubiquitousItemIsUploaded`/`UploadingError` on the written URL and surface `lastPublishedAt` + upload state in Settings (the deferred "iCloud sync health" feature from the 2026-06-10 review — this incident is its business case). Diagnostic ladder for recurrence: (1) `jq .generatedAt` the container file — fresh ⇒ pipe problem, not Clauge; (2) Swift `URLResourceValues` upload keys — the error string names it; (3) probe `com~apple~CloudDocs` to scope account vs container; (4) `killall bird` → fresh file record → iCloud sign-out/in.
+
+**Hotfix:** none in code — user-environment fix (iCloud re-login). Verified end-to-end: fresh snapshot seq 604 `uploaded=true, uploadError=none`.
+
+**Cross-references:** auto-memory `reference_icloud_container_upload_wedge.md`; AGENTS landmines #32-36 (the write path, which was NOT at fault); 2026-06-10 feature-review candidate "iCloud sync health end-to-end".
+
 ## 2026-06-02 — v0.9.10 | Phantom "Claude Design" usage bucket shipped after Anthropic removed it
 
 **Trigger:** Adnan noticed the menu bar + dashboard still showed a "Claude Design" usage bar/ring at a permanent 0% after Anthropic dropped that weekly bucket around the Opus 4.8 release.
