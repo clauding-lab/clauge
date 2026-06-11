@@ -10,6 +10,8 @@
 // ────────────────────────────────────────────────────────────
 let serverPort = 3456;
 let serverVersion = '0.5.0';
+let lastGoodUsage = null;       // SWR keep-last-good cache for /api/usage
+let refreshInFlight = false;    // overlap guard: skip a tick if a refresh is still running
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -195,10 +197,17 @@ function burnState(usagePct, timeElapsedPctValue) {
 // ────────────────────────────────────────────────────────────
 // Fetch
 // ────────────────────────────────────────────────────────────
+const FETCH_TIMEOUT_MS = 5000; // frontend per-call abort budget (Item 6)
+
 async function fetchJson(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`fetch ${path} failed: ${res.status}`);
-  return await res.json();
+  const { signal, clear } = window.ClaugeSwr.fetchTimeoutSignal(FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(path, { signal });
+    if (!res.ok) throw new Error(`fetch ${path} failed: ${res.status}`);
+    return await res.json();
+  } finally {
+    clear();
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -416,6 +425,13 @@ function renderDesign(plan, nowMs) {
 
 function renderRoutines(plan, nowMs) {
   const r = plan?.dailyRoutines;
+  // Mirror renderDesign's gate: when the payload has no dailyRoutines bucket,
+  // hide the section instead of phantoming "0 of 15 runs" (a dropped bucket on
+  // a failed/partial fetch must not read as a real zero). Reappears if it
+  // returns.
+  const section = document.getElementById('routines-section');
+  if (section) section.hidden = !r;
+  if (!r) return;
   // Routines is a daily count, capped at 15. The pct field is the upstream's
   // utilization. If we have raw count later, swap to count/15 directly.
   const pct = r?.pct ?? 0;
@@ -576,24 +592,21 @@ function renderDisclaimer({ topModel }) {
   }
 }
 
-function renderHeaderSubhead(ingestedAt, healthOk) {
+function renderHeaderSubhead(ingestedAt, healthOk, fetchFailed) {
   const el = document.getElementById('po-subhead');
   if (!el) return;
-  if (!healthOk) {
+  // Offline (no /api/health) still wins — the backend is unreachable at all.
+  if (!healthOk && !lastGoodUsage) {
     el.textContent = t('header.offline');
+    el.classList.toggle('po-subhead-stale', true);
     return;
   }
-  if (!ingestedAt) {
-    el.textContent = t('header.updatedJustNow');
-    return;
-  }
-  const ageMs = Date.now() - Date.parse(ingestedAt);
-  if (!Number.isFinite(ageMs) || ageMs < 60000) {
-    el.textContent = t('header.updatedJustNow');
-  } else {
-    const minutes = Math.floor(ageMs / 60000);
-    el.textContent = t('header.updatedMinutes', { minutes });
-  }
+  const s = window.ClaugeSwr.subheadState({ ingestedAt, fetchFailed, nowMs: Date.now() });
+  // params:undefined on the stale/no-age path → strip the unresolved {minutes}
+  // fragment so the line reads cleanly ("Reconnecting — last update").
+  const text = s.params ? t(s.key, s.params) : t(s.key, {}).replace(/\s*—?\s*last update \{minutes\}m ago/, '').replace(/\{minutes\}m ago/, '').trim();
+  el.textContent = text;
+  el.classList.toggle('po-subhead-stale', s.stale);
 }
 
 // v0.9.4: renderStatusAction removed — the status row was retired alongside
@@ -667,6 +680,8 @@ function showLoading() {
 }
 
 async function refresh() {
+  if (window.ClaugeSwr.fetchTimeoutSignal && refreshInFlight) return;
+  refreshInFlight = true;
   let healthOk = false;
   let loadingHidden = false;
   const hideLoading = () => {
@@ -689,10 +704,13 @@ async function refresh() {
     if (health?.version) serverVersion = health.version;
     healthOk = !!health;
 
-    const plan = usage?.plan ?? {};
+    const picked = window.ClaugeSwr.pickUsage(usage, lastGoodUsage);
+    lastGoodUsage = picked.lastGood;
+    const effectiveUsage = picked.usage;
+    const plan = effectiveUsage?.plan ?? {};
     const nowMs = Date.now();
 
-    renderHeaderSubhead(usage?.ingestedAt, healthOk);
+    renderHeaderSubhead(effectiveUsage?.ingestedAt, healthOk, picked.fetchFailed);
     renderPlanBadge(plan);
     renderSession(plan, nowMs);
     renderWeekly(plan, nowMs);
@@ -711,8 +729,9 @@ async function refresh() {
     if (aboutEl2) aboutEl2.textContent = t('footer.version', { version: serverVersion });
   } catch (err) {
     console.error('[Clauge popover] refresh failed:', err);
-    renderHeaderSubhead(null, false);
+    renderHeaderSubhead(lastGoodUsage?.ingestedAt ?? null, false, true);
   } finally {
+    refreshInFlight = false;
     hideLoading();
     resizeToContent();
   }
@@ -829,7 +848,12 @@ async function init() {
     }
   });
 
-  await refresh();
+  // Boot-order: the 5s per-call abort means the first fetch can no longer hang
+  // forever. Don't let a failed first refresh block setInterval — start the
+  // interval regardless so the popover self-heals on the next tick (the failed
+  // first refresh already lands on a recoverable state: hideLoading() runs in
+  // refresh()'s finally, and the keep-last-good/stale subhead path renders).
+  refresh().catch((err) => console.error('[Clauge popover] initial refresh failed:', err));
   setInterval(refresh, 10_000);
 }
 
