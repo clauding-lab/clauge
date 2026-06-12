@@ -48,7 +48,45 @@
     return inFlight === true;
   }
 
+  // ── On-device projection display mapping (sub-project A) ────────────────
+  // Pure: one /api/projection window → the plan-card forecast line text.
+  // Times are formatted by the INJECTED fmtClock (app.js passes its
+  // fmtResetClock) so this stays clock-free and vm-testable. Returns null =
+  // line hidden (warming_up / stale / unavailable / missing window — a
+  // forecast from thin or stale data is suppressed, never caveated). The
+  // dashboard is deliberately outside the popover copy registry (the
+  // validator scans popover/ only), so these strings live inline here.
+  function projectionLine(win, fmtClock) {
+    if (!win || typeof win !== 'object') return null;
+    if (win.state === 'will_hit') {
+      return `At this pace → 100% ~${fmtClock(win.etaAt)}`;
+    }
+    if (win.state === 'safe' && Number.isFinite(win.projectedEndPct)) {
+      return `On pace to end at ~${win.projectedEndPct}%`;
+    }
+    if (win.state === 'exhausted') {
+      return `Limit reached — resets ${fmtClock(win.resetsAt)}`;
+    }
+    return null; // warming_up | stale | unavailable
+  }
+
+  // "+15 pts vs last week" / "-3 pts vs last week". The server already gates
+  // weekOverWeek to will_hit/safe states; absence (null) hides the line.
+  function wowLine(weekOverWeek) {
+    if (!weekOverWeek || !Number.isFinite(weekOverWeek.deltaPts)) return null;
+    const d = weekOverWeek.deltaPts;
+    return `${d > 0 ? `+${d}` : String(d)} pts vs last week`;
+  }
+
+  // "Monthly pace: 21.2×" from /api/projection.roiPace. roiPace is null when
+  // there are no sessions in the trailing 7 days or no valid subscription
+  // cost — hide rather than render a zero-data verdict (phantom-bucket rule).
+  function paceLine(roiPace) {
+    if (!roiPace || !Number.isFinite(roiPace.paceMultiple)) return null;
+    return `Monthly pace: ${roiPace.paceMultiple.toFixed(1)}×`;
+  }
+
   if (typeof window !== 'undefined') {
-    window.ClaugeDashSwr = { syncMeta, shouldSkipTick };
+    window.ClaugeDashSwr = { syncMeta, shouldSkipTick, projectionLine, wowLine, paceLine };
   }
 })();
