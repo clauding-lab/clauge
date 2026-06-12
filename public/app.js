@@ -547,9 +547,19 @@ function updateRingForecasts(body) {
   const sessionLine = window.ClaugeDashSwr.projectionLine(windows.fiveHour, fmtResetClock);
   const weeklyLine = window.ClaugeDashSwr.projectionLine(windows.sevenDay, fmtResetClock);
   const weeklyWow = window.ClaugeDashSwr.wowLine(windows.sevenDay?.weekOverWeek);
-  setTextIfChanged(cards[0].querySelector('[data-role="forecast"]'), sessionLine ?? '');
-  setTextIfChanged(cards[1].querySelector('[data-role="forecast"]'), weeklyLine ?? '');
-  setTextIfChanged(cards[1].querySelector('[data-role="wow"]'), weeklyWow ?? '');
+  // Toggle `hidden` alongside the leaf-text write (same as updatePaceLine):
+  // setTextIfChanged(el, '') leaves an empty text node, which CSS :empty does
+  // NOT match, so a null→line→null transition would otherwise leave a phantom
+  // sub-label gap until the next structural rebuild.
+  setForecastLine(cards[0].querySelector('[data-role="forecast"]'), sessionLine);
+  setForecastLine(cards[1].querySelector('[data-role="forecast"]'), weeklyLine);
+  setForecastLine(cards[1].querySelector('[data-role="wow"]'), weeklyWow);
+}
+
+function setForecastLine(el, line) {
+  if (!el) return;
+  if (el.hidden !== (line == null)) el.hidden = line == null;
+  setTextIfChanged(el, line ?? '');
 }
 
 function updatePlanMeta(planMeta) {

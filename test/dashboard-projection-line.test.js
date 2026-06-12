@@ -53,6 +53,10 @@ describe('projectionLine — plan-card forecast text per /api/projection window 
     assert.equal(projectionLine(null, fmtClockStub), null);
     assert.equal(projectionLine(undefined, fmtClockStub), null);
   });
+
+  it('safe with a non-finite projectedEndPct hides the line (Number.isFinite guard)', () => {
+    assert.equal(projectionLine({ state: 'safe', projectedEndPct: null }, fmtClockStub), null);
+  });
 });
 
 describe('wowLine — week-over-week delta sign formatting', () => {
@@ -61,6 +65,9 @@ describe('wowLine — week-over-week delta sign formatting', () => {
   });
   it('negative delta keeps its minus sign', () => {
     assert.equal(wowLine({ deltaPts: -3, prevPctAtSamePoint: 62 }), '-3 pts vs last week');
+  });
+  it('zero delta renders with no sign', () => {
+    assert.equal(wowLine({ deltaPts: 0, prevPctAtSamePoint: 59 }), '0 pts vs last week');
   });
   it('null weekOverWeek (no prior-week history / gated state) hides the line', () => {
     assert.equal(wowLine(null), null);
@@ -71,6 +78,9 @@ describe('wowLine — week-over-week delta sign formatting', () => {
 describe('paceLine — ROI strip monthly run-rate pace', () => {
   it('renders "Monthly pace: {n}×" to one decimal', () => {
     assert.equal(paceLine({ paceMultiple: 21.2, subscriptionCost: 200 }), 'Monthly pace: 21.2×');
+  });
+  it('renders a negative multiple honestly (under-pace: spend below plan cost)', () => {
+    assert.equal(paceLine({ paceMultiple: -1.5, subscriptionCost: 200 }), 'Monthly pace: -1.5×');
   });
   it('null roiPace (no trailing sessions / no valid cost) hides the line', () => {
     assert.equal(paceLine(null), null);
