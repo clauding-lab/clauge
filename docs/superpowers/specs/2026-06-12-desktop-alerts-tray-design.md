@@ -66,23 +66,31 @@ No I/O, no DOM, no clock. `evaluate({ usage, projection, prefs, fired, nowMs })`
 
 For each watched window `w ∈ { fiveHour, sevenDay }`, with the window's `resetsAt` as the instance id:
 
-| Type | Condition | Levels | Dedup key |
-|---|---|---|---|
-| `limitReached` | `pct ≥ 100` or projection `state === 'exhausted'` | — | `limitReached:{w}:{resetsAt}` |
-| `willHit` | projection `state === 'will_hit'` | — | `willHit:{w}:{resetsAt}` |
-| `approaching` | `pct ≥ level` | 95, 80 | `approaching:{w}:{level}:{resetsAt}` |
+| Type | Severity rank | Condition | Levels | Dedup key |
+|---|---|---|---|---|
+| `limitReached` | 4 (highest) | `pct ≥ 100` (load-bearing) — see note | — | `limitReached:{w}:{resetsAt}` |
+| `willHit` | 3 | projection `state === 'will_hit'` | — | `willHit:{w}:{resetsAt}` |
+| `approaching` (95) | 2 | `pct ≥ 95` | 95 | `approaching:{w}:95:{resetsAt}` |
+| `approaching` (80) | 1 (lowest) | `pct ≥ 80` | 80 | `approaching:{w}:80:{resetsAt}` |
 
-Because every key embeds `resetsAt`, a **new window instance re-arms all alerts automatically** — no cooldown timers. `resetsAt` null/absent for a window → that window is skipped entirely.
+**`limitReached` condition note:** `pct ≥ 100` is the **load-bearing** clause. Projection `state === 'exhausted'` is exactly `pct ≥ 100` *only when the window is fresh and not past reset* — when `resetsAt ≤ nowMs` the projection returns `unavailable` (not `exhausted`) even at `pct = 100`. So use `pct ≥ 100` as the trigger; do **not** rely on `state === 'exhausted'` (it would miss the past-reset-at-100 case). The four keys per window are the full enumerable set the collapse below operates over.
 
-### Severity collapse (anti-spam)
+Because every key embeds `resetsAt`, a **new window instance re-arms all alerts automatically** — no cooldown timers. `resetsAt` null/absent → that window is skipped entirely.
 
-Per window, order due candidates by severity: `limitReached > willHit > approaching:95 > approaching:80`. **At most one fires per window per evaluation** — the highest-severity due-and-unfired one goes in `due`; every *lower* due-and-unfired candidate for that window goes in `retire` (marked fired so it never trickles out later). Once warned at a higher severity, the lesser alerts for that window are spent.
+### Severity collapse (anti-spam) — forward-looking
+
+Per window, let **H** = the highest-severity alert that is (condition met) AND (unfired) AND (eligible under the stale gate below). If H exists:
+- `due += H`.
+- `retire +=` **every unfired key for that window of severity strictly below H** — *whether or not its condition is currently met*. This is the forward-looking part: when `willHit` (rank 3) fires, `approaching:95` (rank 2) and `approaching:80` (rank 1) are retired even though `pct` may still be 85 (95 not yet met). Otherwise a later tick at `pct = 96` would fire the lower `approaching:95` *after* the higher `willHit` — intra-instance spam.
+- Strictly-**higher** keys stay armed: firing `willHit` does NOT retire `limitReached`, so a later `pct = 100` still fires the limit-reached alert (you want that).
+
+If no H exists, nothing is due and nothing is retired (don't pre-retire a window that's quiet — it must stay able to fire when its condition is first met).
 
 ### Gating
 
-- `prefs.alertsEnabled === false` → return `{ due: [], retire: [] }` (nothing, nothing retired — flipping back on still works).
-- A disabled type is neither fired nor retired (it simply doesn't participate).
-- **Stale data** (`projection.freshness.stale === true`) → `{ due: [], retire: [] }`. A forecast or pct from >10-min-old data is unreliable; mirrors A's display suppression.
+- `prefs.alertsEnabled === false` → `{ due: [], retire: [] }` (flipping back on still works).
+- A disabled type never participates (not a firing candidate, not counted in the collapse's "below H" retire set — a user who turned off `approaching` shouldn't have it silently retired).
+- **Stale data** (`projection.freshness.stale === true`): `willHit` and `approaching` are **suppressed** (a forecast — or a fluid current-pct — from >10-min-old data is unreliable; mirrors A's display suppression). **`limitReached` is EXEMPT** — `pct ≥ 100` is a recorded *observation*, not a forecast, and it's durable (you can't un-hit a limit until reset). So when stale, `limitReached` is still eligible **provided its window's `resetsAt > nowMs`** (a stale 100 from a window that already reset must not fire). When `limitReached` fires under the stale path, the forward-looking retire still applies (retires the suppressed lower keys for that window, so they don't spam once data is fresh again).
 
 ### Alert payload
 
@@ -122,7 +130,7 @@ The config file gains alert prefs **alongside** subscription cost. **`ConfigStor
 
 ### `GET /api/alerts/pending` (pure read)
 
-Consumed only by the Rust `LOCAL_CLIENT` (an `Origin`-less loopback request, so CORS never applies — it does **not** need to be in `READ_ONLY_API_PATHS`; the webview never reads it). Internally: read usage store + `buildProjection` (same inputs `/api/projection` uses) + `effectiveAlertPrefs()` + `AlertState.load()` (pruned), call `evaluate(...)`, and return `{ due: Alert[], retire: string[] }`. **No side effect** — nothing is marked fired on this read; all mutation happens in the ack, so a Rust crash before firing re-fires next tick (at-least-once for real notifications).
+Consumed only by the Rust `LOCAL_CLIENT` (an `Origin`-less loopback request, so CORS never applies — it does **not** need to be in `READ_ONLY_API_PATHS`, and must NOT be added there; the webview never reads it). **Capture `const nowMs = Date.now()` ONCE** at the handler top (mirroring the `/api/projection` handler, `server.js:566`) and thread the *same* value into `buildProjection`, `AlertState.prune`, and `evaluate` — so the freshness boundary, the prune cutoff, and the body's local-time strings can't straddle a tick. Internally: read usage store + `buildProjection` + `effectiveAlertPrefs()` + `AlertState.load()` (pruned with `nowMs`), call `evaluate({ usage, projection, prefs, fired, nowMs })`, return `{ due: Alert[], retire: string[] }`. **No side effect** — nothing is marked fired on this read; all mutation happens in the ack, so a Rust crash before firing re-fires next tick (at-least-once for real notifications).
 
 ### `POST /api/alerts/ack`
 
@@ -154,11 +162,12 @@ A new `tauri::async_runtime::spawn` timer (every 30s, `MissedTickBehavior::Delay
 
 | Failure | Behavior |
 |---|---|
-| Stale data (>10 min) | no alerts fire (engine returns empty) |
+| Stale data (>10 min) | `willHit` + `approaching` suppressed; `limitReached` STILL fires if `pct ≥ 100` and `resetsAt > nowMs` (observed fact, not forecast) |
 | Window `resetsAt` null/absent | that window skipped |
-| Several alerts due at once (same window) | only the highest severity fires; lesser ones retired |
+| Stale + `pct ≥ 100` but `resetsAt ≤ nowMs` (window already reset) | nothing fires (a stale post-reset 100 is not a live limit) |
+| Several alerts due at once (same window) | only the highest-severity fires; ALL strictly-lower keys (even not-yet-due) retired; higher keys stay armed |
 | Notification `show()` fails (permission denied / OS) | ack anyway (logged) — no 30s retry-spam; can't deliver regardless |
-| Rust crashes between GET and ack | due alerts re-fire next tick (at-least-once); retires also drop, so a lesser alert may fire after a higher one once — rare, still a valid warning |
+| Rust crashes between GET and ack | due alerts re-fire next tick (at-least-once); retires also drop, so a lesser alert may fire after a higher one — bounded to ONE occurrence (the next successful GET+ack re-retires). The deliberate at-least-once tradeoff; severity-collapse is not absolute across a crash |
 | `alert-state.json` missing/corrupt | empty fired set; nothing double-suppressed |
 | `/api/alerts/pending` fetch fails (Rust side) | tick logs + skips; next tick retries (no state change) |
 | `config.json` corrupt | prefs default to all-on (alerts enabled) |
@@ -166,7 +175,7 @@ A new `tauri::async_runtime::spawn` timer (every 30s, `MissedTickBehavior::Delay
 
 ## Testing
 
-- **`test/alert-engine.test.js`** — table-driven, clock pinned: each type at its exact threshold; dedup (a key in `fired` doesn't re-fire); re-arm on changed `resetsAt`; severity collapse (one due + correct retires); stale suppression; master-off and per-type-off gating; both watched windows; null-window skip.
+- **`test/alert-engine.test.js`** — table-driven, clock pinned: each type at its exact threshold (pct = 80 and = 100 boundaries are inclusive); dedup (a key in `fired` doesn't re-fire); re-arm on changed `resetsAt`; **forward-looking collapse** — `willHit` at pct=85 fires and retires `approaching:95`+`approaching:80`, then a later tick at pct=96 yields `due=[]` (95 already retired) while `limitReached` stays armed; **stale + pct=100 with future resetsAt** → `limitReached` still due (+ lower keys retired); **stale + pct=100 with past resetsAt** → nothing; stale suppresses willHit/approaching; master-off and per-type-off gating (a disabled type isn't retired); both watched windows; null-window skip; past-resetsAt-at-100 fires `limitReached` via the pct clause even though projection state is `unavailable`.
 - **`test/alert-state.test.js`** — fired-key persistence, stale-`resetsAt` prune, corrupt/missing tolerance, atomic write (no `.tmp` left).
 - **`test/config-store.test.js` (extend)** — the read-merge-write refactor: setting alert prefs preserves `subscriptionCost` and vice-versa; `effectiveAlertPrefs` defaults all-on; per-field boolean validation; `POST /api/config/alerts` validation + `GET /api/config` reflection (in the `server-additions` style).
 - **Endpoint test (`test/server-alerts.test.js`)** — `GET /api/alerts/pending` returns `{ due, retire }` of the right shape and is side-effect-free (a second GET returns the same due set); `POST /api/alerts/ack { fired, retired }` marks both (a subsequent GET no longer returns them); a malformed ack body 400s.
