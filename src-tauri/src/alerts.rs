@@ -1,8 +1,9 @@
 //! Cross-platform alert poller/firer (Sub-Project B).
 //!
 //! Polls the always-on sidecar's `GET /api/alerts/pending` every 30s, fires
-//! each due alert as an OS notification (`tauri-plugin-notification`, the
-//! `ipc.rs:300` pattern), then `POST /api/alerts/ack`s the attempted ids +
+//! each due alert as an OS notification (`tauri-plugin-notification`, same
+//! `app.notification().builder()…show()` pattern as `ipc`'s update notice),
+//! then `POST /api/alerts/ack`s the attempted ids +
 //! the severity-collapsed `retire` keys so a key fires once per window
 //! instance. NOT macOS-gated — Windows needs notifications too.
 //!
@@ -76,7 +77,7 @@ pub fn spawn_alert_poller(app: tauri::AppHandle) {
         loop {
             interval.tick().await;
 
-            // Server-port resolution mirrors native_popover.rs:676-679.
+            // Server-port resolution mirrors native_popover::spawn_tray_title_poller.
             let port = app
                 .try_state::<crate::ipc::AppState>()
                 .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
