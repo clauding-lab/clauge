@@ -488,6 +488,12 @@
       "fn": "roiPace",
       "input": { "apiEquivalentSpendTrailing": 0, "subscriptionCost": 200 },
       "expected": null
+    },
+    {
+      "name": "roiPace: negative trailing spend yields null (defensive; unreachable from the live non-negative sum, but honors the no-negative-verdict contract for the iOS port)",
+      "fn": "roiPace",
+      "input": { "apiEquivalentSpendTrailing": -100, "subscriptionCost": 200 },
+      "expected": null
     }
   ]
 }
