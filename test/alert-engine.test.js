@@ -192,6 +192,25 @@ describe('willHit', () => {
       `approaching:fiveHour:95:${FIVE_RESET}`,
     ].sort());
   });
+
+  it('fires independently on the sevenDay window (per-window symmetry)', () => {
+    // Same forecast/collapse path must work on the OTHER watched window.
+    const usage = { sevenDay: { pct: 90, resetsAt: SEVEN_RESET } };
+    const projection = freshProjection(usage, steepHistory(usage));
+    assert.equal(projection.windows.sevenDay.state, 'will_hit');
+    const { due, retire } = evaluate({
+      usage,
+      projection,
+      prefs: ALL_ON,
+      fired: new Set(),
+      nowMs: NOW_MS,
+    });
+    assert.deepEqual(ids(due), [`willHit:sevenDay:${SEVEN_RESET}`]);
+    assert.deepEqual(retire.sort(), [
+      `approaching:sevenDay:80:${SEVEN_RESET}`,
+      `approaching:sevenDay:95:${SEVEN_RESET}`,
+    ].sort());
+  });
 });
 
 describe('dedup — key already in fired does not re-fire', () => {
