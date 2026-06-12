@@ -9,6 +9,7 @@ import {
   UsageHistory,
   resetsAtDriftWarning,
 } from '../lib/usage-history.js';
+import { WINDOW_KEYS } from '../lib/projection.js';
 
 let TMP;
 
@@ -181,6 +182,38 @@ describe('UsageHistory.samplesFor', () => {
       samples.map((s) => s.pct),
       [10, 12]
     );
+  });
+});
+
+describe('UsageHistory.samplesByWindow', () => {
+  it('reads the file once and buckets every window into one oldest-first map', async () => {
+    const file = join(TMP, 'by-window.jsonl');
+    const h = new UsageHistory({ filePath: file });
+    await h.record(NORMALIZED, T0_ISO);
+    await h.record(
+      {
+        ...NORMALIZED,
+        fiveHour: { pct: 21, resetsAt: '2026-06-12T14:20:00+00:00' },
+        sevenDay: { pct: 60, resetsAt: '2026-06-17T23:00:00+00:00' },
+      },
+      atIso(10 * 60000)
+    );
+    const map = await h.samplesByWindow();
+    // A (possibly empty) array per canonical window key, and equivalent to
+    // samplesFor for each populated key.
+    assert.deepEqual(map.fiveHour, await h.samplesFor('fiveHour'));
+    assert.deepEqual(map.sevenDay, await h.samplesFor('sevenDay'));
+    assert.deepEqual(map.fiveHour.map((s) => s.pct), [13, 21]);
+    // Every canonical key present; legacy/non-window keys never appear.
+    assert.deepEqual(Object.keys(map).sort(), [...WINDOW_KEYS].sort());
+    assert.equal(map.sevenDayOmelette, undefined);
+  });
+
+  it('returns all-empty arrays for a missing file', async () => {
+    const h = new UsageHistory({ filePath: join(TMP, 'no-such-by-window.jsonl') });
+    const map = await h.samplesByWindow();
+    assert.deepEqual(Object.keys(map).sort(), [...WINDOW_KEYS].sort());
+    for (const key of WINDOW_KEYS) assert.deepEqual(map[key], []);
   });
 });
 

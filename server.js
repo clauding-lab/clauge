@@ -39,7 +39,7 @@ import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
 import { ConfigStore } from './lib/config-store.js';
 import { UsageHistory } from './lib/usage-history.js';
-import { buildProjection, WINDOW_MS } from './lib/projection.js';
+import { buildProjection } from './lib/projection.js';
 import { configPaths } from './lib/config-paths.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
@@ -565,13 +565,10 @@ app.get('/api/roi', async (c) => {
 app.get('/api/projection', async (c) => {
   const nowMs = Date.now();
   const record = await usageStore.load();
-  // Per-window history, keyed by the same resolved window keys WINDOW_MS
-  // enumerates (fiveHour, sevenDay, sevenDaySonnet, sevenDayOpus,
-  // claudeDesign, dailyRoutines). samplesFor returns oldest-first.
-  const history = {};
-  for (const key of Object.keys(WINDOW_MS)) {
-    history[key] = await usageHistory.samplesFor(key);
-  }
+  // Per-window history map ({ [key]: oldest-first samples }) read in a single
+  // pass over the JSONL — keyed by the canonical WINDOW_KEYS (the same resolved
+  // windows WINDOW_MS enumerates), so a new window flows through automatically.
+  const history = await usageHistory.samplesByWindow();
   // ROI pace input: the SAME trailing-7d session filter /api/roi uses
   // (filterSessions period '7d' over loadAllSummaries + sumSessionCosts —
   // the established per-token cost pipeline, data contract #4).
