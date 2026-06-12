@@ -568,28 +568,33 @@ app.get('/api/roi', async (c) => {
 // lib/projection.js (pure, clock-injected); this handler only wires the
 // stores to the pure module and stamps generatedAt. nowMs is injected HERE
 // — Date.now() is allowed in server.js, never in lib/ (house rule).
-app.get('/api/projection', async (c) => {
-  const nowMs = Date.now();
+// Assemble the live projection from the current usage record + per-window
+// history (single-pass JSONL read, canonical WINDOW_KEYS so a new window flows
+// through automatically) + the trailing-7d spend (the same filterSessions '7d'
+// + sumSessionCosts pipeline /api/roi uses — data contract #4). Single source
+// of truth for the projection inputs so /api/projection and /api/alerts/pending
+// can't drift. Returns the raw usage record too (the alert engine reads
+// record.normalized for the observed pct). Caller injects ONE nowMs.
+async function buildLiveProjection(nowMs) {
   const record = await usageStore.load();
-  // Per-window history map ({ [key]: oldest-first samples }) read in a single
-  // pass over the JSONL — keyed by the canonical WINDOW_KEYS (the same resolved
-  // windows WINDOW_MS enumerates), so a new window flows through automatically.
   const history = await usageHistory.samplesByWindow();
-  // ROI pace input: the SAME trailing-7d session filter /api/roi uses
-  // (filterSessions period '7d' over loadAllSummaries + sumSessionCosts —
-  // the established per-token cost pipeline, data contract #4).
   const all = await store.loadAllSummaries();
   const trailing = filterSessions(all, { period: '7d', project: '', now: new Date(nowMs) });
-  const apiEquivalentSpendTrailing = sumSessionCosts(trailing);
-  const result = buildProjection({
+  const projection = buildProjection({
     normalized: record?.normalized ?? null,
     ingestedAt: record?.ingestedAt ?? null,
     history,
     nowMs,
-    apiEquivalentSpendTrailing,
+    apiEquivalentSpendTrailing: sumSessionCosts(trailing),
     subscriptionCost: await configStore.effectiveSubscriptionCost(),
   });
-  return c.json({ generatedAt: new Date(nowMs).toISOString(), ...result });
+  return { record, projection };
+}
+
+app.get('/api/projection', async (c) => {
+  const nowMs = Date.now();
+  const { projection } = await buildLiveProjection(nowMs);
+  return c.json({ generatedAt: new Date(nowMs).toISOString(), ...projection });
 });
 
 // Desktop-alerts decision endpoint (active-guardrail sub-project B). Consumed
@@ -602,19 +607,7 @@ app.get('/api/projection', async (c) => {
 // so a Rust crash before firing re-fires next tick (at-least-once).
 app.get('/api/alerts/pending', async (c) => {
   const nowMs = Date.now();
-  const record = await usageStore.load();
-  const history = await usageHistory.samplesByWindow();
-  const all = await store.loadAllSummaries();
-  const trailing = filterSessions(all, { period: '7d', project: '', now: new Date(nowMs) });
-  const apiEquivalentSpendTrailing = sumSessionCosts(trailing);
-  const projection = buildProjection({
-    normalized: record?.normalized ?? null,
-    ingestedAt: record?.ingestedAt ?? null,
-    history,
-    nowMs,
-    apiEquivalentSpendTrailing,
-    subscriptionCost: await configStore.effectiveSubscriptionCost(),
-  });
+  const { record, projection } = await buildLiveProjection(nowMs);
   const prefs = await configStore.effectiveAlertPrefs();
   const fired = await alertState.load(nowMs);
   const { due, retire } = evaluate({
