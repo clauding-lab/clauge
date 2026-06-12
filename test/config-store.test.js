@@ -140,3 +140,150 @@ describe('setSubscriptionCost', () => {
     assert.equal(await nested.effectiveSubscriptionCost(), 42);
   });
 });
+
+// ── Read-merge-write refactor: subscriptionCost and alerts must coexist ──
+// Today setSubscriptionCost rewrites the whole file ({v:1,subscriptionCost}).
+// After the refactor, a write to either key must preserve the other.
+describe('read-merge-write — subscriptionCost and alerts coexist', () => {
+  it('setSubscriptionCost preserves an existing alerts block', async () => {
+    await writeConfig(
+      JSON.stringify({
+        v: 1,
+        subscriptionCost: 200,
+        alerts: { enabled: false, types: { approaching: false, willHit: true, limitReached: true } },
+      })
+    );
+    const store = makeStore({});
+    await store.setSubscriptionCost(120);
+
+    const onDisk = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'));
+    assert.equal(onDisk.subscriptionCost, 120, 'cost updated');
+    assert.deepEqual(
+      onDisk.alerts,
+      { enabled: false, types: { approaching: false, willHit: true, limitReached: true } },
+      'alerts block untouched by a cost write'
+    );
+  });
+
+  it('setAlertPrefs preserves an existing subscriptionCost', async () => {
+    await writeConfig(JSON.stringify({ v: 1, subscriptionCost: 150 }));
+    const store = makeStore({ SUBSCRIPTION_COST: '999' });
+    await store.setAlertPrefs({ enabled: false });
+
+    const onDisk = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'));
+    assert.equal(onDisk.subscriptionCost, 150, 'cost preserved by an alerts write');
+    assert.equal(await store.effectiveSubscriptionCost(), 150, 'file cost still wins over env');
+  });
+});
+
+describe('effectiveAlertPrefs — defaults all-on', () => {
+  it('returns all-on when no file exists', async () => {
+    assert.deepEqual(await makeStore({}).effectiveAlertPrefs(), {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: true, limitReached: true },
+    });
+  });
+
+  it('returns all-on when the file has no alerts block', async () => {
+    await writeConfig(JSON.stringify({ v: 1, subscriptionCost: 200 }));
+    assert.deepEqual(await makeStore({}).effectiveAlertPrefs(), {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: true, limitReached: true },
+    });
+  });
+
+  it('returns all-on when the file is corrupt JSON', async () => {
+    await writeConfig('{ not json at all');
+    assert.deepEqual(await makeStore({}).effectiveAlertPrefs(), {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: true, limitReached: true },
+    });
+  });
+
+  it('reflects a fully specified alerts block', async () => {
+    await writeConfig(
+      JSON.stringify({
+        v: 1,
+        subscriptionCost: 200,
+        alerts: { enabled: false, types: { approaching: false, willHit: false, limitReached: true } },
+      })
+    );
+    assert.deepEqual(await makeStore({}).effectiveAlertPrefs(), {
+      alertsEnabled: false,
+      types: { approaching: false, willHit: false, limitReached: true },
+    });
+  });
+
+  it('coerces a non-boolean flag to the default true (per-flag)', async () => {
+    await writeConfig(
+      JSON.stringify({
+        v: 1,
+        alerts: { enabled: 'yes', types: { approaching: 1, willHit: false, limitReached: null } },
+      })
+    );
+    // enabled 'yes' -> non-boolean -> default true; approaching 1 -> true;
+    // willHit false -> false (a real boolean is honored); limitReached null -> true.
+    assert.deepEqual(await makeStore({}).effectiveAlertPrefs(), {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: false, limitReached: true },
+    });
+  });
+
+  it('fills missing per-type flags with true', async () => {
+    await writeConfig(
+      JSON.stringify({ v: 1, alerts: { enabled: true, types: { willHit: false } } })
+    );
+    assert.deepEqual(await makeStore({}).effectiveAlertPrefs(), {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: false, limitReached: true },
+    });
+  });
+});
+
+describe('setAlertPrefs — merge, validate, return effective', () => {
+  it('toggling one type preserves the others', async () => {
+    await writeConfig(
+      JSON.stringify({
+        v: 1,
+        alerts: { enabled: true, types: { approaching: true, willHit: true, limitReached: true } },
+      })
+    );
+    const store = makeStore({});
+    const eff = await store.setAlertPrefs({ types: { willHit: false } });
+    assert.deepEqual(eff, {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: false, limitReached: true },
+    });
+
+    const onDisk = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'));
+    assert.deepEqual(onDisk.alerts.types, { approaching: true, willHit: false, limitReached: true });
+  });
+
+  it('a fresh instance rereads the persisted alert prefs', async () => {
+    await makeStore({}).setAlertPrefs({ enabled: false });
+    const eff = await makeStore({}).effectiveAlertPrefs();
+    assert.equal(eff.alertsEnabled, false);
+  });
+
+  it('rejects a non-boolean enabled', async () => {
+    await assert.rejects(
+      () => makeStore({}).setAlertPrefs({ enabled: 'on' }),
+      /boolean/,
+      'enabled must be a boolean'
+    );
+  });
+
+  it('rejects a non-boolean type flag', async () => {
+    await assert.rejects(
+      () => makeStore({}).setAlertPrefs({ types: { approaching: 1 } }),
+      /boolean/,
+      'type flags must be booleans'
+    );
+  });
+
+  it('leaves no .tmp file behind (atomic tmp + rename)', async () => {
+    await makeStore({}).setAlertPrefs({ enabled: true });
+    const entries = await readdir(dir);
+    assert.deepEqual(entries, ['config.json']);
+  });
+});
