@@ -208,3 +208,88 @@ describe('SIGTERM graceful shutdown', {
     }
   });
 });
+
+// Component 4 of the on-device projection spec: the subscription cost is a
+// persisted sidecar-owned setting (~/.clauge/config.json) with precedence
+// file -> SUBSCRIPTION_COST env -> 200, editable at runtime via
+// POST /api/config/subscription-cost (no sidecar restart needed).
+// HOME-redirect caveat: os.homedir() reads USERPROFILE (not HOME) on
+// Windows, so the sandbox redirect is silently ignored there — skip, same
+// rationale as the SIGTERM suite above.
+describe('subscription-cost setting (POST /api/config/subscription-cost)', {
+  skip: process.platform === 'win32'
+    ? 'HOME redirect ignored on Windows (os.homedir() uses USERPROFILE)'
+    : false,
+}, () => {
+  let server, home;
+  const PORT = '3505';
+  const BASE = `http://127.0.0.1:${PORT}`;
+
+  before(async () => {
+    home = await mkdtemp(`${tmpdir()}/clauge-config-`);
+    // Pin the env tier explicitly so an ambient SUBSCRIPTION_COST (.env or
+    // shell) can't make the precedence assertions flaky.
+    server = await startServer({ PORT, HOME: home, SUBSCRIPTION_COST: '175' });
+  });
+
+  after(async () => {
+    if (server && !server.killed) {
+      server.kill('SIGTERM');
+      await new Promise((r) => server.once('exit', r));
+    }
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('serves the env-tier cost when nothing is persisted', async () => {
+    const res = await fetch(`${BASE}/api/config`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.subscriptionCost, 175);
+  });
+
+  it('rejects invalid bodies with 400 and leaves the effective cost unchanged', async () => {
+    const badBodies = [
+      'not json at all',
+      '{}',
+      '{"subscriptionCost":0}',
+      '{"subscriptionCost":-5}',
+      '{"subscriptionCost":"150"}',
+      '{"subscriptionCost":null}',
+    ];
+    for (const body of badBodies) {
+      const res = await fetch(`${BASE}/api/config/subscription-cost`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      assert.equal(res.status, 400, `expected 400 for body: ${body}`);
+    }
+    const cfg = await (await fetch(`${BASE}/api/config`)).json();
+    assert.equal(cfg.subscriptionCost, 175, 'effective cost untouched by rejected posts');
+  });
+
+  it('persists a valid cost and every consumer reflects it without a restart', async () => {
+    const res = await fetch(`${BASE}/api/config/subscription-cost`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscriptionCost: 120 }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { subscriptionCost: 120 });
+
+    const cfg = await (await fetch(`${BASE}/api/config`)).json();
+    assert.equal(cfg.subscriptionCost, 120, '/api/config reflects the persisted value');
+
+    const health = await (await fetch(`${BASE}/api/health`)).json();
+    assert.equal(health.subscriptionCost, 120, '/api/health reflects the persisted value');
+
+    const roi = await (await fetch(`${BASE}/api/roi`)).json();
+    assert.equal(roi.subscriptionCost, 120, '/api/roi computes against the persisted value');
+
+    const snapshot = await (await fetch(`${BASE}/api/snapshot`)).json();
+    assert.equal(snapshot.roi.subscriptionCost, 120, '/api/snapshot ROI block uses the persisted value');
+
+    const persisted = JSON.parse(await readFile(`${home}/.clauge/config.json`, 'utf8'));
+    assert.deepEqual(persisted, { v: 1, subscriptionCost: 120 });
+  });
+});

@@ -37,6 +37,7 @@ import {
 import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
+import { ConfigStore } from './lib/config-store.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
 import { listProviders, PROVIDERS } from './lib/providers.js';
@@ -64,7 +65,14 @@ const __dirname = dirname(__filename);
 const PORT = Number(process.env.PORT ?? 3456);
 const CLAUDE_DIR = (process.env.CLAUDE_DIR ?? join(homedir(), '.claude'))
   .replace(/^~(?=\/)/, homedir());
-const SUBSCRIPTION_COST = Number(process.env.SUBSCRIPTION_COST ?? 200);
+// Subscription cost is a persisted setting (projection spec Component 4):
+// ~/.clauge/config.json value -> SUBSCRIPTION_COST env -> 200, validated
+// read-side at every tier. Resolved per request via the getter so a
+// POST /api/config/subscription-cost applies without a sidecar restart.
+const configStore = new ConfigStore({
+  filePath: join(homedir(), '.clauge', 'config.json'),
+  env: process.env,
+});
 
 let APP_VERSION = '0.0.0-unknown';
 try {
@@ -242,7 +250,7 @@ app.get('/api/health', async (c) => {
     version: APP_VERSION,
     pid: process.pid,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
-    subscriptionCost: SUBSCRIPTION_COST,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
     extensionLastSeenAt: record?.ingestedAt ?? null,
   });
 });
@@ -529,7 +537,7 @@ app.get('/api/roi', async (c) => {
     period: filtered.period,
     ...apiReplacementValue({
       apiEquivalentSpend,
-      subscriptionCost: SUBSCRIPTION_COST,
+      subscriptionCost: await configStore.effectiveSubscriptionCost(),
       extraUsageSpend: 0,
     }),
   });
@@ -544,7 +552,7 @@ app.get('/api/snapshot', async (c) => {
   const snapshot = await buildSnapshot({
     store,
     usageStore,
-    subscriptionCost: SUBSCRIPTION_COST,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
     tz,
   });
   return c.json(snapshot);
@@ -554,7 +562,7 @@ app.get('/api/config', async (c) => {
   const providers = await listProviders();
   return c.json({
     claudeDir: CLAUDE_DIR,
-    subscriptionCost: SUBSCRIPTION_COST,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     providers,
   });
@@ -579,6 +587,26 @@ app.post('/api/config/providers/:name', async (c) => {
   const providers = await listProviders();
   const updated = providers.find((p) => p.name === name);
   return c.json({ provider: updated });
+});
+
+// Component 4 (projection spec): editable subscription cost. Mirrors the
+// providers handler above: same-origin dashboard POST, no CORS middleware
+// (READ_ONLY_API_PATHS' '/api/config' entry does not match this subpath,
+// and the dashboard is served from this same origin). Validation matches
+// ConfigStore.setSubscriptionCost: finite number > 0, strict type.
+app.post('/api/config/subscription-cost', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  const cost = body?.subscriptionCost;
+  if (typeof cost !== 'number' || !Number.isFinite(cost) || cost <= 0) {
+    return c.json({ error: 'expected body: { subscriptionCost: <number > 0> }' }, 400);
+  }
+  await configStore.setSubscriptionCost(cost);
+  return c.json({ subscriptionCost: await configStore.effectiveSubscriptionCost() });
 });
 
 app.post('/api/usage/ingest', async (c) => {
