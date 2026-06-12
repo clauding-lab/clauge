@@ -104,6 +104,8 @@ const usageHistory = new UsageHistory({
 usageHistory.prune(Date.now()).catch((err) => {
   console.warn(`[Clauge] usage-history prune failed: ${err?.message ?? err}`);
 });
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let lastPruneAtMs = Date.now();
 
 function parseFilters(c) {
   const period = c.req.query('period') ?? '7d';
@@ -690,6 +692,12 @@ app.post('/api/usage/ingest', async (c) => {
   // usage payloads, and a null record has no windows to sample.
   if (normalized) {
     usageHistory.record(normalized, record.ingestedAt).catch(() => {});
+    if (Date.now() - lastPruneAtMs > PRUNE_INTERVAL_MS) {
+      lastPruneAtMs = Date.now();
+      usageHistory.prune(Date.now()).catch((err) => {
+        console.warn(`[Clauge] usage-history prune failed: ${err?.message ?? err}`);
+      });
+    }
   }
   return c.json({
     ok: true,
