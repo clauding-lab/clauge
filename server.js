@@ -38,6 +38,7 @@ import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
 import { ConfigStore } from './lib/config-store.js';
+import { configPaths } from './lib/config-paths.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
 import { listProviders, PROVIDERS } from './lib/providers.js';
@@ -70,7 +71,7 @@ const CLAUDE_DIR = (process.env.CLAUDE_DIR ?? join(homedir(), '.claude'))
 // read-side at every tier. Resolved per request via the getter so a
 // POST /api/config/subscription-cost applies without a sidecar restart.
 const configStore = new ConfigStore({
-  filePath: join(homedir(), '.clauge', 'config.json'),
+  filePath: configPaths.configFile(),
   env: process.env,
 });
 

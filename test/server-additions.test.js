@@ -213,14 +213,10 @@ describe('SIGTERM graceful shutdown', {
 // persisted sidecar-owned setting (~/.clauge/config.json) with precedence
 // file -> SUBSCRIPTION_COST env -> 200, editable at runtime via
 // POST /api/config/subscription-cost (no sidecar restart needed).
-// HOME-redirect caveat: os.homedir() reads USERPROFILE (not HOME) on
-// Windows, so the sandbox redirect is silently ignored there — skip, same
-// rationale as the SIGTERM suite above.
-describe('subscription-cost setting (POST /api/config/subscription-cost)', {
-  skip: process.platform === 'win32'
-    ? 'HOME redirect ignored on Windows (os.homedir() uses USERPROFILE)'
-    : false,
-}, () => {
+// Sandbox via CLAUGE_HOME (configPaths.configFile() honors it), so path
+// resolution is redirected cross-platform — including Windows, where a raw
+// HOME redirect would be silently ignored (os.homedir() reads USERPROFILE).
+describe('subscription-cost setting (POST /api/config/subscription-cost)', () => {
   let server, home;
   const PORT = '3505';
   const BASE = `http://127.0.0.1:${PORT}`;
@@ -229,7 +225,7 @@ describe('subscription-cost setting (POST /api/config/subscription-cost)', {
     home = await mkdtemp(`${tmpdir()}/clauge-config-`);
     // Pin the env tier explicitly so an ambient SUBSCRIPTION_COST (.env or
     // shell) can't make the precedence assertions flaky.
-    server = await startServer({ PORT, HOME: home, SUBSCRIPTION_COST: '175' });
+    server = await startServer({ PORT, CLAUGE_HOME: home, SUBSCRIPTION_COST: '175' });
   });
 
   after(async () => {
