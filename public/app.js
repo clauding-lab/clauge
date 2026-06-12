@@ -981,6 +981,7 @@ function renderSettings() {
     }
   }
   initSubCostControl();
+  initAlertControls();
   initSettingsGeneralControls();
 }
 
@@ -1034,6 +1035,70 @@ function initSubCostControl() {
       showStatus('Save failed — value not stored');
     }
   });
+}
+
+// Sub-project B: desktop-alert prefs are editable from Settings. On load,
+// GET /api/config and paint the master toggle + 3 per-type checkboxes via the
+// pure ClaugeDashSwr.alertPrefsView mapping. On change, POST /api/config/alerts
+// and re-apply the effective prefs the server returns (so flipping the master
+// toggle live-greys the per-type boxes). USER-ACTION path, not the 60s auto-
+// refresh path. Plain fetch (same-origin, must work in browser mode too).
+let __alertsInitialized = false;
+const ALERTS_STATUS_CLEAR_MS = 4000;
+function initAlertControls() {
+  if (__alertsInitialized) return;
+  const enabledEl = document.getElementById('set-alerts-enabled');
+  if (!enabledEl) return;
+  __alertsInitialized = true;
+
+  const approachingEl = document.getElementById('set-alert-approaching');
+  const willHitEl = document.getElementById('set-alert-willhit');
+  const limitReachedEl = document.getElementById('set-alert-limitreached');
+  const status = document.getElementById('set-alerts-status');
+  let statusTimer = null;
+  const showStatus = (text) => {
+    if (!status) return;
+    status.textContent = text;
+    if (statusTimer) clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { status.textContent = ''; }, ALERTS_STATUS_CLEAR_MS);
+  };
+
+  const view = (window.ClaugeDashSwr && window.ClaugeDashSwr.alertPrefsView) || ((a) => a);
+  const paint = (alerts) => {
+    const v = view(alerts);
+    enabledEl.checked = v.enabled;
+    approachingEl.checked = v.approaching;
+    willHitEl.checked = v.willHit;
+    limitReachedEl.checked = v.limitReached;
+    for (const el of [approachingEl, willHitEl, limitReachedEl]) el.disabled = v.disabled;
+  };
+
+  const post = async (partial) => {
+    try {
+      const res = await fetch('/api/config/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(partial),
+      });
+      if (!res.ok) throw new Error(`POST /api/config/alerts → ${res.status}`);
+      paint(await res.json());
+      showStatus('Saved');
+    } catch (err) {
+      console.error('alert prefs save failed:', err);
+      showStatus('Save failed — not stored');
+    }
+  };
+
+  enabledEl.addEventListener('change', () => post({ enabled: enabledEl.checked }));
+  approachingEl.addEventListener('change', () => post({ types: { approaching: approachingEl.checked } }));
+  willHitEl.addEventListener('change', () => post({ types: { willHit: willHitEl.checked } }));
+  limitReachedEl.addEventListener('change', () => post({ types: { limitReached: limitReachedEl.checked } }));
+
+  // Initial load: GET /api/config for the current alerts block, then paint.
+  fetch('/api/config')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((cfg) => { if (cfg && cfg.alerts) paint(cfg.alerts); })
+    .catch((err) => console.error('alert prefs load failed:', err));
 }
 
 // Tauri 2 ACL: dashboard is loaded via WebviewUrl::External (HTTP). Plugin

@@ -86,7 +86,27 @@
     return `Monthly pace: ${roiPace.paceMultiple.toFixed(1)}×`;
   }
 
+  // ── Alert prefs display mapping (sub-project B) ─────────────────────────
+  // Pure: the /api/config `alerts` block → the Settings checkbox view model.
+  // Defaults everything ON when the block is absent/garbage (mirrors the
+  // server's all-on default). `disabled` flags the per-type checkboxes as
+  // non-interactive while the master toggle is off (they still reflect their
+  // stored values so flipping master back on restores the visual state).
+  function alertPrefsView(alerts) {
+    const block = alerts && typeof alerts === 'object' ? alerts : {};
+    const types = block.types && typeof block.types === 'object' ? block.types : {};
+    const bool = (v) => (typeof v === 'boolean' ? v : true);
+    const enabled = bool(block.alertsEnabled);
+    return {
+      enabled,
+      approaching: bool(types.approaching),
+      willHit: bool(types.willHit),
+      limitReached: bool(types.limitReached),
+      disabled: !enabled,
+    };
+  }
+
   if (typeof window !== 'undefined') {
-    window.ClaugeDashSwr = { syncMeta, shouldSkipTick, projectionLine, wowLine, paceLine };
+    window.ClaugeDashSwr = { syncMeta, shouldSkipTick, projectionLine, wowLine, paceLine, alertPrefsView };
   }
 })();

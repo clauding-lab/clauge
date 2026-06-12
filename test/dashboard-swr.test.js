@@ -22,7 +22,7 @@ function loadDashSwr() {
   return factory({});
 }
 
-const { syncMeta, shouldSkipTick } = loadDashSwr();
+const { syncMeta, shouldSkipTick, alertPrefsView } = loadDashSwr();
 
 describe('syncMeta — dashboard SWR sync-line + dot state', () => {
   const T0 = Date.parse('2026-06-12T10:00:00Z');
@@ -65,5 +65,54 @@ describe('shouldSkipTick — refresh overlap guard', () => {
   });
   it('skips the tick when a refresh is already in flight', () => {
     assert.equal(shouldSkipTick(true), true);
+  });
+});
+
+describe('alertPrefsView — /api/config alerts -> checkbox state', () => {
+  it('maps a full all-on alerts block to checked flags', () => {
+    const v = alertPrefsView({
+      alertsEnabled: true,
+      types: { approaching: true, willHit: true, limitReached: true },
+    });
+    assert.deepEqual(v, {
+      enabled: true,
+      approaching: true,
+      willHit: true,
+      limitReached: true,
+      disabled: false,
+    });
+  });
+
+  it('marks per-type checkboxes disabled when the master toggle is off', () => {
+    const v = alertPrefsView({
+      alertsEnabled: false,
+      types: { approaching: true, willHit: false, limitReached: true },
+    });
+    assert.equal(v.enabled, false);
+    assert.equal(v.disabled, true, 'per-type checkboxes greyed when master off');
+    // the underlying per-type values are still reflected (so flipping master
+    // back on restores them visually)
+    assert.equal(v.approaching, true);
+    assert.equal(v.willHit, false);
+  });
+
+  it('defaults to all-on + enabled when given null/garbage', () => {
+    for (const bad of [null, undefined, 42, 'x', {}]) {
+      const v = alertPrefsView(bad);
+      assert.deepEqual(v, {
+        enabled: true,
+        approaching: true,
+        willHit: true,
+        limitReached: true,
+        disabled: false,
+      });
+    }
+  });
+
+  it('coerces non-boolean type flags to true (mirrors the server default)', () => {
+    const v = alertPrefsView({ alertsEnabled: true, types: { willHit: false } });
+    assert.equal(v.approaching, true, 'missing type -> default on');
+    assert.equal(v.willHit, false, 'explicit false honored');
+    assert.equal(v.limitReached, true, 'missing type -> default on');
   });
 });
