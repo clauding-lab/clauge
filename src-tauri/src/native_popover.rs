@@ -292,6 +292,52 @@ define_class!(
             });
         }
 
+        #[unsafe(method(menuToggleAlerts:))]
+        fn menu_toggle_alerts(&self, sender: &NSMenuItem) {
+            let Some(app) = APP_HANDLE_REF.get() else {
+                return;
+            };
+            let app = app.clone();
+            // Optimistic local checkmark flip: read the current state, toggle,
+            // then reconcile from the server response below.
+            let current_on = sender.state() == objc2_app_kit::NSControlStateValueOn;
+            let next = !current_on;
+            tauri::async_runtime::spawn(async move {
+                use tauri::Manager;
+                let port = app
+                    .try_state::<crate::ipc::AppState>()
+                    .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
+                let Some(port) = port else {
+                    log::warn!("alerts toggle: no server port yet");
+                    return;
+                };
+                let url = format!("http://127.0.0.1:{port}/api/config/alerts");
+                let body = serde_json::json!({ "enabled": next });
+                let enabled = match crate::http_client::LOCAL_CLIENT
+                    .post(&url)
+                    .json(&body)
+                    .send()
+                    .await
+                {
+                    Ok(resp) => match resp.json::<serde_json::Value>().await {
+                        Ok(json) => json
+                            .get("alertsEnabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(next),
+                        Err(e) => {
+                            log::warn!("alerts toggle: response parse failed: {e}");
+                            next
+                        }
+                    },
+                    Err(e) => {
+                        log::warn!("alerts toggle: POST failed: {e}");
+                        return; // leave the checkmark as-is; server unchanged
+                    }
+                };
+                set_alerts_menu_checkmark(&app, enabled);
+            });
+        }
+
         #[unsafe(method(menuQuit:))]
         fn menu_quit(&self, _sender: &NSMenuItem) {
             if let Some(app) = APP_HANDLE_REF.get() {
@@ -333,6 +379,25 @@ fn build_menu(mtm: objc2::MainThreadMarker) -> (Retained<NSMenu>, Retained<Claug
         menu.addItem(&item);
     }
 
+    // "Alerts: On/Off" toggle. Checkmark reflects alerts.enabled; the action
+    // POSTs /api/config/alerts { enabled: !current }. Starts checked (prefs
+    // default all-on); seed_alerts_menu_state() reconciles to the real value.
+    let alerts_title = NSString::from_str("Alerts");
+    let empty_key = NSString::from_str("");
+    let alerts_item = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc::<NSMenuItem>(),
+            &alerts_title,
+            Some(objc2::sel!(menuToggleAlerts:)),
+            &empty_key,
+        )
+    };
+    unsafe {
+        alerts_item.setTarget(Some(target.as_ref()));
+        alerts_item.setState(objc2_app_kit::NSControlStateValueOn);
+    }
+    menu.addItem(&alerts_item);
+
     let separator = NSMenuItem::separatorItem(mtm);
     menu.addItem(&separator);
 
@@ -350,6 +415,85 @@ fn build_menu(mtm: objc2::MainThreadMarker) -> (Retained<NSMenu>, Retained<Claug
     menu.addItem(&quit_item);
 
     (menu, target)
+}
+
+/// Set the "Alerts" menu item checkmark. The NSMenuItem is the FIRST item
+/// whose action selector is `menuToggleAlerts:` — re-resolved each call from
+/// MENU_REF so we never store a raw item pointer. Main-thread-only (NSMenu
+/// mutation), so hopped via `run_on_main_thread`.
+#[cfg(target_os = "macos")]
+fn set_alerts_menu_checkmark(app: &tauri::AppHandle, enabled: bool) {
+    let _ = app.run_on_main_thread(move || {
+        use objc2::MainThreadMarker;
+        if MainThreadMarker::new().is_none() {
+            return;
+        }
+        let Some(menu) = MENU_REF
+            .get()
+            .and_then(|m| m.lock().ok().and_then(|g| g.as_ref().map(|c| c.get())))
+        else {
+            return;
+        };
+        let count = menu.numberOfItems();
+        let toggle_sel = objc2::sel!(menuToggleAlerts:);
+        for i in 0..count {
+            let Some(item) = menu.itemAtIndex(i) else {
+                continue;
+            };
+            if item.action() == Some(toggle_sel) {
+                let state = if enabled {
+                    objc2_app_kit::NSControlStateValueOn
+                } else {
+                    objc2_app_kit::NSControlStateValueOff
+                };
+                item.setState(state);
+                break;
+            }
+        }
+    });
+}
+
+/// One-shot reconcile of the Alerts checkmark to the real `alerts.enabled`
+/// after the sidecar binds its port. Spawned from `init` beside the title
+/// poller; retries until the port is known, reads GET /api/config once, sets
+/// the checkmark, and exits.
+#[cfg(target_os = "macos")]
+fn seed_alerts_menu_state(app: tauri::AppHandle) {
+    use tauri::Manager;
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            let port = app
+                .try_state::<crate::ipc::AppState>()
+                .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
+            let Some(port) = port else { continue };
+            let url = format!("http://127.0.0.1:{port}/api/config");
+            match crate::http_client::LOCAL_CLIENT.get(&url).send().await {
+                Ok(resp) => {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        // GET /api/config nests prefs as
+                        // `alerts: { alertsEnabled, types }` (config-store.js
+                        // effectiveAlertPrefs), NOT `alerts.enabled`. Mirror the
+                        // POST path's `alertsEnabled` key so the seed reads the
+                        // real persisted state instead of always defaulting on.
+                        let enabled = json
+                            .get("alerts")
+                            .and_then(|a| a.get("alertsEnabled"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
+                        set_alerts_menu_checkmark(&app, enabled);
+                    }
+                    return; // one-shot: succeeded (or got a parseable response)
+                }
+                Err(e) => {
+                    log::debug!("alerts seed: config fetch failed: {e}");
+                    // keep retrying until the sidecar answers
+                }
+            }
+        }
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -656,8 +800,28 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
     );
 
     spawn_tray_title_poller(app.clone());
+    seed_alerts_menu_state(app.clone());
 
     Ok(())
+}
+
+/// The 80% "approaching" threshold for the menu-bar ⚠ cue. Mirrors
+/// `APPROACHING_LEVELS` (the 80 floor) in `lib/alert-engine.js`.
+#[cfg(target_os = "macos")]
+const TRAY_WARN_PCT: f64 = 80.0;
+
+/// Pure: returns the warning-glyph prefix (`"⚠ "`) when EITHER watched
+/// window is at or past 80%, else `""`. `None` (window absent / no data) is
+/// treated as below-threshold. Unit-tested; the poller that calls it is
+/// manual-smoke (landmine #9).
+#[cfg(target_os = "macos")]
+fn tray_warning_prefix(five_pct: Option<f64>, seven_pct: Option<f64>) -> &'static str {
+    let hot = |p: Option<f64>| p.map(|v| v >= TRAY_WARN_PCT).unwrap_or(false);
+    if hot(five_pct) || hot(seven_pct) {
+        "\u{26a0} " // ⚠ + a single trailing space before the percent chiclet
+    } else {
+        ""
+    }
 }
 
 /// Background poll: every 30s, fetch /api/usage and write the 5-hour pct as
@@ -678,13 +842,9 @@ fn spawn_tray_title_poller(app_handle: tauri::AppHandle) {
                 .and_then(|s| s.server_port.lock().ok().and_then(|g| *g));
             let Some(port) = port else { continue };
             let url = format!("http://127.0.0.1:{}/api/usage", port);
-            let pct = match crate::http_client::LOCAL_CLIENT.get(&url).send().await {
+            let plan = match crate::http_client::LOCAL_CLIENT.get(&url).send().await {
                 Ok(resp) => match resp.json::<serde_json::Value>().await {
-                    Ok(json) => json
-                        .get("plan")
-                        .and_then(|p| p.get("fiveHour"))
-                        .and_then(|f| f.get("pct"))
-                        .and_then(|p| p.as_f64()),
+                    Ok(json) => json.get("plan").cloned(),
                     Err(e) => {
                         log::debug!("usage json parse failed: {}", e);
                         None
@@ -695,9 +855,21 @@ fn spawn_tray_title_poller(app_handle: tauri::AppHandle) {
                     None
                 }
             };
-            if let Some(pct) = pct {
-                let title = format!(" {}%", pct.round() as i64);
-                update_tray_title(&app_handle, title);
+            let window_pct = |plan: &serde_json::Value, window: &str| {
+                plan.get(window)
+                    .and_then(|w| w.get("pct"))
+                    .and_then(|p| p.as_f64())
+            };
+            if let Some(plan) = plan {
+                let five_pct = window_pct(&plan, "fiveHour");
+                let seven_pct = window_pct(&plan, "sevenDay");
+                if let Some(pct) = five_pct {
+                    // PRESERVE the leading-space chiclet gap; the ⚠ prefix (if any)
+                    // sits BEFORE the space-padded percent.
+                    let prefix = tray_warning_prefix(five_pct, seven_pct);
+                    let title = format!("{} {}%", prefix.trim_end(), pct.round() as i64);
+                    update_tray_title(&app_handle, title);
+                }
             }
         }
     });
@@ -772,4 +944,38 @@ pub fn reload_for_port(_app: &tauri::AppHandle, _port: u16) {}
 #[cfg(not(target_os = "macos"))]
 pub fn init(_app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warning_prefix_empty_when_both_below_80() {
+        assert_eq!(tray_warning_prefix(Some(79.0), Some(50.0)), "");
+    }
+
+    #[test]
+    fn warning_prefix_set_when_five_hour_at_or_past_80() {
+        assert_eq!(tray_warning_prefix(Some(80.0), Some(10.0)), "\u{26a0} ");
+        assert_eq!(tray_warning_prefix(Some(95.0), None), "\u{26a0} ");
+        assert_eq!(tray_warning_prefix(Some(100.0), Some(0.0)), "\u{26a0} ");
+    }
+
+    #[test]
+    fn warning_prefix_set_when_seven_day_at_or_past_80() {
+        assert_eq!(tray_warning_prefix(Some(10.0), Some(80.0)), "\u{26a0} ");
+        assert_eq!(tray_warning_prefix(None, Some(99.0)), "\u{26a0} ");
+    }
+
+    #[test]
+    fn warning_prefix_empty_when_both_none() {
+        assert_eq!(tray_warning_prefix(None, None), "");
+    }
+
+    #[test]
+    fn warning_prefix_empty_just_below_threshold() {
+        // 79.99 is below 80 — no cue. The boundary is inclusive at 80.0.
+        assert_eq!(tray_warning_prefix(Some(79.99), Some(79.99)), "");
+    }
 }
