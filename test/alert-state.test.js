@@ -81,8 +81,8 @@ describe('load — prune by embedded resetsAt', () => {
 describe('markFired — union + atomic persistence', () => {
   it('persists the union and a re-load reflects it', async () => {
     const state = makeState();
-    await state.markFired([FUTURE_KEY]);
-    await state.markFired([FUTURE_LIMIT_KEY, FUTURE_KEY]); // dup + new
+    await state.markFired([FUTURE_KEY], NOW_MS);
+    await state.markFired([FUTURE_LIMIT_KEY, FUTURE_KEY], NOW_MS); // dup + new
 
     const onDisk = JSON.parse(
       await readFile(join(dir, 'alert-state.json'), 'utf8')
@@ -96,8 +96,23 @@ describe('markFired — union + atomic persistence', () => {
     assert.equal(fired.size, 2);
   });
 
+  it('prunes expired + garbage keys ON WRITE so the file is actually bounded', async () => {
+    // Seed a file already carrying an expired key + an unparseable key.
+    await writeRaw(
+      JSON.stringify({ v: 1, fired: [PAST_KEY, 'garbage-no-iso', FUTURE_KEY] })
+    );
+    // Marking a new live key must drop the expired/garbage ones from DISK.
+    await makeState().markFired([FUTURE_LIMIT_KEY], NOW_MS);
+    const onDisk = JSON.parse(
+      await readFile(join(dir, 'alert-state.json'), 'utf8')
+    );
+    assert.deepEqual([...onDisk.fired].sort(), [FUTURE_KEY, FUTURE_LIMIT_KEY].sort());
+    assert.ok(!onDisk.fired.includes(PAST_KEY), 'expired key removed from disk');
+    assert.ok(!onDisk.fired.includes('garbage-no-iso'), 'garbage key removed from disk');
+  });
+
   it('leaves no .tmp file behind (atomic tmp + rename)', async () => {
-    await makeState().markFired([FUTURE_KEY]);
+    await makeState().markFired([FUTURE_KEY], NOW_MS);
     const entries = await readdir(dir);
     assert.deepEqual(entries, ['alert-state.json']);
   });
@@ -106,14 +121,14 @@ describe('markFired — union + atomic persistence', () => {
     const nested = new AlertState({
       filePath: join(dir, 'deeper', '.clauge', 'alert-state.json'),
     });
-    await nested.markFired([FUTURE_KEY]);
+    await nested.markFired([FUTURE_KEY], NOW_MS);
     const fired = await nested.load(NOW_MS);
     assert.ok(fired.has(FUTURE_KEY));
   });
 
   it('markFired with an empty array still produces a valid empty file', async () => {
     const state = makeState();
-    await state.markFired([]);
+    await state.markFired([], NOW_MS);
     const onDisk = JSON.parse(
       await readFile(join(dir, 'alert-state.json'), 'utf8')
     );

@@ -3,6 +3,7 @@ pub mod anthropic_oauth;
 // reads/writes a Keychain entry the non-sandboxed DMG wrote. The MAS sandbox
 // identity doesn't auto-grant access, so the IPC polling path triggers a
 // Keychain prompt every cycle. Clauge Sync browser extension is the MAS path.
+mod alerts;
 #[cfg(not(feature = "mas"))]
 mod claude_ai_session;
 pub mod connections;
@@ -365,6 +366,15 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     crate::icloud_publish::run(publish_handle).await;
                 });
+            }
+
+            // Sub-Project B: always-on alert poller/firer. Cross-platform —
+            // Windows gets every notification too (only the tray cue + toggle
+            // are Mac-first). Sibling spawn beside the iCloud publish loop;
+            // NOT macOS-gated, NOT inside the sidecar supervisor.
+            {
+                let alert_handle = app.handle().clone();
+                crate::alerts::spawn_alert_poller(alert_handle);
             }
 
             // v0.9.0 MAS flavor: skip the launch-time updater poll. The
