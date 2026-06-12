@@ -416,4 +416,32 @@ describe('alert bodies use local time', () => {
     );
     assert.ok(due[0].title.includes('5-hour'));
   });
+
+  it('willHit body threads the projected ETA (the actionable bit)', () => {
+    const usage = { fiveHour: { pct: 90, resetsAt: FIVE_RESET } };
+    const projection = freshProjection(usage, steepHistory(usage));
+    assert.equal(projection.windows.fiveHour.state, 'will_hit');
+    const { due } = evaluate({ usage, projection, prefs: ALL_ON, fired: new Set(), nowMs: NOW_MS });
+    // Engine emits the etaAt as a local time after "runs out ~".
+    assert.match(due[0].body, /runs out ~.+, before it resets\.$/);
+    const etaTime = new Date(projection.windows.fiveHour.etaAt).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    assert.ok(
+      due[0].body.includes(etaTime),
+      `willHit body "${due[0].body}" should contain the ETA "${etaTime}"`
+    );
+  });
+
+  it('willHit body falls back to no-ETA wording when etaAt is absent', () => {
+    // Hand-built projection: will_hit state but no etaAt (defensive path).
+    const usage = { fiveHour: { pct: 90, resetsAt: FIVE_RESET } };
+    const projection = {
+      windows: { fiveHour: { state: 'will_hit', etaAt: null } },
+      freshness: { stale: false },
+    };
+    const { due } = evaluate({ usage, projection, prefs: ALL_ON, fired: new Set(), nowMs: NOW_MS });
+    assert.equal(due[0].body, 'At this rate your 5-hour limit runs out before it resets.');
+  });
 });

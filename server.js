@@ -639,7 +639,7 @@ app.post('/api/alerts/ack', async (c) => {
   if (!Array.isArray(fired) || !Array.isArray(retired)) {
     return c.json({ error: 'fired and retired must be arrays' }, 400);
   }
-  await alertState.markFired([...fired, ...retired]);
+  await alertState.markFired([...fired, ...retired], Date.now());
   return c.json({ ok: true });
 });
 
