@@ -259,6 +259,21 @@ describe('setAlertPrefs — merge, validate, return effective', () => {
     assert.deepEqual(onDisk.alerts.types, { approaching: true, willHit: false, limitReached: true });
   });
 
+  it('resolves a sparse pre-existing types block to the full defaulted shape on write', async () => {
+    // Pre-existing file omits two type flags; setAlertPrefs merges against the
+    // resolved (all-on) view, so the persisted block carries all three.
+    await writeConfig(
+      JSON.stringify({ v: 1, alerts: { enabled: true, types: { approaching: false } } })
+    );
+    await makeStore({}).setAlertPrefs({ types: { willHit: false } });
+    const onDisk = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'));
+    assert.deepEqual(onDisk.alerts.types, {
+      approaching: false,
+      willHit: false,
+      limitReached: true,
+    });
+  });
+
   it('a fresh instance rereads the persisted alert prefs', async () => {
     await makeStore({}).setAlertPrefs({ enabled: false });
     const eff = await makeStore({}).effectiveAlertPrefs();
