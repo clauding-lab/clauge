@@ -434,6 +434,28 @@
             </div>
             <span class="tag" id="set-pricing-source">—</span>
           </div>
+          <div class="set-row">
+            <div>
+              <div class="set-label">Desktop alerts</div>
+              <div class="set-help">Get a notification when a usage limit is near, on pace to run out, or reached. Fires even with no window open.</div>
+              <div class="set-help mono" id="set-alerts-status"></div>
+            </div>
+            <label class="toggle-wrap">
+              <input type="checkbox" id="set-alerts-enabled">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="set-row">
+            <div>
+              <div class="set-label">Which alerts</div>
+              <div class="set-help">Choose which events notify you.</div>
+            </div>
+            <div class="set-alerts-types">
+              <label class="set-alert-type"><input type="checkbox" id="set-alert-approaching"> Approaching a limit (80% / 95%)</label>
+              <label class="set-alert-type"><input type="checkbox" id="set-alert-willhit"> On pace to run out</label>
+              <label class="set-alert-type"><input type="checkbox" id="set-alert-limitreached"> Limit reached (100%)</label>
+            </div>
+          </div>
         </div>
 
         <div class="set-section" data-set-panel="sync" hidden style="margin-top:24px">
