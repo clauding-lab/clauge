@@ -11,6 +11,7 @@
 let serverPort = 3456;
 let serverVersion = '0.5.0';
 let lastGoodUsage = null;       // SWR keep-last-good cache for /api/usage
+let lastGoodProjection = null;  // SWR keep-last-good cache for /api/projection (own cache; pickUsage is payload-agnostic)
 let refreshInFlight = false;    // overlap guard: skip a tick if a refresh is still running
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
@@ -116,6 +117,56 @@ function fmtResetClock(iso, nowMs = Date.now()) {
     && d.getDate() === now.getDate();
   const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return sameDay ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+}
+
+/**
+ * Map one /api/projection window to a forecast copy line.
+ * Returns { key, params } for will_hit / safe / exhausted, or null when the
+ * line must be hidden (warming_up / stale / unavailable / missing window).
+ * Times reuse fmtResetClock so the forecast clock matches the reset captions
+ * (local short time, weekday prefix when the moment is not today).
+ */
+function projectionLineCopy(win, nowMs = Date.now()) {
+  if (!win || typeof win !== 'object') return null;
+  switch (win.state) {
+    case 'will_hit':
+      return { key: 'projection.willHit', params: { time: fmtResetClock(win.etaAt, nowMs) } };
+    case 'safe':
+      return Number.isFinite(win.projectedEndPct)
+        ? { key: 'projection.safe', params: { pct: win.projectedEndPct } }
+        : null;
+    case 'exhausted':
+      return { key: 'projection.exhausted', params: { time: fmtResetClock(win.resetsAt, nowMs) } };
+    default:
+      return null; // warming_up | stale | unavailable — line hidden
+  }
+}
+
+/**
+ * "+15" / "-3" sign formatting for the week-over-week delta. Returns null
+ * (line hidden) when weekOverWeek is absent — the server already gates it to
+ * will_hit/safe states, so absence covers stale/warming_up/exhausted too.
+ */
+function wowLineCopy(weekOverWeek) {
+  if (!weekOverWeek || !Number.isFinite(weekOverWeek.deltaPts)) return null;
+  const d = weekOverWeek.deltaPts;
+  return { key: 'projection.wow', params: { delta: d > 0 ? `+${d}` : String(d) } };
+}
+
+function renderForecastLine(elId, copy) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = copy ? t(copy.key, copy.params) : '';
+}
+
+// Render the hero-pair forecast lines from /api/projection. Only fiveHour +
+// sevenDay are displayed in sub-project A; null projection (cold-start fetch
+// failure with no last-good) empties all three lines (CSS :empty hides them).
+function renderProjection(projection, nowMs) {
+  const windows = projection?.windows ?? {};
+  renderForecastLine('session-forecast', projectionLineCopy(windows.fiveHour, nowMs));
+  renderForecastLine('weekly-forecast', projectionLineCopy(windows.sevenDay, nowMs));
+  renderForecastLine('weekly-wow', wowLineCopy(windows.sevenDay?.weekOverWeek));
 }
 
 /**
@@ -693,13 +744,14 @@ async function refresh() {
     setTimeout(() => el.setAttribute('hidden', ''), 220);
   };
   try {
-    const [health, summary, cache, usage, period30d, daily30d] = await Promise.all([
+    const [health, summary, cache, usage, period30d, daily30d, projection] = await Promise.all([
       fetchJson('/api/health').catch(() => null),
       fetchJson('/api/summary?period=today').catch(() => null),
       fetchJson('/api/cache?period=today').catch(() => null),
       fetchJson('/api/usage').catch(() => null),
       fetchJson('/api/summary?period=30d').catch(() => null),
       fetchJson('/api/daily?period=30d').catch(() => null),
+      fetchJson('/api/projection').catch(() => null),
     ]);
     if (health?.version) serverVersion = health.version;
     healthOk = !!health;
@@ -707,6 +759,11 @@ async function refresh() {
     const picked = window.ClaugeSwr.pickUsage(usage, lastGoodUsage);
     lastGoodUsage = picked.lastGood;
     const effectiveUsage = picked.usage;
+    // /api/projection gets its OWN keep-last-good cache through the same
+    // generic pickUsage helper (it is payload-agnostic — null-or-not is all
+    // it inspects). A failed projection fetch must not blank the lines.
+    const pickedProjection = window.ClaugeSwr.pickUsage(projection, lastGoodProjection);
+    lastGoodProjection = pickedProjection.lastGood;
     const plan = effectiveUsage?.plan ?? {};
     const nowMs = Date.now();
 
@@ -714,6 +771,7 @@ async function refresh() {
     renderPlanBadge(plan);
     renderSession(plan, nowMs);
     renderWeekly(plan, nowMs);
+    renderProjection(pickedProjection.usage, nowMs);
     renderSonnet(plan, nowMs);
     renderDesign(plan, nowMs);
     renderRoutines(plan, nowMs);

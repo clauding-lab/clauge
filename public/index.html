@@ -133,6 +133,7 @@
       <div class="ms-lbl">Return on plan <span class="chip">approx</span></div>
       <div class="ms-val ok" id="ms-roi">—</div>
       <div class="ms-sub" id="ms-roi-sub">—</div>
+      <div class="ms-sub" id="ms-pace" hidden></div>
     </div>
   </div>
 
@@ -422,8 +423,9 @@
             <div>
               <div class="set-label">Your Claude plan cost (monthly)</div>
               <div class="set-help">What you already pay Anthropic for your Claude plan — used only to estimate how much the same usage would cost on the pay-as-you-go API. Clauge never sells plans or processes payments.</div>
+              <div class="set-help mono" id="set-sub-cost-status"></div>
             </div>
-            <input class="input" id="set-sub-cost" value="$200.00" readonly />
+            <input class="input" id="set-sub-cost" type="number" min="1" step="1" value="200" />
           </div>
           <div class="set-row">
             <div>

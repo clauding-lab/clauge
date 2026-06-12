@@ -25,6 +25,7 @@ const state = {
     expensive: null,
     health: null,
     roi: null,
+    projection: null,
     heatmap: null,
   },
 };
@@ -239,6 +240,8 @@ function bigRingHtml({ label, sub, metric, gradId }) {
         <div class="ring-label">${escapeHtml(label)} <span class="ring-window">${escapeHtml(sub)}</span></div>
         <div class="ring-reset">resets in ${escapeHtml(reset)}</div>
         <div class="ring-reset-clock">${escapeHtml(fmtResetClock(metric?.resetsAt))}</div>
+        <div class="ring-forecast" data-role="forecast"></div>
+        <div class="ring-wow" data-role="wow"></div>
       </div>
     </div>`;
 }
@@ -347,6 +350,9 @@ function renderPlanCapacity() {
   } else {
     updateBigRings(body, gauges);
   }
+  // Forecast sub-labels ride both paths: a structural rebuild leaves them
+  // empty, then this surgical fill writes the leaf text (landmine #22).
+  updateRingForecasts(body);
 
   // Status tag based on the highest pct. Only restyle when the tier actually
   // changes — saves a textContent + 2 style writes per 60s tick.
@@ -528,6 +534,34 @@ function updateBigRings(body, gauges) {
   }
 }
 
+// Surgical fill for the plan-card forecast lines (on-device projection,
+// sub-project A). Leaf Text.data writes only via setTextIfChanged — never
+// innerHTML on the auto-refresh path (landmine #22). Card order is fixed by
+// the gauges array in renderPlanCapacity: [0]=Session→fiveHour,
+// [1]=Weekly all→sevenDay. Sonnet/Design forecast divs stay empty in
+// sub-project A (the UI displays only the hero pair).
+function updateRingForecasts(body) {
+  const cards = body.querySelectorAll('.ring-card');
+  if (cards.length < 2) return;
+  const windows = state.data.projection?.windows ?? {};
+  const sessionLine = window.ClaugeDashSwr.projectionLine(windows.fiveHour, fmtResetClock);
+  const weeklyLine = window.ClaugeDashSwr.projectionLine(windows.sevenDay, fmtResetClock);
+  const weeklyWow = window.ClaugeDashSwr.wowLine(windows.sevenDay?.weekOverWeek);
+  // Toggle `hidden` alongside the leaf-text write (same as updatePaceLine):
+  // setTextIfChanged(el, '') leaves an empty text node, which CSS :empty does
+  // NOT match, so a null→line→null transition would otherwise leave a phantom
+  // sub-label gap until the next structural rebuild.
+  setForecastLine(cards[0].querySelector('[data-role="forecast"]'), sessionLine);
+  setForecastLine(cards[1].querySelector('[data-role="forecast"]'), weeklyLine);
+  setForecastLine(cards[1].querySelector('[data-role="wow"]'), weeklyWow);
+}
+
+function setForecastLine(el, line) {
+  if (!el) return;
+  if (el.hidden !== (line == null)) el.hidden = line == null;
+  setTextIfChanged(el, line ?? '');
+}
+
 function updatePlanMeta(planMeta) {
   // SWR sync line. Recompute every tick (incl. failures) so "synced ago" keeps
   // AGING and the dot reflects fetch-success, not data age. Preserve the
@@ -638,6 +672,20 @@ function renderMetricStrip() {
     document.getElementById('ms-roi').textContent = '—';
     document.getElementById('ms-roi-sub').textContent = '—';
   }
+  updatePaceLine();
+}
+
+// Monthly run-rate pace from /api/projection.roiPace ("Monthly pace: 21.2×").
+// Shared by renderMetricStrip (load / user-action path) and the 60s tick
+// (auto-refresh path) — leaf Text.data write via setTextIfChanged, plus a
+// hidden toggle so a null roiPace shows NOTHING (landmine #22 + the
+// phantom-bucket rule: hide, don't render a zero-data verdict).
+function updatePaceLine() {
+  const el = document.getElementById('ms-pace');
+  if (!el) return;
+  const line = window.ClaugeDashSwr.paceLine(state.data.projection?.roiPace);
+  if (el.hidden !== (line == null)) el.hidden = line == null;
+  setTextIfChanged(el, line ?? '');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -893,7 +941,14 @@ function renderSettings() {
   if (health) {
     document.getElementById('set-port').value = String(health.pid ? location.port || 3456 : 3456);
     if (health.subscriptionCost != null) {
-      document.getElementById('set-sub-cost').value = `$${Number(health.subscriptionCost).toFixed(2)}`;
+      const subCostEl = document.getElementById('set-sub-cost');
+      // type="number" input now — plain numeric value, no "$" prefix. Skip
+      // the write while the field has focus: renderSettings re-runs on every
+      // 60s tick when the Settings tab is open (the tick at the bottom of
+      // this file), and a mid-typing clobber would eat the user's input.
+      if (subCostEl && document.activeElement !== subCostEl) {
+        subCostEl.value = String(Number(health.subscriptionCost));
+      }
     }
     if (health.pricing?.source) {
       const tag = document.getElementById('set-pricing-source');
@@ -925,7 +980,60 @@ function renderSettings() {
       driftRow.hidden = true;
     }
   }
+  initSubCostControl();
   initSettingsGeneralControls();
+}
+
+// On-device projection Component 4: the subscription-cost field is editable.
+// change → POST /api/config/subscription-cost (persisted sidecar-side in
+// ~/.clauge/config.json); on success re-fetch /api/roi + /api/projection and
+// re-render the metric strip. This is the USER-ACTION path, not the 60s
+// auto-refresh path, so a structural renderMetricStrip() re-render is fine.
+// Plain fetch (no ClaugeBridge): the dashboard is served by the sidecar
+// itself, so the POST is same-origin and must work in browser mode too.
+let __subCostInitialized = false;
+const SUB_COST_STATUS_CLEAR_MS = 4000;
+function initSubCostControl() {
+  if (__subCostInitialized) return;
+  const input = document.getElementById('set-sub-cost');
+  const status = document.getElementById('set-sub-cost-status');
+  if (!input) return;
+  __subCostInitialized = true;
+  let statusTimer = null;
+  const showStatus = (text) => {
+    if (!status) return;
+    status.textContent = text;
+    if (statusTimer) clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { status.textContent = ''; }, SUB_COST_STATUS_CLEAR_MS);
+  };
+  input.addEventListener('change', async () => {
+    const n = Number(input.value);
+    if (!Number.isFinite(n) || n <= 0) {
+      showStatus('Enter a number above 0');
+      return;
+    }
+    try {
+      const res = await fetch('/api/config/subscription-cost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptionCost: n }),
+      });
+      if (!res.ok) throw new Error(`POST /api/config/subscription-cost → ${res.status}`);
+      // Re-fetch the two strip consumers so the new cost shows now, not at
+      // the next manual refresh. Each is best-effort keep-last-good.
+      const [roi, projection] = await Promise.all([
+        api('/api/roi', commonParams()).catch(() => null),
+        api('/api/projection').catch(() => null),
+      ]);
+      if (roi) state.data.roi = roi;
+      if (projection) state.data.projection = projection;
+      renderMetricStrip();
+      showStatus('Saved');
+    } catch (err) {
+      console.error('subscription-cost save failed:', err);
+      showStatus('Save failed — value not stored');
+    }
+  });
 }
 
 // Tauri 2 ACL: dashboard is loaded via WebviewUrl::External (HTTP). Plugin
@@ -1224,7 +1332,7 @@ async function refreshAll() {
   try {
     setExportLinks();
     const isToday = state.period === 'today';
-    const [health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi] =
+    const [health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi, projection] =
       await Promise.all([
         api('/api/health'),
         api('/api/summary', commonParams()),
@@ -1241,9 +1349,15 @@ async function refreshAll() {
         api('/api/usage'),
         api('/api/sessions/expensive', { ...commonParams(), limit: 5 }),
         api('/api/roi', commonParams()),
+        // Best-effort + keep-last-good: a projection failure must not fail
+        // the whole refresh (the other 13 are all-or-nothing by design).
+        api('/api/projection').catch(() => null),
       ]);
 
-    state.data = { health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi };
+    state.data = {
+      health, summary, cache, sessions, daily, hours, projects, activity, tools, models, usage, expensive, roi,
+      projection: projection ?? state.data.projection,
+    };
 
     __lastSuccessAt = Date.now();
     __lastRefreshFailed = false;
@@ -1375,11 +1489,21 @@ setInterval(async () => {
   if (window.ClaugeDashSwr.shouldSkipTick(__autoRefreshInFlight)) return;
   __autoRefreshInFlight = true;
   try {
-    state.data.usage = await api('/api/usage');
+    // /api/projection is best-effort with keep-last-good: a failed projection
+    // fetch returns null and state.data.projection keeps its previous value —
+    // the same implicit pattern the catch-block gives /api/usage (the throw
+    // happens before assignment, so the old usage survives a failed tick).
+    const [usage, projection] = await Promise.all([
+      api('/api/usage'),
+      api('/api/projection').catch(() => null),
+    ]);
+    state.data.usage = usage;
+    if (projection) state.data.projection = projection;
     __lastSuccessAt = Date.now();
     __lastRefreshFailed = false;
     renderPlanCapacity();
     renderFinanceSide();
+    updatePaceLine();
     if (state.tab === 'settings') renderSettings();
   } catch (err) {
     console.error('plan auto-refresh', err);

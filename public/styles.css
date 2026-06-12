@@ -1014,6 +1014,23 @@ td.ok { color: var(--ok); }
   margin-top: 1px;
 }
 .ring-reset-clock:empty { display: none; }
+/* On-device projection forecast + week-over-week sub-labels (sub-project A).
+ * Present (empty) in EVERY ring card so the DOM shape never changes across
+ * 60s ticks (landmine #22); only Session/Weekly ever receive text. */
+.ring-forecast {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--brand);
+  margin-top: 2px;
+}
+.ring-wow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+.ring-forecast:empty,
+.ring-wow:empty { display: none; }
 
 .plan-side {
   display: grid;
