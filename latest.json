@@ -1,31 +1,31 @@
 {
-  "version": "1.1.0",
-  "notes": "### Added\n\n- **Companion sync to iPhone.** Clauge now publishes a small private analytics snapshot to your own iCloud so the new **Clauge — Token Analytics** app for iPhone can show the same usage on the go — ROI, spend, your 180-day activity heatmap, and by-model and by-project breakdowns. It refreshes automatically in the background (~every 5 minutes), stays in your own private iCloud, and contains only your locally-computed stats — no credentials, cookies, or API keys. Everything Clauge does on your Mac still runs locally; no account, nothing sold.\n\n---",
-  "pub_date": "2026-06-06T14:27:31.917Z",
+  "version": "1.2.0",
+  "notes": "### Added\n\n- **iCloud sync-health** — a new \"iCloud sync to iPhone\" status row in Settings → Connections shows whether the snapshot the Mac publishes is actually reaching iCloud, and a banner appears on the dashboard when it isn't (e.g. an iCloud sign-in issue), so a silent sync wedge is finally visible.\n- A quiet Settings line that flags when Anthropic adds a usage category Clauge doesn't yet recognize (so a new weekly bucket is noticed before it silently makes the dashboard incomplete).\n\n### Fixed\n\n- Menu-bar popover: the ✕ Quit button and ⌘Q now actually quit the app (both were silently dead since the v0.5.0 native-popover migration).\n- Connections panel: an expired Claude Code token now self-heals within one 30-second poll after Claude Code rotates it — no more permanent \"re-run `claude /login`\" until restart.\n- Every parent-side HTTP call now carries a timeout (shared 5-second client); a wedged sidecar response can no longer freeze the menu-bar percentage or the iCloud snapshot publisher forever. iCloud publish failures now log at warning level.\n- A failed refresh no longer wipes the popover to 0% — it keeps the last good data and shows an honest \"as of\" time instead of \"just now\"; on the dashboard, the \"live\" dot no longer keeps pulsing after a failed refresh and the \"synced ago\" timestamp keeps aging instead of freezing.\n- Frontend fetches now time out after 5 seconds (no more permanently stuck spinner), and a slow refresh can no longer overlap the next one.\n- Daily Routines no longer phantoms \"0 of 15 runs\" when its bucket is dropped from the data.\n\n---",
+  "pub_date": "2026-06-12T05:12:40.424Z",
   "platforms": {
-    "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU55QzdERFlXZDA0SjUvQVFXTWE3bEo0dnl5dElEbW0wUWlSRnZuSFNLYjkrQU14Q2hOa0NlbHJmejJBeHZKbkczUStnT1VYeDN4VTIyaVNwVng2dWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwNzU2MDM5CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKcnVJVnFrZWlwZUJuN1AxWTRrSFJNZkxlRkswaTJGNXIrR3VORGQ5TUx5L0hZSnMzTnpVc0piYSs4aDc1YTR6dFJKUmsxM3VtWmNHendta3psUVhUQ3c9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.1.0/Clauge_universal.app.tar.gz"
-    },
-    "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU55QzdERFlXZDA0SjUvQVFXTWE3bEo0dnl5dElEbW0wUWlSRnZuSFNLYjkrQU14Q2hOa0NlbHJmejJBeHZKbkczUStnT1VYeDN4VTIyaVNwVng2dWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwNzU2MDM5CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKcnVJVnFrZWlwZUJuN1AxWTRrSFJNZkxlRkswaTJGNXIrR3VORGQ5TUx5L0hZSnMzTnpVc0piYSs4aDc1YTR6dFJKUmsxM3VtWmNHendta3psUVhUQ3c9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.1.0/Clauge_universal.app.tar.gz"
-    },
-    "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU55QzdERFlXZDA0SjUvQVFXTWE3bEo0dnl5dElEbW0wUWlSRnZuSFNLYjkrQU14Q2hOa0NlbHJmejJBeHZKbkczUStnT1VYeDN4VTIyaVNwVng2dWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwNzU2MDM5CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKcnVJVnFrZWlwZUJuN1AxWTRrSFJNZkxlRkswaTJGNXIrR3VORGQ5TUx5L0hZSnMzTnpVc0piYSs4aDc1YTR6dFJKUmsxM3VtWmNHendta3psUVhUQ3c9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.1.0/Clauge_universal.app.tar.gz"
-    },
-    "darwin-x86_64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU55QzdERFlXZDA0SjUvQVFXTWE3bEo0dnl5dElEbW0wUWlSRnZuSFNLYjkrQU14Q2hOa0NlbHJmejJBeHZKbkczUStnT1VYeDN4VTIyaVNwVng2dWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwNzU2MDM5CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKcnVJVnFrZWlwZUJuN1AxWTRrSFJNZkxlRkswaTJGNXIrR3VORGQ5TUx5L0hZSnMzTnpVc0piYSs4aDc1YTR6dFJKUmsxM3VtWmNHendta3psUVhUQ3c9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.1.0/Clauge_universal.app.tar.gz"
-    },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUliSUV5RWRyaHlDUHhKTjMyNUpMYXFhQU11bFppQVNoQ1dtR0NxeTFkd2RVUmQ4RmNYWkJVcVl2Z2JZOGlRbGFOY040enNDa1pyUWZGTXZSTmNiQUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwNzU2MjE2CWZpbGU6Q2xhdWdlXzEuMS4wX3g2NC1zZXR1cC5leGUKcnk2OEhDVEsraXRDZUkwQ3hSTE1MeVB4bldTbDI4blAvR2tqR0pUY0pWQzV3MDA0RUFBWkpMcFc5SXRvYmR5d3VJdzVCMXdGVDlJYXhTWW1IUWNvQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.1.0/Clauge_1.1.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OURsU3g1UDNkaVUyNklSSU9zbWxYL2tpRlNkMit6T2k1dEhrQm5zS01HTy9KcDJiMmJQT1FaWVlkZ1hFNlBRYzFvOE1yRHRURU16V1d4NEt3dDA5MGcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjQxMDE3CWZpbGU6Q2xhdWdlXzEuMi4wX3g2NC1zZXR1cC5leGUKRitDNTlRcXFKOFA3aUZGajUrcEcrVXNYbHRUaVIrMndGNTJBT0NtVml0dDE2NHRuTjRpTWVhMXhoM2VLT0pTck1lQTl1U2NaUjAzem1Ca1NHQmx6Qmc9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.2.0/Clauge_1.2.0_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUliSUV5RWRyaHlDUHhKTjMyNUpMYXFhQU11bFppQVNoQ1dtR0NxeTFkd2RVUmQ4RmNYWkJVcVl2Z2JZOGlRbGFOY040enNDa1pyUWZGTXZSTmNiQUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgwNzU2MjE2CWZpbGU6Q2xhdWdlXzEuMS4wX3g2NC1zZXR1cC5leGUKcnk2OEhDVEsraXRDZUkwQ3hSTE1MeVB4bldTbDI4blAvR2tqR0pUY0pWQzV3MDA0RUFBWkpMcFc5SXRvYmR5d3VJdzVCMXdGVDlJYXhTWW1IUWNvQnc9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.1.0/Clauge_1.1.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OURsU3g1UDNkaVUyNklSSU9zbWxYL2tpRlNkMit6T2k1dEhrQm5zS01HTy9KcDJiMmJQT1FaWVlkZ1hFNlBRYzFvOE1yRHRURU16V1d4NEt3dDA5MGcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjQxMDE3CWZpbGU6Q2xhdWdlXzEuMi4wX3g2NC1zZXR1cC5leGUKRitDNTlRcXFKOFA3aUZGajUrcEcrVXNYbHRUaVIrMndGNTJBT0NtVml0dDE2NHRuTjRpTWVhMXhoM2VLT0pTck1lQTl1U2NaUjAzem1Ca1NHQmx6Qmc9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.2.0/Clauge_1.2.0_x64-setup.exe"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUZEb05WVnI1a0ZrSEN3bkdnWVFwYm1lcjVraVB3dTVXSTAzWDZ6N0U2UEsyVEZYR0RXdkgvaU42KzlmYjNFNEQ5T1E0RGl5Q1M5WEZzOFpjTDdLR1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjQxMTUwCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKZEl5UHNoa2ozZFpHeFArR2F5SEoyTW9GTnlFR3VtaHUrYm9McHZsQno0M2tQUUpoeXorYjNmS3dDY2E5eVNrdjFXVzNHTzd6WUorbER3dUxIMm9SREE9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.2.0/Clauge_universal.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUZEb05WVnI1a0ZrSEN3bkdnWVFwYm1lcjVraVB3dTVXSTAzWDZ6N0U2UEsyVEZYR0RXdkgvaU42KzlmYjNFNEQ5T1E0RGl5Q1M5WEZzOFpjTDdLR1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjQxMTUwCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKZEl5UHNoa2ozZFpHeFArR2F5SEoyTW9GTnlFR3VtaHUrYm9McHZsQno0M2tQUUpoeXorYjNmS3dDY2E5eVNrdjFXVzNHTzd6WUorbER3dUxIMm9SREE9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.2.0/Clauge_universal.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUZEb05WVnI1a0ZrSEN3bkdnWVFwYm1lcjVraVB3dTVXSTAzWDZ6N0U2UEsyVEZYR0RXdkgvaU42KzlmYjNFNEQ5T1E0RGl5Q1M5WEZzOFpjTDdLR1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjQxMTUwCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKZEl5UHNoa2ozZFpHeFArR2F5SEoyTW9GTnlFR3VtaHUrYm9McHZsQno0M2tQUUpoeXorYjNmS3dDY2E5eVNrdjFXVzNHTzd6WUorbER3dUxIMm9SREE9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.2.0/Clauge_universal.app.tar.gz"
+    },
+    "darwin-x86_64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUZEb05WVnI1a0ZrSEN3bkdnWVFwYm1lcjVraVB3dTVXSTAzWDZ6N0U2UEsyVEZYR0RXdkgvaU42KzlmYjNFNEQ5T1E0RGl5Q1M5WEZzOFpjTDdLR1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxMjQxMTUwCWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKZEl5UHNoa2ozZFpHeFArR2F5SEoyTW9GTnlFR3VtaHUrYm9McHZsQno0M2tQUUpoeXorYjNmS3dDY2E5eVNrdjFXVzNHTzd6WUorbER3dUxIMm9SREE9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.2.0/Clauge_universal.app.tar.gz"
     }
   }
 }
