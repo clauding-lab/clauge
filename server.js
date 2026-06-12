@@ -37,6 +37,10 @@ import {
 import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
+import { ConfigStore } from './lib/config-store.js';
+import { UsageHistory } from './lib/usage-history.js';
+import { buildProjection } from './lib/projection.js';
+import { configPaths } from './lib/config-paths.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
 import { listProviders, PROVIDERS } from './lib/providers.js';
@@ -64,7 +68,14 @@ const __dirname = dirname(__filename);
 const PORT = Number(process.env.PORT ?? 3456);
 const CLAUDE_DIR = (process.env.CLAUDE_DIR ?? join(homedir(), '.claude'))
   .replace(/^~(?=\/)/, homedir());
-const SUBSCRIPTION_COST = Number(process.env.SUBSCRIPTION_COST ?? 200);
+// Subscription cost is a persisted setting (projection spec Component 4):
+// ~/.clauge/config.json value -> SUBSCRIPTION_COST env -> 200, validated
+// read-side at every tier. Resolved per request via the getter so a
+// POST /api/config/subscription-cost applies without a sidecar restart.
+const configStore = new ConfigStore({
+  filePath: configPaths.configFile(),
+  env: process.env,
+});
 
 let APP_VERSION = '0.0.0-unknown';
 try {
@@ -84,6 +95,17 @@ console.log(`[Clauge] Pricing source: ${priceTable.source}`);
 const store = new SessionStore({ claudeDir: CLAUDE_DIR, priceTable, envFallback });
 const usageStore = new UsageStore();
 await usageStore.load();
+const usageHistory = new UsageHistory({
+  filePath: join(homedir(), '.clauge', 'usage-history.jsonl'),
+});
+// Startup prune (90-day retention, projection spec Component 2).
+// Fire-and-forget: a prune failure must never block server boot;
+// UsageHistory tolerates corrupt/missing files internally.
+usageHistory.prune(Date.now()).catch((err) => {
+  console.warn(`[Clauge] usage-history prune failed: ${err?.message ?? err}`);
+});
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let lastPruneAtMs = Date.now();
 
 function parseFilters(c) {
   const period = c.req.query('period') ?? '7d';
@@ -174,6 +196,7 @@ const READ_ONLY_API_PATHS = [
   '/api/bookmarklet',
   '/api/export',
   '/api/activity',
+  '/api/projection',
 ];
 // Read-only endpoints are reachable cross-origin ONLY by Clauge's own webviews,
 // which load from http://127.0.0.1:<port> or http://localhost:<port> (any port —
@@ -242,7 +265,7 @@ app.get('/api/health', async (c) => {
     version: APP_VERSION,
     pid: process.pid,
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
-    subscriptionCost: SUBSCRIPTION_COST,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
     extensionLastSeenAt: record?.ingestedAt ?? null,
   });
 });
@@ -529,10 +552,38 @@ app.get('/api/roi', async (c) => {
     period: filtered.period,
     ...apiReplacementValue({
       apiEquivalentSpend,
-      subscriptionCost: SUBSCRIPTION_COST,
+      subscriptionCost: await configStore.effectiveSubscriptionCost(),
       extraUsageSpend: 0,
     }),
   });
+});
+
+// On-device projection (active-guardrail sub-project A). ALL math lives in
+// lib/projection.js (pure, clock-injected); this handler only wires the
+// stores to the pure module and stamps generatedAt. nowMs is injected HERE
+// — Date.now() is allowed in server.js, never in lib/ (house rule).
+app.get('/api/projection', async (c) => {
+  const nowMs = Date.now();
+  const record = await usageStore.load();
+  // Per-window history map ({ [key]: oldest-first samples }) read in a single
+  // pass over the JSONL — keyed by the canonical WINDOW_KEYS (the same resolved
+  // windows WINDOW_MS enumerates), so a new window flows through automatically.
+  const history = await usageHistory.samplesByWindow();
+  // ROI pace input: the SAME trailing-7d session filter /api/roi uses
+  // (filterSessions period '7d' over loadAllSummaries + sumSessionCosts —
+  // the established per-token cost pipeline, data contract #4).
+  const all = await store.loadAllSummaries();
+  const trailing = filterSessions(all, { period: '7d', project: '', now: new Date(nowMs) });
+  const apiEquivalentSpendTrailing = sumSessionCosts(trailing);
+  const result = buildProjection({
+    normalized: record?.normalized ?? null,
+    ingestedAt: record?.ingestedAt ?? null,
+    history,
+    nowMs,
+    apiEquivalentSpendTrailing,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
+  });
+  return c.json({ generatedAt: new Date(nowMs).toISOString(), ...result });
 });
 
 // Phase ②b: one compact, curated analytics snapshot the Tauri parent fetches
@@ -544,7 +595,7 @@ app.get('/api/snapshot', async (c) => {
   const snapshot = await buildSnapshot({
     store,
     usageStore,
-    subscriptionCost: SUBSCRIPTION_COST,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
     tz,
   });
   return c.json(snapshot);
@@ -554,7 +605,7 @@ app.get('/api/config', async (c) => {
   const providers = await listProviders();
   return c.json({
     claudeDir: CLAUDE_DIR,
-    subscriptionCost: SUBSCRIPTION_COST,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     providers,
   });
@@ -579,6 +630,26 @@ app.post('/api/config/providers/:name', async (c) => {
   const providers = await listProviders();
   const updated = providers.find((p) => p.name === name);
   return c.json({ provider: updated });
+});
+
+// Component 4 (projection spec): editable subscription cost. Mirrors the
+// providers handler above: same-origin dashboard POST, no CORS middleware
+// (READ_ONLY_API_PATHS' '/api/config' entry does not match this subpath,
+// and the dashboard is served from this same origin). Validation matches
+// ConfigStore.setSubscriptionCost: finite number > 0, strict type.
+app.post('/api/config/subscription-cost', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  const cost = body?.subscriptionCost;
+  if (typeof cost !== 'number' || !Number.isFinite(cost) || cost <= 0) {
+    return c.json({ error: 'expected body: { subscriptionCost: <number > 0> }' }, 400);
+  }
+  await configStore.setSubscriptionCost(cost);
+  return c.json({ subscriptionCost: await configStore.effectiveSubscriptionCost() });
 });
 
 app.post('/api/usage/ingest', async (c) => {
@@ -610,6 +681,21 @@ app.post('/api/usage/ingest', async (c) => {
     rawOverageSpendLimit: body.overageSpendLimit ?? null,
     normalized,
   });
+  // Projection spec Component 2: record a downsampled history sample,
+  // fire-and-forget — a recorder failure must never fail an ingest.
+  // UsageHistory.record never rejects by contract; the .catch is
+  // belt-and-braces against unhandled-rejection if that ever drifts.
+  // Guarded on normalized: normalizeUsage returns null for non-object
+  // usage payloads, and a null record has no windows to sample.
+  if (normalized) {
+    usageHistory.record(normalized, record.ingestedAt).catch(() => {});
+    if (Date.now() - lastPruneAtMs > PRUNE_INTERVAL_MS) {
+      lastPruneAtMs = Date.now();
+      usageHistory.prune(Date.now()).catch((err) => {
+        console.warn(`[Clauge] usage-history prune failed: ${err?.message ?? err}`);
+      });
+    }
+  }
   return c.json({
     ok: true,
     ingestedAt: record.ingestedAt,
