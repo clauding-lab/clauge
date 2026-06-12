@@ -301,6 +301,21 @@ html, body {
 }
 .gauge-meta-clock:empty { display: none; }
 
+/* Forecast + week-over-week lines under the hero gauges (on-device
+ * projection, sub-project A). Keyed by /api/projection state; empty text =
+ * hidden (warming_up / stale / unavailable suppress the line — a forecast
+ * from thin or stale data is suppressed, never caveated). */
+.gauge-meta-stack .gauge-forecast {
+  color: var(--brand);
+  font-size: 9.5px;
+}
+.gauge-meta-stack .gauge-wow {
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+.gauge-forecast:empty,
+.gauge-wow:empty { display: none; }
+
 /* ── Needle bar (Weekly) ───────────────────────────────────── */
 .needle-bar {
   position: relative;

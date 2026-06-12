@@ -29,6 +29,12 @@
     "dayOf7": "Day {day} of 7",
     "dayUnknown": "Day — of 7"
   },
+  "projection": {
+    "willHit": "At this pace → 100% ~{time}",
+    "safe": "On pace to end at ~{pct}%",
+    "exhausted": "Limit reached — resets {time}",
+    "wow": "{delta} pts vs last week"
+  },
   "sonnet": {
     "label": "Sonnet only",
     "percentUsed": "{percent}% used",
