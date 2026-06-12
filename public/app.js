@@ -1063,7 +1063,13 @@ function initAlertControls() {
     statusTimer = setTimeout(() => { status.textContent = ''; }, ALERTS_STATUS_CLEAR_MS);
   };
 
-  const view = (window.ClaugeDashSwr && window.ClaugeDashSwr.alertPrefsView) || ((a) => a);
+  // Fail SAFE if swr.js somehow hasn't loaded (it's a defer script before
+  // app.js, so this is belt-and-braces): paint the all-on default that matches
+  // the server + alertPrefsView default, never the all-unchecked picture the
+  // identity function would produce off the raw {alertsEnabled, types} block.
+  const view =
+    (window.ClaugeDashSwr && window.ClaugeDashSwr.alertPrefsView) ||
+    (() => ({ enabled: true, approaching: true, willHit: true, limitReached: true, disabled: false }));
   const paint = (alerts) => {
     const v = view(alerts);
     enabledEl.checked = v.enabled;
