@@ -52,7 +52,7 @@ v1.2.0 shipped (stability + iCloud sync-health; DMG live, MAS build 8 in review)
 
 | # | Sub-project | Platforms | Notes |
 |---|---|---|---|
-| **A** | On-device projection (a/b/c) | desktop sidecar + iOS | **Foundation**; unblocks alerts. Build first. |
+| **A** | On-device projection (a/b/c) | desktop sidecar + iOS | **Foundation**; unblocks alerts. Build first. **Amended 2026-06-12:** A ships **desktop-first** (spec: `2026-06-12-on-device-projection-design.md`); the iOS implementation is re-homed to the C/T cycle, consuming the shared test vectors. |
 | **B** | Desktop alerts + tray options | Mac + Windows | Builds on A; relatively contained. |
 | **C** | iOS alerts (scheduled-local) | iOS | Constrained; design separately; lowest certainty. |
 | **T** | Windows↔iOS transport | Windows + iOS (+ Mac refactor) | Transport abstraction + **GDrive spike → GDrive _or_ LAN-pull fallback** + QR pairing. Independent; the spike can start anytime. |
