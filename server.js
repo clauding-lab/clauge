@@ -38,6 +38,8 @@ import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
 import { ConfigStore } from './lib/config-store.js';
+import { UsageHistory } from './lib/usage-history.js';
+import { buildProjection, WINDOW_MS } from './lib/projection.js';
 import { configPaths } from './lib/config-paths.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
@@ -93,6 +95,15 @@ console.log(`[Clauge] Pricing source: ${priceTable.source}`);
 const store = new SessionStore({ claudeDir: CLAUDE_DIR, priceTable, envFallback });
 const usageStore = new UsageStore();
 await usageStore.load();
+const usageHistory = new UsageHistory({
+  filePath: join(homedir(), '.clauge', 'usage-history.jsonl'),
+});
+// Startup prune (90-day retention, projection spec Component 2).
+// Fire-and-forget: a prune failure must never block server boot;
+// UsageHistory tolerates corrupt/missing files internally.
+usageHistory.prune(Date.now()).catch((err) => {
+  console.warn(`[Clauge] usage-history prune failed: ${err?.message ?? err}`);
+});
 
 function parseFilters(c) {
   const period = c.req.query('period') ?? '7d';
@@ -183,6 +194,7 @@ const READ_ONLY_API_PATHS = [
   '/api/bookmarklet',
   '/api/export',
   '/api/activity',
+  '/api/projection',
 ];
 // Read-only endpoints are reachable cross-origin ONLY by Clauge's own webviews,
 // which load from http://127.0.0.1:<port> or http://localhost:<port> (any port —
@@ -544,6 +556,37 @@ app.get('/api/roi', async (c) => {
   });
 });
 
+// On-device projection (active-guardrail sub-project A). ALL math lives in
+// lib/projection.js (pure, clock-injected); this handler only wires the
+// stores to the pure module and stamps generatedAt. nowMs is injected HERE
+// — Date.now() is allowed in server.js, never in lib/ (house rule).
+app.get('/api/projection', async (c) => {
+  const nowMs = Date.now();
+  const record = await usageStore.load();
+  // Per-window history, keyed by the same resolved window keys WINDOW_MS
+  // enumerates (fiveHour, sevenDay, sevenDaySonnet, sevenDayOpus,
+  // claudeDesign, dailyRoutines). samplesFor returns oldest-first.
+  const history = {};
+  for (const key of Object.keys(WINDOW_MS)) {
+    history[key] = await usageHistory.samplesFor(key);
+  }
+  // ROI pace input: the SAME trailing-7d session filter /api/roi uses
+  // (filterSessions period '7d' over loadAllSummaries + sumSessionCosts —
+  // the established per-token cost pipeline, data contract #4).
+  const all = await store.loadAllSummaries();
+  const trailing = filterSessions(all, { period: '7d', project: '', now: new Date(nowMs) });
+  const apiEquivalentSpendTrailing = sumSessionCosts(trailing);
+  const result = buildProjection({
+    normalized: record?.normalized ?? null,
+    ingestedAt: record?.ingestedAt ?? null,
+    history,
+    nowMs,
+    apiEquivalentSpendTrailing,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
+  });
+  return c.json({ generatedAt: new Date(nowMs).toISOString(), ...result });
+});
+
 // Phase ②b: one compact, curated analytics snapshot the Tauri parent fetches
 // over loopback, stamps with seq+writerId, and writes (coordinated) into the
 // app's iCloud container for the companion iOS app. Read-only; covered by the
@@ -639,6 +682,15 @@ app.post('/api/usage/ingest', async (c) => {
     rawOverageSpendLimit: body.overageSpendLimit ?? null,
     normalized,
   });
+  // Projection spec Component 2: record a downsampled history sample,
+  // fire-and-forget — a recorder failure must never fail an ingest.
+  // UsageHistory.record never rejects by contract; the .catch is
+  // belt-and-braces against unhandled-rejection if that ever drifts.
+  // Guarded on normalized: normalizeUsage returns null for non-object
+  // usage payloads, and a null record has no windows to sample.
+  if (normalized) {
+    usageHistory.record(normalized, record.ingestedAt).catch(() => {});
+  }
   return c.json({
     ok: true,
     ingestedAt: record.ingestedAt,
