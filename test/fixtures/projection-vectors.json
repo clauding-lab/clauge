@@ -1,0 +1,493 @@
+{
+  "vectorsVersion": 1,
+  "description": "Shared cross-platform vectors for lib/projection.js. clauge-ios vendors a byte-identical copy (duplicate-and-pin; both sides assert vectorsVersion). Spec: docs/superpowers/specs/2026-06-12-on-device-projection-design.md",
+  "units": {
+    "nowMs": "Unix epoch milliseconds, UTC",
+    "pct": "percent of window quota used, 0-100, may be fractional",
+    "resetsAt": "ISO 8601 timestamp string (claude.ai resets_at passthrough)",
+    "windowMs": "window duration in milliseconds (fiveHour=18000000, weekly=604800000)",
+    "history": "array of { at: ISO 8601 string, pct: percent, resetsAt: ISO 8601 string } samples for ONE window key, oldest-first",
+    "ingestedAt": "ISO 8601 timestamp string of the latest ingest, or null",
+    "etaAt": "ISO 8601 string rounded to the whole second, UTC",
+    "projectedEndPct": "integer percent, capped at 99",
+    "recentRatePctPerHour": "percent per hour, rounded to 1 decimal",
+    "deltaPts": "integer percentage points (current minus previous week)",
+    "prevPctAtSamePoint": "integer percent",
+    "apiEquivalentSpendTrailing": "US dollars over the trailing 7 days (per-token cost pipeline)",
+    "subscriptionCost": "US dollars per month",
+    "monthlyEquivalentValue": "US dollars, rounded to 2 decimals",
+    "paceMultiple": "dimensionless multiple, rounded to 1 decimal"
+  },
+  "cases": [
+    {
+      "name": "projectWindow: fiveHour spec example - recent rate wins, will_hit at 11:40Z",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:30:00.000Z", "pct": 24.6, "resetsAt": "2026-06-12T14:20:00+00:00" }
+        ]
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "will_hit",
+        "basis": "recent",
+        "etaAt": "2026-06-12T11:40:00.000Z",
+        "projectedEndPct": null,
+        "recentRatePctPerHour": 34.8
+      }
+    },
+    {
+      "name": "projectWindow: sevenDay spec example - window-average fallback, safe ending at 84%",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 59,
+        "resetsAt": "2026-06-14T12:24:00+00:00",
+        "windowMs": 604800000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 59,
+        "resetsAt": "2026-06-14T12:24:00+00:00",
+        "state": "safe",
+        "basis": "window_avg",
+        "etaAt": null,
+        "projectedEndPct": 84,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: safe projection that rounds to 100 is capped at 99",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 79.7,
+        "resetsAt": "2026-06-12T11:00:00.000Z",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 79.7,
+        "resetsAt": "2026-06-12T11:00:00.000Z",
+        "state": "safe",
+        "basis": "window_avg",
+        "etaAt": null,
+        "projectedEndPct": 99,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: zero rate (pct 0) - safe with projectedEndPct equal to current pct",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 0,
+        "resetsAt": "2026-06-12T14:00:00.000Z",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 0,
+        "resetsAt": "2026-06-12T14:00:00.000Z",
+        "state": "safe",
+        "basis": "window_avg",
+        "etaAt": null,
+        "projectedEndPct": 0,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: 14 minutes elapsed of a 5h window is warming_up",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 3,
+        "resetsAt": "2026-06-12T14:46:00.000Z",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 3,
+        "resetsAt": "2026-06-12T14:46:00.000Z",
+        "state": "warming_up",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: exactly 5% elapsed is NOT warming_up (boundary is strict less-than)",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 1,
+        "resetsAt": "2026-06-12T14:45:00.000Z",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 1,
+        "resetsAt": "2026-06-12T14:45:00.000Z",
+        "state": "safe",
+        "basis": "window_avg",
+        "etaAt": null,
+        "projectedEndPct": 20,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: null pct is unavailable",
+      "fn": "projectWindow",
+      "input": {
+        "pct": null,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": null,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "unavailable",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: null resetsAt is unavailable",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": null,
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": null,
+        "state": "unavailable",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: unparseable resetsAt is unavailable",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "not-a-timestamp",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "not-a-timestamp",
+        "state": "unavailable",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: resetsAt in the past (data predates a reset) is unavailable",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T09:00:00.000Z",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T09:00:00.000Z",
+        "state": "unavailable",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: unknown windowMs is unavailable (never guess a duration)",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": null,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "unavailable",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: pct 100 is exhausted with resetsAt passthrough",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 100,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": []
+      },
+      "expected": {
+        "pct": 100,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "exhausted",
+        "basis": null,
+        "etaAt": null,
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: no sample within the 60-minute span falls back to window average",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T08:30:00.000Z", "pct": 10, "resetsAt": "2026-06-12T14:20:00+00:00" }
+        ]
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "will_hit",
+        "basis": "window_avg",
+        "etaAt": "2026-06-12T10:55:14.000Z",
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: span under 15 minutes falls back to window average",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:50:00.000Z", "pct": 41, "resetsAt": "2026-06-12T14:20:00+00:00" }
+        ]
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "will_hit",
+        "basis": "window_avg",
+        "etaAt": "2026-06-12T10:55:14.000Z",
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: negative pct delta (reset slipped through) falls back to window average",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:30:00.000Z", "pct": 55, "resetsAt": "2026-06-12T14:20:00+00:00" }
+        ]
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "will_hit",
+        "basis": "window_avg",
+        "etaAt": "2026-06-12T10:55:14.000Z",
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: sample from a different window (resetsAt beyond 5-minute tolerance) is excluded",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:30:00.000Z", "pct": 24.6, "resetsAt": "2026-06-12T09:20:00+00:00" }
+        ]
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "will_hit",
+        "basis": "window_avg",
+        "etaAt": "2026-06-12T10:55:14.000Z",
+        "projectedEndPct": null,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
+      "name": "projectWindow: resetsAt drift within the 5-minute tolerance still groups as the same window",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "windowMs": 18000000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:30:00.000Z", "pct": 24.6, "resetsAt": "2026-06-12T14:16:00+00:00" }
+        ]
+      },
+      "expected": {
+        "pct": 42,
+        "resetsAt": "2026-06-12T14:20:00+00:00",
+        "state": "will_hit",
+        "basis": "recent",
+        "etaAt": "2026-06-12T11:40:00.000Z",
+        "projectedEndPct": null,
+        "recentRatePctPerHour": 34.8
+      }
+    },
+    {
+      "name": "weekOverWeek: interpolated midpoint of the previous week gives +15 pts",
+      "fn": "weekOverWeek",
+      "input": {
+        "pct": 59,
+        "resetsAt": "2026-06-14T12:24:00+00:00",
+        "windowMs": 604800000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-05T08:00:00.000Z", "pct": 42, "resetsAt": "2026-06-07T12:24:00+00:00" },
+          { "at": "2026-06-05T12:00:00.000Z", "pct": 46, "resetsAt": "2026-06-07T12:24:00+00:00" },
+          { "at": "2026-06-12T09:55:00.000Z", "pct": 58.8, "resetsAt": "2026-06-14T12:24:00+00:00" }
+        ]
+      },
+      "expected": { "deltaPts": 15, "prevPctAtSamePoint": 44 }
+    },
+    {
+      "name": "weekOverWeek: no prior-week history yields null",
+      "fn": "weekOverWeek",
+      "input": {
+        "pct": 59,
+        "resetsAt": "2026-06-14T12:24:00+00:00",
+        "windowMs": 604800000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:55:00.000Z", "pct": 58.8, "resetsAt": "2026-06-14T12:24:00+00:00" }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "weekOverWeek: gated by warming_up state even when prior history exists",
+      "fn": "weekOverWeek",
+      "input": {
+        "pct": 1,
+        "resetsAt": "2026-06-19T08:00:00+00:00",
+        "windowMs": 604800000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-11T10:00:00.000Z", "pct": 80, "resetsAt": "2026-06-12T08:00:00+00:00" }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "weekOverWeek: prior week exists but no sample within 6h of the target point yields null",
+      "fn": "weekOverWeek",
+      "input": {
+        "pct": 59,
+        "resetsAt": "2026-06-14T12:24:00+00:00",
+        "windowMs": 604800000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-04T20:00:00.000Z", "pct": 40, "resetsAt": "2026-06-07T12:24:00+00:00" }
+        ]
+      },
+      "expected": null
+    },
+    {
+      "name": "isStale: ingest 5 minutes old is fresh",
+      "fn": "isStale",
+      "input": { "ingestedAt": "2026-06-12T09:55:00.000Z", "nowMs": 1781258400000 },
+      "expected": false
+    },
+    {
+      "name": "isStale: ingest 11 minutes old is stale",
+      "fn": "isStale",
+      "input": { "ingestedAt": "2026-06-12T09:49:00.000Z", "nowMs": 1781258400000 },
+      "expected": true
+    },
+    {
+      "name": "isStale: exactly at the 10-minute threshold is NOT stale (boundary is strict greater-than)",
+      "fn": "isStale",
+      "input": { "ingestedAt": "2026-06-12T09:50:00.000Z", "nowMs": 1781258400000 },
+      "expected": false
+    },
+    {
+      "name": "isStale: never ingested is stale",
+      "fn": "isStale",
+      "input": { "ingestedAt": null, "nowMs": 1781258400000 },
+      "expected": true
+    },
+    {
+      "name": "isStale: unparseable ingestedAt is stale",
+      "fn": "isStale",
+      "input": { "ingestedAt": "garbage", "nowMs": 1781258400000 },
+      "expected": true
+    },
+    {
+      "name": "roiPace: spec example numbers",
+      "fn": "roiPace",
+      "input": { "apiEquivalentSpendTrailing": 1034.55, "subscriptionCost": 200 },
+      "expected": {
+        "trailingDays": 7,
+        "apiEquivalentSpendTrailing": 1034.55,
+        "monthlyEquivalentValue": 4433.79,
+        "subscriptionCost": 200,
+        "paceMultiple": 21.2
+      }
+    },
+    {
+      "name": "roiPace: zero subscription cost yields null (no division by zero, no infinity)",
+      "fn": "roiPace",
+      "input": { "apiEquivalentSpendTrailing": 1034.55, "subscriptionCost": 0 },
+      "expected": null
+    },
+    {
+      "name": "roiPace: negative subscription cost yields null",
+      "fn": "roiPace",
+      "input": { "apiEquivalentSpendTrailing": 1034.55, "subscriptionCost": -50 },
+      "expected": null
+    },
+    {
+      "name": "roiPace: zero trailing spend yields null (no -1x verdict from zero data)",
+      "fn": "roiPace",
+      "input": { "apiEquivalentSpendTrailing": 0, "subscriptionCost": 200 },
+      "expected": null
+    }
+  ]
+}
