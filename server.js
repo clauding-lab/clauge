@@ -38,8 +38,10 @@ import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
 import { ConfigStore } from './lib/config-store.js';
+import { AlertState } from './lib/alert-state.js';
 import { UsageHistory } from './lib/usage-history.js';
 import { buildProjection } from './lib/projection.js';
+import { evaluate } from './lib/alert-engine.js';
 import { configPaths } from './lib/config-paths.js';
 import { CATEGORIES } from './lib/classifier.js';
 import { toCsv, toJson } from './lib/exporter.js';
@@ -95,6 +97,10 @@ console.log(`[Clauge] Pricing source: ${priceTable.source}`);
 const store = new SessionStore({ claudeDir: CLAUDE_DIR, priceTable, envFallback });
 const usageStore = new UsageStore();
 await usageStore.load();
+// Alert fired-key state (~/.clauge/alert-state.json). Sidecar-owned, atomic
+// tmp+rename, pruned of expired keys on each load — drives the once-per-
+// window-instance dedup for the desktop-alerts poller (active-guardrail B).
+const alertState = new AlertState({ filePath: configPaths.alertStateFile() });
 const usageHistory = new UsageHistory({
   filePath: join(homedir(), '.clauge', 'usage-history.jsonl'),
 });
@@ -586,6 +592,64 @@ app.get('/api/projection', async (c) => {
   return c.json({ generatedAt: new Date(nowMs).toISOString(), ...result });
 });
 
+// Desktop-alerts decision endpoint (active-guardrail sub-project B). Consumed
+// ONLY by the Rust alert poller over loopback (LOCAL_CLIENT, Origin-less) — so
+// it is deliberately NOT in READ_ONLY_API_PATHS (the webview never reads it).
+// Capture nowMs ONCE and thread the SAME value into buildProjection, the
+// alert-state prune (AlertState.load(nowMs)), and evaluate — so the freshness
+// boundary, the prune cutoff, and the body's local-time strings can't straddle
+// a tick. PURE READ: nothing is marked fired here; all mutation is in the ack,
+// so a Rust crash before firing re-fires next tick (at-least-once).
+app.get('/api/alerts/pending', async (c) => {
+  const nowMs = Date.now();
+  const record = await usageStore.load();
+  const history = await usageHistory.samplesByWindow();
+  const all = await store.loadAllSummaries();
+  const trailing = filterSessions(all, { period: '7d', project: '', now: new Date(nowMs) });
+  const apiEquivalentSpendTrailing = sumSessionCosts(trailing);
+  const projection = buildProjection({
+    normalized: record?.normalized ?? null,
+    ingestedAt: record?.ingestedAt ?? null,
+    history,
+    nowMs,
+    apiEquivalentSpendTrailing,
+    subscriptionCost: await configStore.effectiveSubscriptionCost(),
+  });
+  const prefs = await configStore.effectiveAlertPrefs();
+  const fired = await alertState.load(nowMs);
+  const { due, retire } = evaluate({
+    usage: record?.normalized ?? null,
+    projection,
+    prefs,
+    fired,
+    nowMs,
+  });
+  return c.json({ due, retire });
+});
+
+// Mark the union of {fired, retired} keys as fired in alert-state (one atomic
+// write). `fired` = alerts Rust attempted to show; `retired` = the severity-
+// collapsed lesser keys Rust never shows but that are spent. Idempotent. 400
+// on a non-array field. Loopback-only (not in READ_ONLY_API_PATHS).
+app.post('/api/alerts/ack', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'expected body: { fired: [...], retired: [...] }' }, 400);
+  }
+  const fired = body.fired ?? [];
+  const retired = body.retired ?? [];
+  if (!Array.isArray(fired) || !Array.isArray(retired)) {
+    return c.json({ error: 'fired and retired must be arrays' }, 400);
+  }
+  await alertState.markFired([...fired, ...retired]);
+  return c.json({ ok: true });
+});
+
 // Phase ②b: one compact, curated analytics snapshot the Tauri parent fetches
 // over loopback, stamps with seq+writerId, and writes (coordinated) into the
 // app's iCloud container for the companion iOS app. Read-only; covered by the
@@ -606,6 +670,7 @@ app.get('/api/config', async (c) => {
   return c.json({
     claudeDir: CLAUDE_DIR,
     subscriptionCost: await configStore.effectiveSubscriptionCost(),
+    alerts: await configStore.effectiveAlertPrefs(),
     pricing: { source: priceTable.source, fetchedAt: priceTable.fetchedAt },
     providers,
   });
@@ -650,6 +715,38 @@ app.post('/api/config/subscription-cost', async (c) => {
   }
   await configStore.setSubscriptionCost(cost);
   return c.json({ subscriptionCost: await configStore.effectiveSubscriptionCost() });
+});
+
+// Per-type alert prefs (active-guardrail sub-project B). Same-origin dashboard
+// POST + loopback NSMenu toggle; no CORS middleware (the '/api/config' entry in
+// READ_ONLY_API_PATHS does not match this subpath). Body: { enabled?: boolean,
+// types?: { approaching?, willHit?, limitReached? } }. 400 on any non-boolean
+// field. Merges into the existing alerts block (toggling one preserves others).
+app.post('/api/config/alerts', async (c) => {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON' }, 400);
+  }
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'expected body: { enabled?: boolean, types?: {...} }' }, 400);
+  }
+  if ('enabled' in body && typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'alerts.enabled must be a boolean' }, 400);
+  }
+  if ('types' in body) {
+    if (!body.types || typeof body.types !== 'object') {
+      return c.json({ error: 'alerts.types must be an object' }, 400);
+    }
+    for (const key of ['approaching', 'willHit', 'limitReached']) {
+      if (key in body.types && typeof body.types[key] !== 'boolean') {
+        return c.json({ error: `alerts.types.${key} must be a boolean` }, 400);
+      }
+    }
+  }
+  const effective = await configStore.setAlertPrefs(body);
+  return c.json(effective);
 });
 
 app.post('/api/usage/ingest', async (c) => {

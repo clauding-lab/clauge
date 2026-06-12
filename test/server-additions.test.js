@@ -289,3 +289,88 @@ describe('subscription-cost setting (POST /api/config/subscription-cost)', () =>
     assert.deepEqual(persisted, { v: 1, subscriptionCost: 120 });
   });
 });
+
+// PR 2 (alerts): per-type alert prefs are a persisted sidecar-owned setting
+// in the SAME ~/.clauge/config.json as subscriptionCost (read-merge-write).
+// POST /api/config/alerts flips them; GET /api/config reports them. Sandbox
+// via CLAUGE_HOME (cross-platform, unlike a raw HOME redirect).
+describe('alert prefs (POST /api/config/alerts + GET /api/config)', () => {
+  let server, home;
+  const PORT = '3506';
+  const BASE = `http://127.0.0.1:${PORT}`;
+
+  before(async () => {
+    home = await mkdtemp(`${tmpdir()}/clauge-alerts-config-`);
+    server = await startServer({ PORT, CLAUGE_HOME: home });
+  });
+
+  after(async () => {
+    if (server && !server.killed) {
+      server.kill('SIGTERM');
+      await new Promise((r) => server.once('exit', r));
+    }
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('GET /api/config reports all-on alert prefs by default', async () => {
+    const body = await (await fetch(`${BASE}/api/config`)).json();
+    assert.deepEqual(body.alerts, {
+      alertsEnabled: true,
+      types: { approaching: true, willHit: true, limitReached: true },
+    });
+  });
+
+  it('POST /api/config/alerts flips the master toggle and returns effective prefs', async () => {
+    const res = await fetch(`${BASE}/api/config/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    });
+    assert.equal(res.status, 200);
+    const eff = await res.json();
+    assert.equal(eff.alertsEnabled, false);
+
+    const cfg = await (await fetch(`${BASE}/api/config`)).json();
+    assert.equal(cfg.alerts.alertsEnabled, false, 'GET reflects the persisted toggle');
+  });
+
+  it('toggling one type preserves the others (merge, not replace)', async () => {
+    const res = await fetch(`${BASE}/api/config/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ types: { willHit: false } }),
+    });
+    assert.equal(res.status, 200);
+    const eff = await res.json();
+    assert.equal(eff.types.willHit, false);
+    assert.equal(eff.types.approaching, true, 'untouched type stays on');
+    assert.equal(eff.types.limitReached, true, 'untouched type stays on');
+  });
+
+  it('rejects a non-boolean enabled with 400', async () => {
+    const res = await fetch(`${BASE}/api/config/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: 'on' }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('rejects a non-boolean type flag with 400', async () => {
+    const res = await fetch(`${BASE}/api/config/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ types: { approaching: 1 } }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('rejects non-JSON with 400', async () => {
+    const res = await fetch(`${BASE}/api/config/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json at all',
+    });
+    assert.equal(res.status, 400);
+  });
+});
