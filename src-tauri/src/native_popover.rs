@@ -298,8 +298,10 @@ define_class!(
                 return;
             };
             let app = app.clone();
-            // Optimistic local checkmark flip: read the current state, toggle,
-            // then reconcile from the server response below.
+            // Reconcile-only: compute the target from the current checkmark,
+            // POST it, then set the checkmark from the server's authoritative
+            // response below. No optimistic flip — on POST failure the
+            // checkmark stays as-is.
             let current_on = sender.state() == objc2_app_kit::NSControlStateValueOn;
             let next = !current_on;
             tauri::async_runtime::spawn(async move {
@@ -810,15 +812,16 @@ pub fn init(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[cfg(target_os = "macos")]
 const TRAY_WARN_PCT: f64 = 80.0;
 
-/// Pure: returns the warning-glyph prefix (`"⚠ "`) when EITHER watched
-/// window is at or past 80%, else `""`. `None` (window absent / no data) is
-/// treated as below-threshold. Unit-tested; the poller that calls it is
-/// manual-smoke (landmine #9).
+/// Pure: returns the warning glyph (`"⚠"`) when EITHER watched window is at or
+/// past 80%, else `""`. `None` (window absent / no data) is treated as
+/// below-threshold. The caller's format string owns the space before the
+/// percent chiclet, so this returns the bare glyph (no trailing space).
+/// Unit-tested; the poller that calls it is manual-smoke (landmine #9).
 #[cfg(target_os = "macos")]
 fn tray_warning_prefix(five_pct: Option<f64>, seven_pct: Option<f64>) -> &'static str {
     let hot = |p: Option<f64>| p.map(|v| v >= TRAY_WARN_PCT).unwrap_or(false);
     if hot(five_pct) || hot(seven_pct) {
-        "\u{26a0} " // ⚠ + a single trailing space before the percent chiclet
+        "\u{26a0}" // ⚠
     } else {
         ""
     }
@@ -864,10 +867,11 @@ fn spawn_tray_title_poller(app_handle: tauri::AppHandle) {
                 let five_pct = window_pct(&plan, "fiveHour");
                 let seven_pct = window_pct(&plan, "sevenDay");
                 if let Some(pct) = five_pct {
-                    // PRESERVE the leading-space chiclet gap; the ⚠ prefix (if any)
-                    // sits BEFORE the space-padded percent.
+                    // PRESERVE the leading-space chiclet gap; the bare ⚠ glyph
+                    // (if any) sits BEFORE the space-padded percent. Empty prefix
+                    // yields " 42%" (the original shape); warning yields "⚠ 42%".
                     let prefix = tray_warning_prefix(five_pct, seven_pct);
-                    let title = format!("{} {}%", prefix.trim_end(), pct.round() as i64);
+                    let title = format!("{} {}%", prefix, pct.round() as i64);
                     update_tray_title(&app_handle, title);
                 }
             }
@@ -957,15 +961,15 @@ mod tests {
 
     #[test]
     fn warning_prefix_set_when_five_hour_at_or_past_80() {
-        assert_eq!(tray_warning_prefix(Some(80.0), Some(10.0)), "\u{26a0} ");
-        assert_eq!(tray_warning_prefix(Some(95.0), None), "\u{26a0} ");
-        assert_eq!(tray_warning_prefix(Some(100.0), Some(0.0)), "\u{26a0} ");
+        assert_eq!(tray_warning_prefix(Some(80.0), Some(10.0)), "\u{26a0}");
+        assert_eq!(tray_warning_prefix(Some(95.0), None), "\u{26a0}");
+        assert_eq!(tray_warning_prefix(Some(100.0), Some(0.0)), "\u{26a0}");
     }
 
     #[test]
     fn warning_prefix_set_when_seven_day_at_or_past_80() {
-        assert_eq!(tray_warning_prefix(Some(10.0), Some(80.0)), "\u{26a0} ");
-        assert_eq!(tray_warning_prefix(None, Some(99.0)), "\u{26a0} ");
+        assert_eq!(tray_warning_prefix(Some(10.0), Some(80.0)), "\u{26a0}");
+        assert_eq!(tray_warning_prefix(None, Some(99.0)), "\u{26a0}");
     }
 
     #[test]
