@@ -180,3 +180,26 @@ describe('buildSnapshot — forecastHistory recent slice', () => {
     }
   });
 });
+
+// C1.5: the `forecast` block re-publishes weekOverWeek + roiPace VERBATIM from
+// the projection (never recomputed in snapshot.js — that is the no-drift guard).
+// Both null when unpaired/no-data; the block is always present (never omitted).
+describe('buildSnapshot — forecast block (weekOverWeek + roiPace passthrough)', () => {
+  it('publishes weekOverWeek + roiPace verbatim (no recompute, no mutation)', async () => {
+    const weekOverWeek = { deltaPts: -8, prevPctAtSamePoint: 20 };
+    const roiPace = {
+      trailingDays: 7,
+      apiEquivalentSpendTrailing: 312.4,
+      monthlyEquivalentValue: 1338.86,
+      subscriptionCost: 200,
+      paceMultiple: 5.7,
+    };
+    const snap = await build([makeSession()], null, { weekOverWeek, roiPace });
+    assert.deepEqual(snap.forecast, { weekOverWeek, roiPace });
+  });
+
+  it('degrades to { weekOverWeek: null, roiPace: null } when unpaired/no-data (block present)', async () => {
+    const snap = await build([makeSession()], null);
+    assert.deepEqual(snap.forecast, { weekOverWeek: null, roiPace: null });
+  });
+});
