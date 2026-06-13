@@ -118,7 +118,14 @@ describe('UsageHistory.record — window allowlist', () => {
 });
 
 describe('UsageHistory.record — never throws', () => {
-  it('resolves false and console.warn-s on an unwritable directory', async (t) => {
+  it(
+    'resolves false and console.warn-s on an unwritable directory',
+    // POSIX dir permissions (chmod 0o500) are not enforced on Windows — appendFile
+    // succeeds there, so this EACCES path is POSIX-only. The graceful-failure
+    // behaviour stays covered on macOS + Linux CI. (Surfaced in the v1.3.0 release:
+    // PR CI is macOS-only, so this only failed on the release's Windows matrix job.)
+    { skip: process.platform === 'win32' ? 'chmod dir perms not enforced on Windows' : false },
+    async (t) => {
     const lockedDir = join(TMP, 'locked');
     await mkdir(lockedDir, { recursive: true });
     await chmod(lockedDir, 0o500); // r-x: appendFile will EACCES
