@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-13 — v1.3.0 | Release Windows job failed on a POSIX-only test; the PR gate is macOS-only
+
+**Trigger:** The v1.3.0 release tag fired `release.yml`, whose **Windows x64** matrix job failed at "Run JS unit tests." Every PR had been green. The Windows build had never run the JS suite until the release.
+
+**What went wrong:** `check.yml` (the PR gate) runs `runs-on: macos-latest` only, but `release.yml` also builds a Windows artifact. `test/usage-history.test.js` did `chmod(dir, 0o500)` then expected `appendFile` to `EACCES` — Windows does not enforce POSIX directory permissions, so the write succeeded and the assertion failed. Latent on `main` since the recorder landed (#39); no release ran between then and v1.3.0, and the PR gate never exercised Windows. The macOS DMG published but the Windows build and the gh-pages `latest.json` mirror (gated on the full matrix) were skipped → a partial, stuck release.
+
+**Lesson:** The platforms your RELEASE builds must be a subset of what your PR gate TESTS — otherwise the release gate is your first integration test on the untested platform, the most expensive place to find a break (tag dance + partial-publish cleanup). And POSIX file-permission tests (`chmod 0o000/0o500` → expect `EACCES`) are not portable: skip on `win32` or force the failure portably (target a path whose parent is a regular file → `ENOTDIR` everywhere).
+
+**Prevention:** (1) PR #49 skips the offending case on `win32` (graceful-failure stays covered on macOS/Linux). (2) Added a `js-tests-windows` job to `check.yml` (`npm test` on `windows-latest`) so JS portability breaks are caught pre-merge — add it to the branch's required status checks to make it blocking. (3) Recovery from a partial matrix release: delete the partial GitHub Release + tag (`gh release delete <tag> --cleanup-tag`), merge the fix, re-tag the same version at the fixed commit, re-push.
+
+**Hotfix:** PR #49 (skip-on-win32) + clean re-tag of v1.3.0 (deleted the partial release/tag, re-tagged at the fixed commit → all 4 jobs green, `latest.json` flipped to 1.3.0).
+
+**Cross-references:** global `~/.claude/AGENT_LEARNINGS.md` (same date); companion OOM entry below; `check.yml` `js-tests-windows` job.
+
 ## 2026-06-13 — v1.3.0 | Cold-start OOM: unbounded `loadAllSummaries` on a large ~/.claude
 
 **Trigger:** Pre-release smoke of sub-projects A+B (the v1.3.0 ship). A freshly-started sidecar, hit with any spend query, OOM-crashed — ~3.97 GB RSS in ~50s — on the real 1.1 GB / 2647-file `~/.claude`. The running production app uses ~57 MB.

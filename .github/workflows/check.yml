@@ -51,3 +51,28 @@ jobs:
 
       - name: Run check (fmt + clippy strict + cargo test + npm test)
         run: npm run check
+
+  # The release builds a Windows artifact, but the gate above runs on macOS
+  # only — so a non-portable JS test (e.g. POSIX file perms) only failed at the
+  # release gate, the most expensive place to find out (v1.3.0 half-published
+  # before this job existed). Run the JS suite on Windows too so portability
+  # breaks are caught pre-merge. See AGENT_LEARNINGS 2026-06-13.
+  # NOTE: add "js-tests-windows" to the branch's required status checks to make
+  # it blocking — otherwise it surfaces failures but won't prevent merge.
+  js-tests-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Run JS unit tests
+        run: npm test
