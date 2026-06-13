@@ -91,7 +91,15 @@ describe('buildSnapshot — phone analytics snapshot', () => {
 
   it('carries a stable schema version and a generated timestamp', async () => {
     const snap = await build([makeSession()]);
+    // schemaVersion stays 1 — landmine #37: bumping it before a matching iOS
+    // build is LIVE blanks every iPhone's Analytics tab (cross-repo contract).
+    // The C1.5 forecast blocks ship as OPTIONAL keys UNDER schemaVersion 1, so
+    // old iOS ignores them and the version must NOT move.
     assert.equal(snap.schemaVersion, 1);
+    assert.ok(
+      'forecast' in snap && 'forecastHistory' in snap,
+      'new C1.5 blocks ship as OPTIONAL keys under schemaVersion 1 — no bump',
+    );
     assert.equal(snap.generatedAt, NOW.toISOString());
     assert.equal(snap.period, '30d');
   });
@@ -201,5 +209,39 @@ describe('buildSnapshot — forecast block (weekOverWeek + roiPace passthrough)'
   it('degrades to { weekOverWeek: null, roiPace: null } when unpaired/no-data (block present)', async () => {
     const snap = await build([makeSession()], null);
     assert.deepEqual(snap.forecast, { weekOverWeek: null, roiPace: null });
+  });
+});
+
+// C1.5: payload-size tripwire. This is a SYNC-CHURN TIGHTNESS GOAL (smaller
+// iCloud writes), NOT a correctness gate — bump the ceiling DELIBERATELY if the
+// payload legitimately grows. The number is anchored to the REAL Mac payload
+// (~12.4 KB today) + the documented forecast add (~1.3–3.3 KB) -> 18 KB ceiling
+// with headroom. The fixture below builds a far smaller snapshot; the ceiling
+// guards against a future change that balloons the real-world payload.
+describe('buildSnapshot — payload size tripwire (sync-churn tightness, not correctness)', () => {
+  it('serializes under the 18KB iCloud-write ceiling with both hero windows + non-null forecast', async () => {
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      makeSession({ sessionId: `s${i}`, project: `proj${i}`, cost: i + 1 }),
+    );
+    const NOW_MS = NOW.getTime();
+    const at = (ageMs) => new Date(NOW_MS - ageMs).toISOString();
+    const resets = '2026-06-05T15:00:00Z';
+    const history = {
+      fiveHour: Array.from({ length: 12 }, (_, i) => ({ at: at(i * 5 * 60 * 1000), pct: i, resetsAt: resets })),
+      sevenDay: Array.from({ length: 12 }, (_, i) => ({ at: at(i * 5 * 60 * 1000), pct: i, resetsAt: resets })),
+    };
+    const snap = await build(sessions, { ingestedAt: '2026-06-05T00:00:00Z', normalized: { tier: 'max' } }, {
+      history,
+      weekOverWeek: { deltaPts: -8, prevPctAtSamePoint: 20 },
+      roiPace: {
+        trailingDays: 7,
+        apiEquivalentSpendTrailing: 312.4,
+        monthlyEquivalentValue: 1338.86,
+        subscriptionCost: 200,
+        paceMultiple: 5.7,
+      },
+    });
+    const bytes = Buffer.byteLength(JSON.stringify(snap), 'utf8');
+    assert.ok(bytes < 18 * 1024, `snapshot ${bytes}B exceeds 18KB iCloud-write ceiling`);
   });
 });
