@@ -11,9 +11,18 @@ const REPO_ROOT = join(__dirname, '..');
 const ARCH = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
 const SIDECAR = join(REPO_ROOT, 'src-tauri', 'binaries', `clauge-server-${ARCH}-apple-darwin`);
 
-const SKIP_SMOKE = process.env.SKIP_SEA_SMOKE === '1';
+// macOS-only: the binary under test is the universal `-apple-darwin` SEA
+// (line above), which can't exist or run on Windows/Linux — so `npm test`'s
+// glob would otherwise ENOENT off darwin. Skip there (and when explicitly
+// disabled). Keeps the suite portable for the Windows PR-gate job + Linux devs.
+const SKIP_REASON =
+  process.env.SKIP_SEA_SMOKE === '1'
+    ? 'SKIP_SEA_SMOKE=1 set'
+    : process.platform !== 'darwin'
+      ? `SEA binary is macOS-only (platform: ${process.platform})`
+      : false;
 
-describe('SEA sidecar smoke', { skip: SKIP_SMOKE ? 'SKIP_SEA_SMOKE=1 set' : false }, () => {
+describe('SEA sidecar smoke', { skip: SKIP_REASON }, () => {
   before(() => {
     if (!existsSync(SIDECAR)) {
       console.log('[smoke] Building SEA sidecar (one-time)...');
