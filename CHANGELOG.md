@@ -5,7 +5,7 @@
 ### Added
 
 - **Forecasts — Clauge now looks ahead, not just back.** The menu-bar popover and the dashboard show where each usage window is heading at your current pace — e.g. "at this pace you'll reach 100% around 3:40 PM" — alongside a week-over-week read and a monthly ROI run-rate measured against your subscription cost (now editable in Settings). When there isn't enough recent activity to forecast honestly, the line simply doesn't appear rather than guessing.
-- **Desktop alerts — get warned before you run out.** Clauge can now raise a desktop notification when a window is approaching its limit (80% / 95%), when you're on pace to run out before it resets, and when a limit is actually reached. The menu-bar icon shows a ⚠ cue and the tray menu gains a quick **Alerts** on/off toggle; per-type toggles live in Settings. Each alert fires once — no every-30-seconds nagging — and the whole feature is off until you turn it on.
+- **Desktop alerts — get warned before you run out.** Clauge can now raise a desktop notification when a window is approaching its limit (80% / 95%), when you're on pace to run out before it resets, and when a limit is actually reached. The menu-bar icon shows a ⚠ cue and the tray menu gains a quick **Alerts** on/off toggle; per-type toggles live in Settings. Each alert fires once — no every-30-seconds nagging. Alerts are **on by default** (macOS still asks your permission before the first notification ever appears); turn the whole feature, or any single type, off in Settings.
 
 ### Fixed
 
