@@ -37,6 +37,22 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-13 — v1.3.0 | Cold-start OOM: unbounded `loadAllSummaries` on a large ~/.claude
+
+**Trigger:** Pre-release smoke of sub-projects A+B (the v1.3.0 ship). A freshly-started sidecar, hit with any spend query, OOM-crashed — ~3.97 GB RSS in ~50s — on the real 1.1 GB / 2647-file `~/.claude`. The running production app uses ~57 MB.
+
+**What went wrong:** `SessionStore.loadAllSummaries()` (`lib/session-store.js`) did an unbounded `Promise.all` over every session file. On a cold in-memory cache it parsed the entire transcript corpus at once, blowing past node's ~4 GB default heap. Pre-existing — predates A/B — and reproduced through the old `/api/roi` with zero new code. Dormant in normal use because the per-file mtime cache warms incrementally (no single run ever faced a full-corpus cold parse) and warm reads are stat-only (~57 MB).
+
+**Why it became a release blocker now:** sub-project B's Rust alert poller hits `/api/alerts/pending` → `buildLiveProjection` → `loadAllSummaries` every 30s from app launch, with no user interaction. On a heavy account the first poll triggers the cold parse → OOM → sidecar respawn → cold again → crash loop. An always-on background caller turned a latent, user-triggered, dashboard-only OOM into an every-launch crash.
+
+**Lesson:** (1) Smoke the sidecar on a REAL heavy `~/.claude`, not dev-sized data — cold-start memory bugs only surface at scale. (2) Adding an always-on poller to a shared, expensive code path changes that path's risk profile even when the path itself is unchanged — re-smoke the path under the new caller. (3) `Promise.all(arr.map(...))` over an unbounded set is a memory landmine; cap concurrency. (4) "Pre-existing, not my change" ≠ "not my problem to ship-block" — the new feature is what made it fire.
+
+**Prevention:** `loadAllSummaries` now parses in bounded batches of `SUMMARY_LOAD_CONCURRENCY` (8). `test/session-store.test.js` pins the cap (mutation-verified: fails against the unbounded version). AGENTS.md landmine #41 added. Verified end-to-end on the real 1.1 GB account: cold start survives at ~2.0 GB peak (single load and 5× concurrent both ~2.0 GB — the per-file cache dedups overlap).
+
+**Hotfix:** Folded into v1.3.0 (PR #47) alongside the A+B release, rather than a separate v1.2.1 — Adnan's call (one fix covers the pre-existing bug and unblocks the always-on poller).
+
+**Cross-references:** AGENTS.md landmine #41; auto-memory `project_active_guardrail_roadmap`; global `~/.claude/AGENT_LEARNINGS.md` (same date).
+
 ## 2026-06-12 — v1.2.0 | Popover Quit dead since v0.5.0: the comment described intent, not reality
 
 **Trigger:** Post-launch review board flagged the popover ✕ Quit button doing nothing; recon confirmed `{cmd:'quit'}` lands in `handle_script_message`'s catch-all (unknown script message cmd=quit).
