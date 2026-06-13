@@ -588,7 +588,10 @@ async function buildLiveProjection(nowMs) {
     apiEquivalentSpendTrailing: sumSessionCosts(trailing),
     subscriptionCost: await configStore.effectiveSubscriptionCost(),
   });
-  return { record, projection };
+  // `history` is returned too (additive — /api/projection + /api/alerts/pending
+  // destructure only what they use) so /api/snapshot can re-publish the hero
+  // windows' recent samples (forecastHistory) on the SAME nowMs + JSONL read.
+  return { record, projection, history };
 }
 
 app.get('/api/projection', async (c) => {
@@ -649,11 +652,21 @@ app.post('/api/alerts/ack', async (c) => {
 // same loopback CORS allowlist as the other GET endpoints.
 app.get('/api/snapshot', async (c) => {
   const tz = c.req.query('tz') ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+  // ONE clock for the whole snapshot: the same nowMs feeds buildLiveProjection
+  // (forecast values) and the forecastHistory 60-min slice, so the two can't
+  // straddle a tick. The forecast block is re-published VERBATIM from the
+  // projection — never recomputed here (no-drift with /api/projection).
+  const nowMs = Date.now();
+  const { projection, history } = await buildLiveProjection(nowMs);
   const snapshot = await buildSnapshot({
     store,
     usageStore,
     subscriptionCost: await configStore.effectiveSubscriptionCost(),
     tz,
+    now: new Date(nowMs),
+    history,
+    weekOverWeek: projection.windows?.sevenDay?.weekOverWeek ?? null,
+    roiPace: projection.roiPace ?? null,
   });
   return c.json(snapshot);
 });
