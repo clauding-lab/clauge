@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1] — 2026-06-15
+
+### Added
+
+- **Sharper forecasts on the iPhone companion.** The Mac now publishes extra forecasting data into the iCloud snapshot it shares with the Clauge iOS app — recent burn-rate samples plus a week-over-week read and a monthly ROI run-rate — so a paired iPhone can show a tighter "at this pace…" forecast and those two extra lines even when it isn't actively signed in to Claude. This is a companion-data release: the Mac app looks and behaves exactly as it did in 1.3.0; the payoff shows up on the phone.
+
+---
+
 ## [1.3.0] — 2026-06-13
 
 ### Added
