@@ -935,13 +935,19 @@ td.ok { color: var(--ok); }
 
 .plan-body {
   /* Ring count is dynamic — 3 normally, 4 if Anthropic returns the Claude Design
-     bucket. Center the row so a missing bucket leaves balanced margins, not the
-     one-sided gap a fixed 4-column grid would leave. */
+     bucket. This row lives in a width-capped grid column (≈710px at the narrow
+     floor), so the old viewport-relative gap (clamp(64px, 12vw, 176px)) could
+     grow past what the column holds on wide windows and wrap the 3rd ring onto
+     its own row — worse under WebKit/WKWebView, which sizes each card by its
+     forecast text's unwrapped max-content width. space-evenly distributes the
+     free space instead of a fixed gap, so the capped-width cards (see
+     .ring-card) stay on one line and fill the width airily without overflowing,
+     for any ring count up to 4. */
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: space-evenly;
   align-items: flex-start;
-  gap: clamp(64px, 12vw, 176px);
+  gap: clamp(20px, 3vw, 48px);
   position: relative;
 }
 .ring-card {
@@ -950,6 +956,13 @@ td.ok { color: var(--ok); }
   align-items: center;
   gap: 12px;
   padding: 5px 2px;
+  /* Cap width so a long forecast line ("At this pace → 100% ~Thu 2:40 AM",
+     "Limit reached — resets …") wraps inside the card instead of inflating it.
+     WebKit sizes this flex column by the text's unwrapped max-content, which is
+     what pushed the 3rd ring to a second row; the cap makes the row's total
+     width deterministic across engines. 152px keeps the common short forecasts
+     (≤145px measured) on one line. */
+  max-width: 152px;
 }
 .big-ring {
   width: 120px;
