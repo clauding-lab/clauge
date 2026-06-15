@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2] — 2026-06-16
+
+### Fixed
+
+- **Plan-capacity rings now stay on one line.** On wider windows the third usage ring (e.g. Sonnet) could drop onto its own row below the other two. The dashboard now keeps all the rings together on a single line at every window size. This is a cosmetic fix — nothing else changed.
+
+---
+
 ## [1.3.1] — 2026-06-15
 
 ### Added
