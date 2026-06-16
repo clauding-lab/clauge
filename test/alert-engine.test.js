@@ -27,13 +27,14 @@ const ALL_ON = {
   types: { approaching: true, willHit: true, limitReached: true },
 };
 
-// Per-window history that pins the projection STATE the engine reads. The
-// real projectWindow extrapolates the window-average rate when no history is
-// given, and at NOW_MS the watched windows are only minutes old — so the avg
-// rate reports will_hit at almost any pct. To exercise the engine's
-// approaching/willHit branches independently we supply an explicit recent
-// sample per window: a near-flat one yields a `safe` forecast (so willHit is
-// NOT a candidate and approaching wins), a steep one yields `will_hit`.
+// Per-window history that pins the projection STATE the engine reads. For the
+// fiveHour window projectWindow uses the recent-burst rate, so an explicit
+// recent sample controls its state: a near-flat one yields a `safe` forecast
+// (willHit is NOT a candidate, approaching wins) and a steep one yields
+// `will_hit`. The weekly (sevenDay) window IGNORES recent history — the
+// window-aware-rate fix only lets windows <=5h trust the recent rate, so the
+// weekly projects from the sustained window-average and at NOW_MS (~5 days into
+// the week) reads will_hit at almost any elevated pct regardless of the sample.
 // History only changes projection.state; the engine reads .state + .stale.
 
 // Near-flat: pct barely moved over the last 30 min => recent rate ~0 => safe.
@@ -380,8 +381,10 @@ describe('both watched windows in one pass', () => {
       sevenDay: { pct: 82, resetsAt: SEVEN_RESET },
     };
     const { due } = evalWith({ usage });
+    // sevenDay at 82% ~5 days into the week projects past 100% on the sustained
+    // window-average → will_hit (the weekly ignores recent history post-fix).
     assert.deepEqual(ids(due).sort(), [
-      `approaching:sevenDay:80:${SEVEN_RESET}`,
+      `willHit:sevenDay:${SEVEN_RESET}`,
       `limitReached:fiveHour:${FIVE_RESET}`,
     ].sort());
   });
@@ -398,7 +401,8 @@ describe('null / missing window -> skipped', () => {
   it('window entirely absent is skipped', () => {
     const usage = { sevenDay: { pct: 82, resetsAt: SEVEN_RESET } };
     const { due } = evalWith({ usage });
-    assert.deepEqual(ids(due), [`approaching:sevenDay:80:${SEVEN_RESET}`]);
+    // Only sevenDay present (fiveHour absent → skipped); 82% mid-week → will_hit.
+    assert.deepEqual(ids(due), [`willHit:sevenDay:${SEVEN_RESET}`]);
   });
 });
 
