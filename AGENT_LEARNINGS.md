@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-16 — v1.3.3 | A peer agent's "merged-ready, tests pass" PR was actually RED on full CI
+
+**Trigger:** Copotron (the Discord/VPS Claude) diagnosed + fixed the weekly-forecast over-reaction, opened desktop PR #56 + iOS PR #14, and reported *"55 projection tests pass, merged-ready."* Picking it up on the Mac to merge + ship, a pre-merge `gh pr checks 56` showed **both** CI jobs RED (`check` + `js-tests-windows`).
+
+**What went wrong:** Copotron ran only the focused projection-vector tests (like a bare `node --test test/projection.test.js` → green), not the full `npm run check`. The fix switches the weekly (sevenDay) forecast from the recent-burst rate to the window-average — a behavioral change the alert engine reads — so 2 `test/alert-engine.test.js` cases that pinned the OLD weekly state (via a "flat recent history → safe" trick that only feeds the recent-rate path) flipped from `approaching:80` to `willHit` and failed. The originating agent never ran the downstream suite, and its self-reported green was taken at face value in the handoff.
+
+**Lesson:** Never merge another agent's PR on its self-reported green — re-run the FULL gate (`gh pr checks <n>` / `npm run check`) yourself first. A peer agent's "tests pass" is exactly as untrustworthy as your own focused-test green (landmine #29); cross-agent handoffs lose the "did you run the whole thing" context.
+
+**Prevention:** (1) On any inbound PR — peer-agent or human — gate the merge on `gh pr checks <n>` GREEN, never on the PR description. (2) A change to `lib/projection.js` predictably ripples into `test/alert-engine.test.js` (the engine consumes projection `.state`; the flat/steep-history fixture trick now only controls ≤5h windows). (3) iOS has NO CI — run the FULL `xcodebuild test` (all of ClaugeTests), not `-only-testing` one suite, before merging an iOS mirror (here 199/199 confirmed no equivalent breakage).
+
+**Hotfix:** Updated the 2 lagging alert-engine expectations to the correct new behavior (`willHit:sevenDay`) + refreshed the fixture comment; pushed to the PR branch; full `npm test` 475/475 + CI green; merged #56 + #14; shipped v1.3.3.
+
+**Cross-references:** reinforces AGENTS.md landmine #29 (run the full CI command before claiming green); global rulebook 2026-06-16 (cross-agent handoff verification); auto-memory `project_active_guardrail_roadmap.md`.
+
 ## 2026-06-13 — v1.3.0 | Release Windows job failed on a POSIX-only test; the PR gate is macOS-only
 
 **Trigger:** The v1.3.0 release tag fired `release.yml`, whose **Windows x64** matrix job failed at "Run JS unit tests." Every PR had been green. The Windows build had never run the JS suite until the release.
