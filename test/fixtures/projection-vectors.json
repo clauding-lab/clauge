@@ -62,6 +62,29 @@
       }
     },
     {
+      "name": "projectWindow: sevenDay with a recent BURST forecasts from the sustained window-average (weekly over-reaction fix) - safe at ~66%, not will_hit",
+      "fn": "projectWindow",
+      "input": {
+        "pct": 51,
+        "resetsAt": "2026-06-14T00:24:00.000Z",
+        "windowMs": 604800000,
+        "nowMs": 1781258400000,
+        "history": [
+          { "at": "2026-06-12T09:15:00.000Z", "pct": 45, "resetsAt": "2026-06-14T00:24:00.000Z" },
+          { "at": "2026-06-12T09:35:00.000Z", "pct": 48, "resetsAt": "2026-06-14T00:24:00.000Z" }
+        ]
+      },
+      "expected": {
+        "pct": 51,
+        "resetsAt": "2026-06-14T00:24:00.000Z",
+        "state": "safe",
+        "basis": "window_avg",
+        "etaAt": null,
+        "projectedEndPct": 66,
+        "recentRatePctPerHour": null
+      }
+    },
+    {
       "name": "projectWindow: safe projection that rounds to 100 is capped at 99",
       "fn": "projectWindow",
       "input": {
