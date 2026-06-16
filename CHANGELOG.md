@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.3] — 2026-06-16
+
+### Fixed
+
+- **The weekly forecast no longer over-reacts to a short burst.** The plan-capacity forecast read your burn rate from roughly the last hour. That's the right read for the 5-hour window, but for the 7-day weekly window it stretched a single busy hour across days — so a brief spike could make the weekly read "on pace to hit 100%" when your real weekly pace was nowhere near it. Weekly windows now forecast from your sustained pace across the whole window (only windows of 5 hours or less use the recent-hour rate), so the weekly reads sanely — and the matching "weekly on pace to run out" alert now reflects your genuine weekly pace rather than a momentary spike. The fix is mirrored byte-for-byte into the iPhone companion's forecast.
+
+---
+
 ## [1.3.2] — 2026-06-16
 
 ### Fixed
