@@ -1,6 +1,6 @@
 {
   "name": "clauge",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Claude + Gauge. Token analytics and subscription ROI for Claude Code.",
   "type": "module",
   "main": "server.js",
