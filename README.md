@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://apps.apple.com/us/app/clauge/id6770303247"><img src="https://img.shields.io/badge/Mac_App_Store-Download-0D96F6?logo=apple&logoColor=white" alt="Download on the Mac App Store" /></a>
+  <a href="https://apps.apple.com/us/app/clauge-token-analytics/id6777443865"><img src="https://img.shields.io/badge/App_Store_(iOS)-Download-0D96F6?logo=apple&logoColor=white" alt="Download Clauge - Token Analytics on the App Store" /></a>
   <a href="https://github.com/clauding-lab/clauge/releases/latest"><img src="https://img.shields.io/github/v/release/clauding-lab/clauge?label=release&color=d97757" alt="Latest release" /></a>
   <a href="https://github.com/clauding-lab/clauge/actions/workflows/check.yml"><img src="https://img.shields.io/github/actions/workflow/status/clauding-lab/clauge/check.yml?branch=main&label=CI" alt="CI status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -44,6 +45,14 @@ Clauge lives in your menu bar. **Left-click** for the glanceable popover; **righ
 The popover shows paired **Session** + **Weekly** gauges (each with its local reset time), the **Sonnet** weekly limit, daily routine runs, month-to-date overage and prepaid balance, a 30-day spend chart, and a 180-day activity heatmap.
 
 > **First launch.** A short Welcome wizard explains the one permission Clauge needs on macOS: read access to the OAuth credential Claude&nbsp;Code already stored in your Keychain. macOS will prompt *"Clauge wants to use … 'Claude Code-credentials' …"* — click **Always Allow**. Clauge never sees your Anthropic password, API key, or session token; it reads only the credential blob Claude&nbsp;Code itself wrote. You can skip this and grant it later from **Settings → Connections → ↻ Refresh**.
+
+### iOS
+
+A free, read-only **iPhone companion** — *Clauge - Token Analytics* — that shows your Claude usage at a glance on the go.
+
+| Method | Link |
+|---|---|
+| **App Store** | [**Download Clauge - Token Analytics**](https://apps.apple.com/us/app/clauge-token-analytics/id6777443865) — iPhone, iOS 17+, free |
 
 ### Windows
 
