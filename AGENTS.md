@@ -713,6 +713,16 @@ C1.5 (paired enrichment) makes the Mac's iCloud snapshot carry two OPTIONAL top-
 
 The **dashboard** (`public/index.html` + `public/styles.css`, served by the sidecar on `localhost:3456`) renders in macOS **WKWebView**, NOT Chromium. Layout that relies on engine intrinsic-sizing can render fine in Playwright/Chromium and still break in the shipped app. The Plan-capacity ring row (`.plan-body` / `.ring-card`) hit this in v1.3.2 two ways: (1) a **viewport-relative gap** (`clamp(64px, 12vw, 176px)`) inside a width-capped grid column (`main` is `max-width:1480px`; the rings column floors ~710px) — on a wide window 12vw → ~150–176px, more than the capped column holds, wrapping the 3rd ring (Sonnet) onto its own row; (2) WebKit sizing each `.ring-card` (flex column, `align-items:center`) by its forecast text's **unwrapped max-content** width, so a long line ("At this pace → 100% ~Thu 2:40 AM") inflated the card and worsened the wrap — Chromium instead constrained the text to the ring's 120px and wrapped it, which is why Playwright couldn't reproduce it. **Fix pattern:** cap item width (`.ring-card { max-width: 152px }` so long text wraps INSIDE the card) + distribute free space with `justify-content: space-evenly` and a small gap floor (`clamp(20px, 3vw, 48px)`) instead of a viewport-relative fixed gap. Worst-case row width then fits the floor in any engine. **Verify layout math in Chromium, but the truth is WKWebView.** Note: `public/styles.css` is bundled into the sidecar at build — a plain reload won't show edits; the sidecar must be rebuilt. The popover is separate (`frontendDist: ../popover`, its own classes). (Fixed v1.3.2, PR #54.)
 
+### 44. Library/framework API calls → Context7 first
+
+Before writing or editing code that calls a third-party library or framework API,
+query **Context7** for current, version-pinned docs — do NOT rely on training-cutoff memory.
+
+- **Flow:** `resolve-library-id` (name → `/org/project` ID) → `query-docs` (PIN the version this repo ships, e.g. `/tauri-apps/tauri/v2`).
+- **Applies to:** Tauri 2 (Rust `tauri` 2.0 + the `@tauri-apps/api` JS surface exposed via `window.__TAURI__`), Hono 4 + `@hono/node-server` (the sidecar HTTP server), `reqwest` 0.12 and `chrono` 0.4 (Rust), the `objc2`/`objc2-app-kit`/`objc2-web-kit`/`objc2-foundation`/`objc2-service-management` bindings (NSPopover / NSStatusItem / WKWebView / SMAppService), Node SEA APIs, and the `open` package.
+- **Skip for:** business/domain logic, general programming concepts, or libraries Context7 does not index.
+- **Query specifically:** library + version + exact task (e.g. `tauri 2 WebviewWindowBuilder WebviewUrl::External`, `hono 4 serveStatic root option`, `objc2-app-kit 0.3 NSPopover behavior transient`), never one-word topics like "auth".
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.
