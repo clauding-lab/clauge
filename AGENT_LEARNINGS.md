@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-06-17 — v1.3.3 | MAS upload rejected (409): reused a build number that shipped from an uncommitted edit
+
+**Trigger:** Transporter validation failed with HTTP 409 — *"CFBundleVersion [10] … must be higher than the previously uploaded version [10]"* — when uploading the freshly-built MAS 1.3.3 pkg.
+
+**What went wrong:** The pkg was built with `bundleVersion: 10`, but build 10 was already consumed by the **MAS 1.3.1** submission (2026-06-15, now live). The trap: every MAS build number to date (10 = 1.3.1) was produced from an **uncommitted** edit to `src-tauri/tauri.mas.conf.json` that was never landed, so git `main` still reads `9`. On resuming, the leftover uncommitted `→10` edit plus a stale auto-memory note ("MAS last build = 9 / v1.3.0") led to "next build = 10" — without checking the store. Git and memory both lied because the real build counter lives in App Store Connect, not the repo.
+
+**Lesson:** A MAS/iOS build number's source of truth is App Store Connect — never git or auto-memory — especially when prior builds shipped from uncommitted version-file edits that leave `main` behind the real counter.
+
+**Prevention:** Before building a store package, derive the next build number from the LAST UPLOADED build (ASC → app → TestFlight/Builds, or the App Store Connect API where configured), not from the working-tree value or memory. Treat any uncommitted `bundleVersion` edit as "already used" until proven otherwise. Commit each store build's bump as its own PR (#59) so the counter stops living in uncommitted limbo. Transporter's pre-upload validation is the backstop that caught this before review.
+
+**Hotfix:** Bumped `bundleVersion` 10 → 11, rebuilt `/tmp/Clauge-MAS-1.3.3.pkg` (1.3.3 / build 11), re-delivered via Transporter. PR #59 retitled 9 → 11.
+
+**Cross-references:** PR #59; global rulebook 2026-06-17 entry; auto-memory `feedback_store_build_number_source_of_truth`; CLAUDE.md working-principle #10 (name unverified premises before asserting).
+
 ## 2026-06-16 — v1.3.3 | A peer agent's "merged-ready, tests pass" PR was actually RED on full CI
 
 **Trigger:** Copotron (the Discord/VPS Claude) diagnosed + fixed the weekly-forecast over-reaction, opened desktop PR #56 + iOS PR #14, and reported *"55 projection tests pass, merged-ready."* Picking it up on the Mac to merge + ship, a pre-merge `gh pr checks 56` showed **both** CI jobs RED (`check` + `js-tests-windows`).

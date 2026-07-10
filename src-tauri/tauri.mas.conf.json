@@ -4,7 +4,7 @@
     "targets": ["app"],
     "createUpdaterArtifacts": false,
     "macOS": {
-      "bundleVersion": "9",
+      "bundleVersion": "11",
       "entitlements": "entitlements.mas.plist",
       "providerShortName": "CY4FK9S7X9",
       "signingIdentity": "8E2186661CBDCC424149F713A16A430FB024DC7C",
