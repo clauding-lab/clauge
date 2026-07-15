@@ -177,6 +177,101 @@ describe('normalizeUsage', () => {
     });
     assert.deepEqual(out.unknownSevenDayKeys, []);
   });
+
+  // Ingest validation gateway (finding #03): garbage utilization must not
+  // reach the tray/history/snapshot. metric() sanitizes pct via sanitizePct
+  // and resetsAt via sanitizeResetsAt.
+
+  it('sanitizes out-of-range and non-numeric utilization to null through normalizeUsage', () => {
+    const out = normalizeUsage({
+      five_hour: { utilization: 99999, resets_at: '2026-05-06T10:00:00Z' },
+      seven_day: { utilization: 'lots', resets_at: 'garbage' },
+      seven_day_sonnet: { utilization: -5, resets_at: null },
+    });
+    assert.equal(out.fiveHour.pct, null, '99999 is unit-drift garbage → null');
+    assert.equal(out.fiveHour.resetsAt, '2026-05-06T10:00:00Z', 'valid resets_at survives');
+    assert.equal(out.sevenDay.pct, null, 'non-numeric string → null');
+    assert.equal(out.sevenDay.resetsAt, null, 'unparseable resets_at → null');
+    assert.equal(out.sevenDaySonnet.pct, null, 'negative pct → null');
+  });
+
+  it('clamps a plausible over-100 overshoot to 100 through normalizeUsage', () => {
+    const out = normalizeUsage({ five_hour: { utilization: 150, resets_at: null } });
+    assert.equal(out.fiveHour.pct, 100);
+  });
+
+  it('leaves normal in-range utilization untouched through normalizeUsage', () => {
+    const out = normalizeUsage({ five_hour: { utilization: 55.5, resets_at: null } });
+    assert.equal(out.fiveHour.pct, 55.5);
+  });
+
+  it('sanitizes garbage extra_usage.utilization to null', () => {
+    const out = normalizeUsage({
+      five_hour: null,
+      extra_usage: {
+        is_enabled: true,
+        monthly_limit: 2000,
+        used_credits: 1826,
+        utilization: 99999,
+        currency: 'USD',
+      },
+    });
+    assert.equal(out.extraUsage.pct, null);
+    assert.equal(out.extraUsage.limitDollars, 20, 'cents→dollars math is untouched');
+  });
+});
+
+import { sanitizePct, sanitizeResetsAt } from '../lib/usage-store.js';
+
+describe('sanitizePct', () => {
+  it('rejects non-numeric, implausible, and NaN/Infinity values as null', () => {
+    assert.equal(sanitizePct(99999), null);
+    assert.equal(sanitizePct(-5), null);
+    assert.equal(sanitizePct('lots'), null);
+    assert.equal(sanitizePct({}), null);
+    assert.equal(sanitizePct([]), null);
+    assert.equal(sanitizePct(true), null);
+    assert.equal(sanitizePct(NaN), null);
+    assert.equal(sanitizePct(Infinity), null);
+    assert.equal(sanitizePct(null), null);
+    assert.equal(sanitizePct(undefined), null);
+  });
+
+  it('coerces numeric strings to numbers', () => {
+    assert.equal(sanitizePct('87'), 87);
+  });
+
+  it('clamps a plausible overshoot (100, 200] down to 100', () => {
+    assert.equal(sanitizePct(100.5), 100);
+    assert.equal(sanitizePct(150), 100);
+    assert.equal(sanitizePct(200), 100);
+  });
+
+  it('rejects values above the plausibility ceiling as null', () => {
+    assert.equal(sanitizePct(200.1), null);
+    assert.equal(sanitizePct(250), null);
+  });
+
+  it('passes normal in-range values through unchanged', () => {
+    assert.equal(sanitizePct(0), 0);
+    assert.equal(sanitizePct(100), 100);
+    assert.equal(sanitizePct(55.5), 55.5);
+  });
+});
+
+describe('sanitizeResetsAt', () => {
+  it('rejects non-strings and unparseable strings as null', () => {
+    assert.equal(sanitizeResetsAt({}), null);
+    assert.equal(sanitizeResetsAt('garbage'), null);
+    assert.equal(sanitizeResetsAt(123), null);
+    assert.equal(sanitizeResetsAt(null), null);
+    assert.equal(sanitizeResetsAt(undefined), null);
+  });
+
+  it('passes a valid ISO string through unchanged (string identity, not re-serialized)', () => {
+    const iso = '2026-05-06T10:00:00+06:00';
+    assert.equal(sanitizeResetsAt(iso), iso);
+  });
 });
 
 import { unknownKeysWarning } from '../lib/usage-store.js';
