@@ -37,6 +37,34 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-07-17 — v1.3.3 | Pre-implementation adversarial review caught THREE gaps in the already-twice-verified PR-A fix recipe
+
+**Trigger:** Owner asked to re-check the two 2026-07-16 handoff specs before implementing. A 4-lane verification (2 citation passes, 2 live-bundle passes, 2 independent adversarial design reviews, plus fresh clones of aiusage + ccstatusline) confirmed every citation (44+34, 0 wrong) — but the design reviews found the §5.1 fix recipe would have shipped incomplete.
+
+**What went wrong (in the doc, pre-ship):** (a) **MAS layout blind spot** — `scripts/build-mas-clean.sh:78-80,209` moves the sidecar to `Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server` in App Store builds; every probe path in the rev-2 recipe assumed the DMG layout, so an implementer verifying on the owner's DMG install would test green while MAS shipped broken again. (b) **Symlink blind spot** — the wrapper never `readlink`s `$0`; both promised PATH mechanisms (`install_cli_symlink`, Homebrew `binary` stanza) invoke it through a symlink, where `dirname "$0"` resolves outside the bundle and every relative probe fails. (c) **`resolve_bundle_cli_path` was framed as "audit"** when it is a required, non-separable fix — it returns the un-nested path, so the dashboard "install CLI" button hard-errors 100% of the time today (`ipc.rs:954` guard).
+
+**Lesson:** A fix recipe verified against one distribution channel's bundle is unverified for the others — enumerate every channel layout (DMG, MAS, npm, Homebrew) AND every invocation mode (direct, symlinked) before calling a path-resolution fix complete.
+
+**Prevention:** (1) §5.1 rev 3 folds in all four requirements (readlink loop, dual-layout probes, Rust fix + unit test, verify on both installed channels). (2) New §9 decision 6 makes MAS scope an explicit owner call. (3) PR-A's test plan must include a symlinked invocation case.
+
+**Hotfix:** Docs-only (both specs bumped to rev 3, 2026-07-17); implementation still awaits owner sign-off.
+
+**Cross-references:** `docs/superpowers/specs/2026-07-16-cli-statusline-widget-design.md` §5.1/§9/§10 rev 3; global rulebook 2026-07-17 entry (workflow structured-output failure — the harness lesson from the same session); auto-memory `project_clauge_cli_statusline_handoff`.
+
+## 2026-07-16 — v1.3.3 | Shipped Mac CLI wrapper has been dead since bundling: repo-tree path ≠ installed-bundle path
+
+**Trigger:** A recon + measurement pass for the CLI-statusline handoff timed the bundled CLI on the installed production app. A suspicious ~31 ms "run" turned out to be an instant failure — exit 1, `clauge: bundled sidecar not found at …/Resources/Resources/../MacOS/clauge-server-aarch64-apple-darwin`.
+
+**What went wrong:** Two independent path bugs in `src-tauri/Resources/clauge-cli`. (a) Tauri bundles it at `Contents/Resources/Resources/clauge-cli` (the `resources` dir nests), but the script resolves `$DIR/../MacOS/…` as if it sat one level up — `Contents/Resources/MacOS/` does not exist. (b) It looks for `clauge-server-aarch64-apple-darwin`, but the bundle ships the `externalBin` **unsuffixed** as `clauge-server` (Tauri strips the target triple at bundle time). The wrapper's own header comment, `README.md:136-137`, and the `resolve_bundle_cli_path` doc-comment (`src-tauri/src/ipc.rs:1005+`) all assert the un-nested path — the docs echoed the same false premise instead of checking it. Nothing caught it because no test ever executes the wrapper from an installed bundle; `which clauge` was also not found on the owner's daily-driver Mac, so the symlink flow had never surfaced it.
+
+**Lesson:** The repo tree is not the installed bundle — any shipped script that resolves paths relative to itself must be verified against a real installed `.app`; and a fast exit is not a successful exit (assert exit code + output, never infer success from timing).
+
+**Prevention:** (1) PR-A (pending sign-off): robust resolution — try both `../MacOS/` and `../../MacOS/`, both suffixed and unsuffixed binary names; audit `resolve_bundle_cli_path` for the same stale assumption. (2) Add an installed-bundle smoke check to the release flow: execute the bundled wrapper post-build, assert exit 0 + JSON. (3) Fix the README dual falsehood (wrapper path + "Homebrew puts `clauge` on PATH automatically" — the cask has no `binary` stanza; tracked as PR-D in the tap repo).
+
+**Hotfix:** None shipped yet — documented as the P0 prerequisite in `docs/superpowers/specs/2026-07-16-cli-statusline-widget-design.md` §5, awaiting owner sign-off.
+
+**Cross-references:** Both 2026-07-16 handoff specs in `docs/superpowers/specs/`; global rulebook 2026-07-11 entry (only exercising the real artifact exposes what suites and reviews miss — this is the same failure class); auto-memory (home project) `project_clauge_cli_statusline_handoff`; candidate `AGENTS.md` landmine once PR-A lands.
+
 ## 2026-06-17 — v1.3.3 | MAS upload rejected (409): reused a build number that shipped from an uncommitted edit
 
 **Trigger:** Transporter validation failed with HTTP 409 — *"CFBundleVersion [10] … must be higher than the previously uploaded version [10]"* — when uploading the freshly-built MAS 1.3.3 pkg.
