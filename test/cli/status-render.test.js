@@ -96,6 +96,7 @@ const ORANGE = '\x1b[38;5;208m';
 const YELLOW = '\x1b[33m';
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
+const BLUE = '\x1b[34m';
 
 describe('locked three-line render (colors stripped)', () => {
   test('renders the §4 golden output exactly', () => {
@@ -395,18 +396,28 @@ describe('scoped-limit gauges — rev 5 (2026-07-19 owner request)', () => {
     assert.ok(line2.endsWith('Fable ▓▓▓▓░░░░░░ 40%'), 'no (resets …) suffix follows');
   });
 
-  test('scoped gauge thresholds: used 80 orange, used 95 red', () => {
+  test('scoped gauges render blue always (owner decision), never the warning thresholds', () => {
+    // Rev 5.1: scoped gauges ignore the 75/90 threshold ladder entirely —
+    // blue at 80% (would be orange for a hero gauge) AND blue at 95%
+    // (would be red for a hero gauge).
+    // Assert against line 2 only — line 1's `-0` lines-removed segment is
+    // unconditionally red (git-churn color, unrelated to gauge thresholds),
+    // so checking the whole render would false-positive on "never red".
     const snap80 = snapshot();
     snap80.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 80, resets_at: null });
-    const out80 = render({ snapshot: snap80 }, { ansi: true, orange256: true });
-    assert.ok(out80.includes(`${ORANGE}▓▓▓▓▓▓▓▓░░`), 'scoped bar at 80% is orange');
-    assert.ok(out80.includes(`${ORANGE}80%`), 'scoped pct at 80% is orange');
+    const line2At80 = render({ snapshot: snap80 }, { ansi: true, orange256: true }).split('\n')[1];
+    assert.ok(line2At80.includes(`${BLUE}▓▓▓▓▓▓▓▓░░`), 'scoped bar at 80% is blue');
+    assert.ok(line2At80.includes(`${BLUE}80%`), 'scoped pct at 80% is blue');
+    assert.ok(!line2At80.includes(ORANGE), 'scoped gauge never emits orange');
+    assert.ok(!line2At80.includes(RED), 'scoped gauge never emits red');
 
     const snap95 = snapshot();
     snap95.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 95, resets_at: null });
-    const out95 = render({ snapshot: snap95 }, { ansi: true, orange256: true });
-    assert.ok(out95.includes(`${RED}▓▓▓▓▓▓▓▓▓▓`), 'scoped bar at 95% is red');
-    assert.ok(out95.includes(`${RED}95%`), 'scoped pct at 95% is red');
+    const line2At95 = render({ snapshot: snap95 }, { ansi: true, orange256: true }).split('\n')[1];
+    assert.ok(line2At95.includes(`${BLUE}▓▓▓▓▓▓▓▓▓▓`), 'scoped bar at 95% is blue');
+    assert.ok(line2At95.includes(`${BLUE}95%`), 'scoped pct at 95% is blue');
+    assert.ok(!line2At95.includes(ORANGE), 'scoped gauge never emits orange');
+    assert.ok(!line2At95.includes(RED), 'scoped gauge never emits red');
   });
 
   test('a text-type line shaped like a scoped label is not rendered as a gauge', () => {
