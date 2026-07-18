@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.5] — 2026-07-18
+
+### Fixed
+
+- **`clauge --version` works from the installed app's CLI.** In v1.3.4, asking the bundled CLI (or the standalone Homebrew `clauge-cli`) for its version printed an error instead — a path lookup that only worked when running from the source tree, not from the packaged binary. Every other command was unaffected. It now reports the version correctly everywhere.
+
+---
+
 ## [1.3.4] — 2026-07-18
 
 ### Added
