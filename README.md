@@ -134,7 +134,7 @@ echo "$KEY" | clauge config set-api-key --provider anthropic-admin --stdin
 clauge --help    |    clauge --version
 ```
 
-The Mac App bundle ships the CLI at `Contents/Resources/clauge-cli`; symlink it onto your `PATH`, or let the dashboard install the symlink for you. Homebrew installs put `clauge` on `PATH` automatically. `set-api-key` only accepts the key via stdin (never on the command line) and is macOS-only for now.
+The Mac app bundle ships the CLI wrapper at `Contents/Resources/Resources/clauge-cli` (working from v1.3.4 — earlier builds shipped it broken); symlink it onto your `PATH`, or let the dashboard install the symlink for you. Homebrew installs put `clauge` on `PATH` automatically (cask v1.3.4+). `set-api-key` only accepts the key via stdin (never on the command line) and is macOS-only for now.
 
 ## Clauge Widget (`clauge status`)
 

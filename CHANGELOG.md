@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.4] — 2026-07-18
+
+### Added
+
+- **The Clauge Widget — your whole Claude Code statusline, rendered by Clauge.** `clauge status --install` wires it into `~/.claude/settings.json` (it backs your settings up first, and won't replace an existing statusline unless you pass `--force`). Three lines: your working context (model · path · lines added/removed · session runtime · git branch), your Session and Weekly quota gauges (each colors independently — green under 75%, orange at 75%, red at 90%), and the money line — spend this window plus ROI, now framed as the **realized last-30-days API-equivalent value against your monthly plan cost** — alongside session hygiene (Context Used, and a compaction counter on its own green-0 / orange-1 / red-2+ scale). If the app is briefly closed, the widget shows your last-known numbers with an age tag instead of going blank, and it never breaks your prompt (the render always exits 0). `clauge status --json` gives scripts the same data as machine-readable JSON and exits non-zero when the app isn't running, so automation can tell the difference.
+- **Local API: a monthly ROI line.** `GET /v1/usage` now carries an additional `ROI (30d)` text line — the realized last-30-days multiple the widget displays. The existing 7-day `ROI` line is unchanged, byte for byte; existing consumers are unaffected.
+
+### Fixed
+
+- **The bundled `clauge` CLI works.** The wrapper the Mac app ships had never survived the journey from the repo into the installed bundle — wrong folder depth, wrong binary name, and it broke when invoked through a symlink (which is exactly how PATH installs invoke it). It now canonicalizes symlinks and probes every real bundle layout. The dashboard's "install CLI" button, which previously hard-errored every time, works too.
+
+---
+
 ## [1.3.3] — 2026-06-16
 
 ### Fixed
