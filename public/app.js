@@ -278,7 +278,7 @@ function inlineMiniRingHtml({ pct, label }) {
 let __planCardMode = null;          // 'placeholder' | 'ingested' | null
 let __planStatusTone = null;        // 'crit' | 'amber' | 'healthy' | 'idle'
 let __planInlineHasBalance = null;  // true if the bal line is rendered
-let __planGaugeShape = null;        // gauge count — re-render (not surgical-update) when it changes
+let __planGaugeShape = null;        // gauge label|sub signature string — re-render (not surgical-update) when it changes
 let __lastSuccessAt = null;         // epoch-ms of the last fully-successful refresh (SWR aging anchor)
 let __lastRefreshFailed = false;    // did the most recent refresh attempt fail (drives the not-live dot)
 
@@ -298,7 +298,7 @@ function renderPlanCapacity() {
       //  - claude.ai signed-in (Architecture A — Mac only in v0.8.0)
       //  - Clauge Sync browser extension (cross-platform, only path on Windows)
       const isWindows = /windows/i.test(navigator.userAgent || '');
-      const placeholders = ['Session', 'Weekly', 'Sonnet']
+      const placeholders = ['Session', 'Weekly', 'Model']
         .map((label, i) => bigRingHtml({ label, sub: i === 0 ? '5h' : '7d', metric: null, gradId: `dash-rg-${i}` }))
         .join('');
       const walkthrough = `
@@ -330,8 +330,24 @@ function renderPlanCapacity() {
   const gauges = [
     { label: 'Session',    sub: '5h', metric: plan.fiveHour },
     { label: 'Weekly all', sub: '7d', metric: plan.sevenDay },
-    { label: 'Sonnet',     sub: '7d', metric: plan.sevenDaySonnet },
   ];
+  // Scoped rings (Task 1: plan.scopedWindows) replace the old hardcoded Sonnet
+  // ring. Each scope (model or surface) gets its own ring, sized 5h/7d from its
+  // group. Legacy fallback (plan.sevenDaySonnet) only fires for old stored
+  // records ingested before scopedWindows existed — once scopedWindows is
+  // populated it always wins, even if empty-vs-absent looks the same today.
+  const scoped = Array.isArray(plan.scopedWindows) ? plan.scopedWindows : [];
+  if (scoped.length > 0) {
+    for (const w of scoped) {
+      gauges.push({
+        label: w.label,
+        sub: w.group === 'session' ? '5h' : '7d',
+        metric: { pct: w.pct, resetsAt: w.resetsAt },
+      });
+    }
+  } else if (plan.sevenDaySonnet) {
+    gauges.push({ label: 'Sonnet', sub: '7d', metric: plan.sevenDaySonnet }); // legacy records
+  }
   // Claude Design weekly bucket: Anthropic dropped it, so claudeDesign is null in
   // current payloads. Omit the ring rather than show a phantom 0% — it reappears
   // automatically if the bucket returns. Use the resolved claudeDesign (covers all
@@ -340,10 +356,15 @@ function renderPlanCapacity() {
     gauges.push({ label: 'Design', sub: '7d', metric: plan.claudeDesign });
   }
 
-  // A change in the gauge count is a structural transition — re-render once. A
+  // A change in the gauge SET is a structural transition — re-render once. A
   // surgical in-place update on a changed set would leave a stale ring (and
-  // restart the .dot-live pulse, the v0.9.9 flicker). Equal count → update in place.
-  const shapeChanged = __planGaugeShape !== gauges.length;
+  // restart the .dot-live pulse, the v0.9.9 flicker). Scoped-window labels are
+  // dynamic now (unlike the old fixed Session/Weekly/Sonnet/Design set), and
+  // updateBigRings/updatePlanInline never rewrite labels — so the shape
+  // signature must be a label|sub string, not just a count, or a label-only
+  // change (same count, different scope) would silently render stale text.
+  const gaugeShape = gauges.map((g) => `${g.label}|${g.sub}`).join('§');
+  const shapeChanged = __planGaugeShape !== gaugeShape;
   if (__planCardMode !== 'ingested' || shapeChanged) {
     body.innerHTML = gauges.map((g, i) => bigRingHtml({ ...g, gradId: `dash-rg-${i}` })).join('');
     __planCardMode = 'ingested';
@@ -388,7 +409,16 @@ function renderPlanCapacity() {
   const hasBalance = balance != null;
   inline.hidden = false;
   // Mirror the big-ring set: include the Design mini-ring only when the bucket
-  // is present. Rebuild on a balance-line change OR a gauge-count change.
+  // is present. Rebuild on a balance-line change OR a gauge-shape change. The
+  // scoped/legacy mini set mirrors the same gauges.push() branch above
+  // (scoped wins when non-empty, else the legacy Sonnet fallback) so the mini
+  // set stays index-aligned with `gauges`: Session, Weekly, <scoped-or-legacy
+  // ...>, Design (when present) — updatePlanInline zips by index.
+  const scopedMinis = scoped.length > 0
+    ? scoped.map((w) => inlineMiniRingHtml({ pct: w.pct, label: w.label })).join('')
+    : plan.sevenDaySonnet
+      ? inlineMiniRingHtml({ pct: plan.sevenDaySonnet.pct, label: 'Sonnet' }) // legacy records
+      : '';
   const designMini = plan.claudeDesign
     ? inlineMiniRingHtml({ pct: plan.claudeDesign.pct, label: 'Design' })
     : '';
@@ -396,7 +426,7 @@ function renderPlanCapacity() {
     inline.innerHTML = `
       ${inlineMiniRingHtml({ pct: plan.fiveHour?.pct, label: 'Session' })}
       ${inlineMiniRingHtml({ pct: plan.sevenDay?.pct, label: 'Weekly' })}
-      ${inlineMiniRingHtml({ pct: plan.sevenDaySonnet?.pct, label: 'Sonnet' })}
+      ${scopedMinis}
       ${designMini}
       <span class="sep"></span>
       <span class="num-lbl" data-role="period-lbl">${escapeHtml(PERIOD_LABELS[state.period] ?? state.period)}</span>
@@ -407,9 +437,9 @@ function renderPlanCapacity() {
   } else {
     updatePlanInline(inline, gauges, sevenDayCost, balance);
   }
-  // Record the rendered gauge count last, after both ring sets have consumed
+  // Record the rendered gauge shape last, after both ring sets have consumed
   // `shapeChanged` for this tick.
-  __planGaugeShape = gauges.length;
+  __planGaugeShape = gaugeShape;
 }
 
 function renderFinanceSide() {
