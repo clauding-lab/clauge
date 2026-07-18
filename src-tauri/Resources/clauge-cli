@@ -1,34 +1,82 @@
 #!/bin/sh
-# Clauge CLI wrapper (v0.9.4 Phase B.4).
+# Clauge CLI wrapper.
 #
-# Bundled at `<Clauge.app>/Contents/Resources/clauge-cli` and exposed via the
-# `install_cli_symlink` IPC command, which symlinks /usr/local/bin/clauge ->
-# this script. End users can also call this absolute path directly without the
-# symlink:
-#   /Applications/Clauge.app/Contents/Resources/clauge-cli config get
+# Tauri bundles this at `<Clauge.app>/Contents/Resources/Resources/clauge-cli`
+# — nested twice, because the `resources: ["Resources/clauge-cli"]` copy
+# preserves the source `Resources/` prefix (AGENTS.md landmine #45). It is
+# exposed on PATH via the `install_cli_symlink` IPC command
+# (/usr/local/bin/clauge -> this script) or a Homebrew cask `binary` stanza.
+# End users can also call the absolute path directly:
+#   /Applications/Clauge.app/Contents/Resources/Resources/clauge-cli config get
 #
-# The actual CLI lives inside the Tauri sidecar binary (server.js's argv-
-# dispatch shipped in v0.9.3). This script resolves the architecture-specific
-# sidecar binary in ../MacOS/ and execs it with all passed arguments.
+# The actual CLI lives inside the SEA sidecar binary (server.js argv
+# dispatch). Its location differs per distribution channel:
+#   DMG: <Clauge.app>/Contents/MacOS/clauge-server
+#        (unsuffixed — Tauri strips the externalBin target triple at bundle
+#        time; the repo tree keeps the suffixed name)
+#   MAS: <Clauge.app>/Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server
+#        (scripts/build-mas-clean.sh relocates it post-build)
+# This script canonicalizes $0 through symlinks, then probes every known
+# layout and execs the first match with all passed arguments.
 
-DIR=$(cd "$(dirname "$0")" && pwd)
+# PATH invocations reach us through a symlink, where `dirname "$0"` is the
+# symlink's directory (e.g. /usr/local/bin) and every bundle-relative probe
+# would miss. Walk the chain to the real file first. The hop cap is
+# defense-in-depth only: a pre-existing cycle can't reach this loop (the
+# kernel could not have exec'd the script through it), but a link rewritten
+# mid-walk could otherwise spin us forever.
+SELF="$0"
+HOPS=0
+while [ -L "$SELF" ]; do
+  HOPS=$((HOPS + 1))
+  if [ "$HOPS" -gt 32 ]; then
+    printf 'clauge: too many levels of symbolic links resolving %s\n' "$0" >&2
+    exit 1
+  fi
+  TARGET=$(readlink "$SELF")
+  case "$TARGET" in
+    /*) SELF="$TARGET" ;;
+    *)  SELF="$(dirname "$SELF")/$TARGET" ;;
+  esac
+done
+DIR=$(cd "$(dirname "$SELF")" && pwd) || {
+  printf 'clauge: cannot resolve wrapper directory for %s\n' "$SELF" >&2
+  exit 1
+}
+
 ARCH=$(uname -m)
 case "$ARCH" in
-  arm64|aarch64)
-    BIN="$DIR/../MacOS/clauge-server-aarch64-apple-darwin"
-    ;;
-  x86_64)
-    BIN="$DIR/../MacOS/clauge-server-x86_64-apple-darwin"
-    ;;
+  arm64|aarch64) SUFFIX="aarch64-apple-darwin" ;;
+  x86_64)        SUFFIX="x86_64-apple-darwin" ;;
   *)
     printf 'clauge: unsupported architecture %s\n' "$ARCH" >&2
     exit 1
     ;;
 esac
 
-if [ ! -x "$BIN" ]; then
-  printf 'clauge: bundled sidecar not found at %s\n' "$BIN" >&2
-  exit 1
-fi
+# Probe order: shipped layouts first (wrapper nested at Resources/Resources,
+# so Contents/ is two levels up), then the un-nested depth (in case a future
+# Tauri stops preserving the resources prefix), unsuffixed before suffixed.
+# Note the repo tree itself is NOT covered: there the sidecar lives at
+# src-tauri/binaries/clauge-server-<triple>, and nobody runs this wrapper
+# from source.
+for BIN in \
+  "$DIR/../../MacOS/clauge-server" \
+  "$DIR/../../Helpers/Clauge Helper.app/Contents/MacOS/clauge-server" \
+  "$DIR/../MacOS/clauge-server" \
+  "$DIR/../Helpers/Clauge Helper.app/Contents/MacOS/clauge-server" \
+  "$DIR/../../MacOS/clauge-server-$SUFFIX" \
+  "$DIR/../../Helpers/Clauge Helper.app/Contents/MacOS/clauge-server-$SUFFIX" \
+  "$DIR/../MacOS/clauge-server-$SUFFIX" \
+  "$DIR/../Helpers/Clauge Helper.app/Contents/MacOS/clauge-server-$SUFFIX"
+do
+  if [ -x "$BIN" ]; then
+    # Normalize the `..` segments so $0 in the sidecar (and ps output) shows
+    # the real location, not a Resources/../MacOS chain.
+    BIN_DIR=$(cd "$(dirname "$BIN")" && pwd) || continue
+    exec "$BIN_DIR/$(basename "$BIN")" "$@"
+  fi
+done
 
-exec "$BIN" "$@"
+printf 'clauge: bundled sidecar not found near %s (searched Contents/MacOS and Contents/Helpers/Clauge Helper.app/Contents/MacOS, unsuffixed and -%s)\n' "$DIR" "$SUFFIX" >&2
+exit 1

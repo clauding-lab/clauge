@@ -723,6 +723,19 @@ query **Context7** for current, version-pinned docs — do NOT rely on training-
 - **Skip for:** business/domain logic, general programming concepts, or libraries Context7 does not index.
 - **Query specifically:** library + version + exact task (e.g. `tauri 2 WebviewWindowBuilder WebviewUrl::External`, `hono 4 serveStatic root option`, `objc2-app-kit 0.3 NSPopover behavior transient`), never one-word topics like "auth".
 
+### 45. The repo tree is NOT the installed bundle — path-resolving code must enumerate every channel layout AND invocation mode
+
+Any shipped file that resolves paths relative to itself (`src-tauri/Resources/clauge-cli`, `resolve_bundle_cli_path` in `src-tauri/src/ipc.rs`) faces four layouts and two invocation modes; v1.3.3 shipped its CLI wrapper dead because only the repo tree was ever exercised:
+
+- **Repo tree:** wrapper at `src-tauri/Resources/clauge-cli`, sidecar at `src-tauri/binaries/clauge-server-<triple>` (suffixed).
+- **DMG bundle:** wrapper at `Contents/Resources/Resources/clauge-cli` — NESTED, because the `resources: ["Resources/clauge-cli"]` copy preserves the source `Resources/` prefix — and sidecar at `Contents/MacOS/clauge-server`, UNSUFFIXED (Tauri strips the externalBin target triple at bundle time).
+- **MAS bundle:** same nested wrapper; sidecar relocated to `Contents/Helpers/Clauge Helper.app/Contents/MacOS/clauge-server` by `scripts/build-mas-clean.sh` (landmine #24).
+- **Invocation modes:** direct path AND through a symlink (`install_cli_symlink` → `/usr/local/bin/clauge`; Homebrew `binary` stanza). Without a readlink loop, `dirname "$0"` is the symlink's directory and every bundle-relative probe misses.
+
+Guards: `test/clauge-cli-wrapper.test.js` (staged layouts: both channels, both depths, suffixed + unsuffixed, direct + symlinked) and `ipc::tests::bundle_cli_path_is_nested_resources_resources`. Changes to either file must be re-verified on an INSTALLED bundle, never just the repo tree (AGENT_LEARNINGS 2026-07-16/17).
+
+**MAS corollary (measured 2026-07-18 on the real b11 bundle):** the MAS helper binary is NOT executable standalone from a terminal — its `com.apple.security.inherit` entitlement requires a sandboxed parent process, so direct exec dies at launch with SIGTRAP (exit 133), before any output. The App Store channel therefore has no terminal CLI; route MAS users to the npm channel (`npx clauge`). The wrapper still probes the Helper path — harmless, and correct if Apple's semantics ever change.
+
 ## Communication & timezone
 
 - **All times in BDT (UTC+6).** When generating timestamps, dates, or schedules, convert to BDT and label it.

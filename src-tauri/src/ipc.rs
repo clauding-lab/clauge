@@ -949,8 +949,9 @@ pub fn install_cli_symlink() -> Result<String, String> {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn install_cli_symlink() -> Result<String, String> {
-    let bundle_cli = resolve_bundle_cli_path()
-        .ok_or_else(|| "Could not resolve bundle Resources/clauge-cli path".to_string())?;
+    let bundle_cli = resolve_bundle_cli_path().ok_or_else(|| {
+        "Could not resolve bundle Resources/Resources/clauge-cli path".to_string()
+    })?;
     if !bundle_cli.exists() {
         return Err(format!(
             "Bundled CLI wrapper not found at {}. Reinstall Clauge.",
@@ -1000,13 +1001,30 @@ pub fn install_cli_symlink() -> Result<String, String> {
 }
 
 /// Resolve the absolute path to the bundled CLI wrapper. macOS bundle layout:
-///   /Applications/Clauge.app/Contents/MacOS/Clauge           <- current_exe
-///   /Applications/Clauge.app/Contents/Resources/clauge-cli   <- wrapper
+///   /Applications/Clauge.app/Contents/MacOS/clauge                     <- current_exe
+///   /Applications/Clauge.app/Contents/Resources/Resources/clauge-cli   <- wrapper
+///
+/// The double `Resources/Resources` is real: `tauri.conf.json`'s
+/// `resources: ["Resources/clauge-cli"]` copy preserves the `Resources/`
+/// source prefix inside the bundle's own Resources dir (AGENTS.md
+/// landmine #45).
 #[cfg(target_os = "macos")]
 fn resolve_bundle_cli_path() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
+    bundle_cli_path_from_exe(&exe)
+}
+
+/// Pure path computation, split out so the bundle nesting is unit-testable
+/// without a real installed bundle.
+#[cfg(target_os = "macos")]
+fn bundle_cli_path_from_exe(exe: &std::path::Path) -> Option<std::path::PathBuf> {
     let contents = exe.parent()?.parent()?;
-    Some(contents.join("Resources").join("clauge-cli"))
+    Some(
+        contents
+            .join("Resources")
+            .join("Resources")
+            .join("clauge-cli"),
+    )
 }
 
 #[cfg(test)]
@@ -1074,6 +1092,24 @@ mod tests {
     fn find_app_bundle_returns_none_for_dev_target_path() {
         let p = std::path::Path::new("/Users/x/projects/clauge/src-tauri/target/debug/clauge");
         assert_eq!(find_app_bundle(p), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bundle_cli_path_is_nested_resources_resources() {
+        // Tauri's `resources: ["Resources/clauge-cli"]` copy preserves the
+        // `Resources/` prefix, so the wrapper lands one level DEEPER than the
+        // bundle's own Resources dir. This assert pins the nesting so it
+        // can't silently regress to the un-nested path (which shipped broken
+        // in v1.3.3 — the dashboard "install CLI" button hard-errored).
+        let exe = std::path::Path::new("/Applications/Clauge.app/Contents/MacOS/clauge");
+        let got = bundle_cli_path_from_exe(exe).expect("path should resolve");
+        assert_eq!(
+            got,
+            std::path::PathBuf::from(
+                "/Applications/Clauge.app/Contents/Resources/Resources/clauge-cli"
+            )
+        );
     }
 
     #[tokio::test]

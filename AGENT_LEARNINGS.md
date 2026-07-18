@@ -47,7 +47,7 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 **Prevention:** (1) §5.1 rev 3 folds in all four requirements (readlink loop, dual-layout probes, Rust fix + unit test, verify on both installed channels). (2) New §9 decision 6 makes MAS scope an explicit owner call. (3) PR-A's test plan must include a symlinked invocation case.
 
-**Hotfix:** Docs-only (both specs bumped to rev 3, 2026-07-17); implementation still awaits owner sign-off.
+**Hotfix:** Docs-only (both specs bumped to rev 3, 2026-07-17). Implementation landed as PR-A (2026-07-18) with all three gaps fixed; the remaining §9.6 unknown was measured — MAS standalone exec is NOT possible (`com.apple.security.inherit` needs a sandboxed parent; SIGTRAP, exit 133) — resolving MAS scope to the documented npm-channel route.
 
 **Cross-references:** `docs/superpowers/specs/2026-07-16-cli-statusline-widget-design.md` §5.1/§9/§10 rev 3; global rulebook 2026-07-17 entry (workflow structured-output failure — the harness lesson from the same session); auto-memory `project_clauge_cli_statusline_handoff`.
 
@@ -61,7 +61,7 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 **Prevention:** (1) PR-A (pending sign-off): robust resolution — try both `../MacOS/` and `../../MacOS/`, both suffixed and unsuffixed binary names; audit `resolve_bundle_cli_path` for the same stale assumption. (2) Add an installed-bundle smoke check to the release flow: execute the bundled wrapper post-build, assert exit 0 + JSON. (3) Fix the README dual falsehood (wrapper path + "Homebrew puts `clauge` on PATH automatically" — the cask has no `binary` stanza; tracked as PR-D in the tap repo).
 
-**Hotfix:** None shipped yet — documented as the P0 prerequisite in `docs/superpowers/specs/2026-07-16-cli-statusline-widget-design.md` §5, awaiting owner sign-off.
+**Hotfix:** PR-A (2026-07-18, branch `fix/cli-wrapper-paths`): readlink canonicalization loop + dual-channel probe table in the wrapper; `resolve_bundle_cli_path` nested-path fix + pinning unit test; staged-layout suite `test/clauge-cli-wrapper.test.js`. Verified on the installed DMG bundle (exit 0 + JSON, direct and symlinked) and on a real MAS b11 bundle copy (probe finds the helper; standalone exec is blocked by the sandbox itself — SIGTRAP, exit 133 — so MAS routes to npm; landmine #45).
 
 **Cross-references:** Both 2026-07-16 handoff specs in `docs/superpowers/specs/`; global rulebook 2026-07-11 entry (only exercising the real artifact exposes what suites and reviews miss — this is the same failure class); auto-memory (home project) `project_clauge_cli_statusline_handoff`; candidate `AGENTS.md` landmine once PR-A lands.
 
