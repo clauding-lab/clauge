@@ -212,6 +212,27 @@ describe('buildSnapshot — forecast block (weekOverWeek + roiPace passthrough)'
   });
 });
 
+// v1.3.6 scoped-limits: `normalized.scopedWindows` rides along in the phone
+// snapshot as-is (buildSnapshot republishes `normalized` verbatim as usage.plan).
+// This pin guards against anyone adding filtering, and against a schemaVersion
+// bump — the field ships as an OPTIONAL key under schemaVersion 1 (landmine #37).
+describe('buildSnapshot — scopedWindows pass-through (v1.3.6)', () => {
+  it('passes normalized.scopedWindows through verbatim under schemaVersion 1', async () => {
+    const scopedWindows = [
+      {
+        label: 'Fable', pct: 65, resetsAt: '2026-07-22T22:59:59.668082+00:00',
+        isActive: false, group: 'weekly', source: 'model',
+      },
+    ];
+    const snap = await build([makeSession()], {
+      ingestedAt: '2026-07-18T00:00:00Z',
+      normalized: { tier: 'max', scopedWindows },
+    });
+    assert.deepEqual(snap.usage.plan.scopedWindows, scopedWindows);
+    assert.equal(snap.schemaVersion, 1);
+  });
+});
+
 // C1.5: payload-size tripwire. This is a SYNC-CHURN TIGHTNESS GOAL (smaller
 // iCloud writes), NOT a correctness gate — bump the ceiling DELIBERATELY if the
 // payload legitimately grows. The number is anchored to the REAL Mac payload
