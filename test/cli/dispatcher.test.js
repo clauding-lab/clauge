@@ -5,6 +5,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -141,6 +143,32 @@ describe('runCli — --help', () => {
     assert.match(output, /clauge config/i);
     assert.match(output, /\bget\b/);
     assert.match(output, /\bproviders\b/);
+  });
+});
+
+describe('runCli — status verb (Clauge Widget)', () => {
+  test('usage text advertises the status verb and its flags', async () => {
+    const { output } = await captureStdoutAsync(() => runCli(['--help']));
+    assert.match(output, /\bstatus\b/);
+    assert.match(output, /--json/);
+    assert.match(output, /--install/);
+  });
+
+  test('status routes to the widget and exits 0 even with no app and no cache', async () => {
+    // CLAUGE_HOME sandbox: no port file, no cache — the deepest degrade rung.
+    const tmp = join(os.tmpdir(), `clauge-dispatch-status-${process.pid}-${Date.now()}`);
+    await mkdir(tmp, { recursive: true });
+    const prev = process.env.CLAUGE_HOME;
+    process.env.CLAUGE_HOME = tmp;
+    try {
+      const { result, output } = await captureStdoutAsync(() => runCli(['status']));
+      assert.equal(result, 0);
+      assert.match(output, /clauge: app not running/);
+    } finally {
+      if (prev === undefined) delete process.env.CLAUGE_HOME;
+      else process.env.CLAUGE_HOME = prev;
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

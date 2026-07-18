@@ -1,0 +1,297 @@
+// Tests for lib/cli/status-render.js — the PURE Clauge Widget renderer.
+// Named after the §4 LOCKED render contract (spec: docs/superpowers/specs/
+// 2026-07-16-cli-statusline-widget-design.md rev 4, owner-locked 2026-07-18),
+// not after functions. No I/O, no clock reads — everything injected.
+
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { renderStatus, truncateAnsi } from '../../lib/cli/status-render.js';
+
+const NOW = Date.parse('2026-07-18T12:00:00Z');
+const HOME = '/Users/adnan';
+
+// Verified statusLine stdin payload shape (code.claude.com/docs/en/statusline,
+// re-verified 2026-07-18): model.display_name, workspace.current_dir,
+// cost.total_lines_added/removed, cost.total_duration_ms,
+// context_window.used_percentage (nullable early in a session).
+function payload(overrides = {}) {
+  return {
+    session_id: 'sess-1',
+    transcript_path: '/tmp/transcript.jsonl',
+    cwd: `${HOME}/Projects/clauge`,
+    model: { id: 'claude-opus-4-8', display_name: 'Opus 4.8' },
+    workspace: {
+      current_dir: `${HOME}/Projects/clauge`,
+      project_dir: `${HOME}/Projects/clauge`,
+    },
+    version: '2.1.90',
+    cost: {
+      total_cost_usd: 1.23,
+      total_duration_ms: 42 * 60_000,
+      total_api_duration_ms: 90_000,
+      total_lines_added: 267,
+      total_lines_removed: 0,
+    },
+    context_window: {
+      context_window_size: 200_000,
+      used_percentage: 46,
+      remaining_percentage: 54,
+    },
+    ...overrides,
+  };
+}
+
+// A /v1/usage claude snapshot (frozen wire shape, PR #67 + the PR-C additive
+// ROI (30d) line). resets_at values sit 2h24m and 5d past NOW.
+function snapshot(overrides = {}) {
+  return {
+    apiVersion: 1,
+    providerId: 'claude',
+    displayName: 'Claude',
+    plan: null,
+    fetchedAt: new Date(NOW - 60_000).toISOString(),
+    lines: [
+      {
+        type: 'progress',
+        label: 'Session',
+        used: 20,
+        limit: 100,
+        format: { kind: 'percent' },
+        resets_at: new Date(NOW + (2 * 60 + 24) * 60_000).toISOString(),
+      },
+      {
+        type: 'progress',
+        label: 'Weekly',
+        used: 9,
+        limit: 100,
+        format: { kind: 'percent' },
+        resets_at: new Date(NOW + 5 * 24 * 3600_000).toISOString(),
+      },
+      { type: 'text', label: 'Spend', value: '$664 this window' },
+      { type: 'text', label: 'ROI', value: '2.3x vs API' },
+      { type: 'text', label: 'ROI (30d)', value: '17.3x vs API' },
+    ],
+    ...overrides,
+  };
+}
+
+function render(inputs = {}, opts = {}) {
+  return renderStatus(
+    {
+      payload: payload(),
+      snapshot: snapshot(),
+      branch: 'main',
+      compactions: 0,
+      cacheAgeMs: null,
+      nowMs: NOW,
+      homeDir: HOME,
+      ...inputs,
+    },
+    { ansi: false, ...opts },
+  );
+}
+
+const ESC = '\x1b[';
+const ORANGE = '\x1b[38;5;208m';
+const YELLOW = '\x1b[33m';
+const RED = '\x1b[31m';
+const GREEN = '\x1b[32m';
+
+describe('locked three-line render (colors stripped)', () => {
+  test('renders the §4 golden output exactly', () => {
+    assert.equal(
+      render(),
+      [
+        'Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main',
+        'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)',
+        '$664 this window · ROI 17.3× vs API · Context Used 46% · Compactions 0',
+      ].join('\n'),
+    );
+  });
+
+  test('ROI segment prefers the ROI (30d) line over the frozen 7d ROI line', () => {
+    assert.match(render(), /ROI 17\.3× vs API/);
+    assert.ok(!render().includes('2.3×'));
+  });
+
+  test('ROI segment falls back to the 7d ROI line when no ROI (30d) exists', () => {
+    const snap = snapshot();
+    snap.lines = snap.lines.filter((l) => l.label !== 'ROI (30d)');
+    assert.match(render({ snapshot: snap }), /ROI 2\.3× vs API/);
+  });
+
+  test('runtime over an hour renders as Xh Ym', () => {
+    const p = payload();
+    p.cost.total_duration_ms = 90 * 60_000;
+    assert.match(render({ payload: p }), /⧗ 1h 30m/);
+  });
+
+  test('resets under an hour renders in minutes', () => {
+    const snap = snapshot();
+    snap.lines[0].resets_at = new Date(NOW + 45 * 60_000).toISOString();
+    assert.match(render({ snapshot: snap }), /Session ▓▓░░░░░░░░ 20% \(resets 45m\)/);
+  });
+
+  test('working path outside the home dir is shown unabbreviated', () => {
+    const p = payload();
+    p.workspace.current_dir = '/opt/work';
+    assert.match(render({ payload: p }), /· \/opt\/work ·/);
+  });
+});
+
+describe('gauge bars', () => {
+  const barOf = (pct) => {
+    const snap = snapshot();
+    snap.lines[0].used = pct;
+    const line2 = render({ snapshot: snap }).split('\n')[1];
+    return line2.match(/Session ([▓░]{10})/)[1];
+  };
+
+  test('fill count is pct/10 rounded (0, 9, 75, 93, 100)', () => {
+    assert.equal(barOf(0), '░░░░░░░░░░');
+    assert.equal(barOf(9), '▓░░░░░░░░░');
+    assert.equal(barOf(75), '▓▓▓▓▓▓▓▓░░');
+    assert.equal(barOf(93), '▓▓▓▓▓▓▓▓▓░');
+    assert.equal(barOf(100), '▓▓▓▓▓▓▓▓▓▓');
+  });
+});
+
+describe('threshold color grammar (ANSI on)', () => {
+  test('gauges color independently: Session 78% orange while Weekly 31% green', () => {
+    const snap = snapshot();
+    snap.lines[0].used = 78;
+    snap.lines[1].used = 31;
+    const out = render({ snapshot: snap }, { ansi: true, orange256: true });
+    const line2 = out.split('\n')[1];
+    assert.ok(line2.includes(`${ORANGE}▓▓▓▓▓▓▓▓░░`), 'Session bar is 256-color orange');
+    assert.ok(line2.includes(`${GREEN}▓▓▓░░░░░░░`), 'Weekly bar stays green');
+  });
+
+  test('90%+ goes red', () => {
+    const snap = snapshot();
+    snap.lines[0].used = 93;
+    const out = render({ snapshot: snap }, { ansi: true, orange256: true });
+    assert.ok(out.includes(`${RED}▓▓▓▓▓▓▓▓▓░`));
+  });
+
+  test('orange falls back to plain yellow on 8/16-color terminals', () => {
+    const snap = snapshot();
+    snap.lines[0].used = 78;
+    const out = render({ snapshot: snap }, { ansi: true, orange256: false });
+    assert.ok(out.includes(`${YELLOW}▓▓▓▓▓▓▓▓░░`));
+    assert.ok(!out.includes(ORANGE));
+  });
+
+  test('Context Used obeys the same 75/90 scale', () => {
+    const p = payload();
+    p.context_window.used_percentage = 95;
+    const out = render({ payload: p }, { ansi: true, orange256: true });
+    assert.ok(out.includes(`${RED}95%`));
+  });
+
+  test('Compactions has its own scale: 0 green, 1 orange, 2+ red', () => {
+    const at = (n, opts) => render({ compactions: n }, { ansi: true, orange256: true, ...opts });
+    assert.ok(at(0).includes(`${GREEN}0`));
+    assert.ok(at(1).includes(`${ORANGE}1`));
+    assert.ok(at(2).includes(`${RED}2`));
+    assert.ok(at(5).includes(`${RED}5`));
+  });
+
+  test('yellow is reserved for money: $ and ROI yellow, never orange', () => {
+    const out = render({}, { ansi: true, orange256: true });
+    const line3 = out.split('\n')[2];
+    assert.ok(line3.includes(`${YELLOW}$664`));
+    assert.ok(line3.includes(`${YELLOW}17.3×`));
+    assert.ok(!line3.includes(ORANGE));
+  });
+
+  test('ansi:false emits zero escape sequences', () => {
+    const snap = snapshot();
+    snap.lines[0].used = 93;
+    assert.ok(!render({ snapshot: snap }).includes(ESC));
+  });
+});
+
+describe('segment omission — parse defensively, never crash', () => {
+  test('null payload drops line 1 and the stdin-sourced line-3 segments', () => {
+    const out = render({ payload: null, branch: null, compactions: null });
+    const lines = out.split('\n');
+    assert.equal(lines.length, 2);
+    assert.match(lines[0], /^Session /);
+    assert.equal(lines[1], '$664 this window · ROI 17.3× vs API');
+  });
+
+  test('missing model drops only the model segment', () => {
+    const p = payload();
+    delete p.model;
+    const line1 = render({ payload: p }).split('\n')[0];
+    assert.equal(line1, '~/Projects/clauge · +267/-0 · ⧗ 42m · main');
+  });
+
+  test('null context_window.used_percentage drops the Context Used segment', () => {
+    const p = payload();
+    p.context_window.used_percentage = null;
+    assert.ok(!render({ payload: p }).includes('Context Used'));
+  });
+
+  test('missing cost drops churn and runtime but keeps model/path/branch', () => {
+    const p = payload();
+    delete p.cost;
+    const line1 = render({ payload: p }).split('\n')[0];
+    assert.equal(line1, 'Opus 4.8 · ~/Projects/clauge · main');
+  });
+
+  test('null branch drops the branch segment', () => {
+    const line1 = render({ branch: null }).split('\n')[0];
+    assert.equal(line1, 'Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m');
+  });
+
+  test('null compactions drops the Compactions segment', () => {
+    assert.ok(!render({ compactions: null }).includes('Compactions'));
+  });
+
+  test('snapshot without Session/Weekly still renders spend + ROI', () => {
+    const snap = snapshot();
+    snap.lines = snap.lines.filter((l) => l.type !== 'progress');
+    const out = render({ snapshot: snap });
+    assert.ok(!out.includes('Session'));
+    assert.match(out, /\$664 this window · ROI 17\.3× vs API/);
+  });
+});
+
+describe('degraded states', () => {
+  test('cache-served render appends the age tag', () => {
+    const out = render({ cacheAgeMs: 12 * 60_000 });
+    assert.ok(out.endsWith('· 12m old'));
+  });
+
+  test('no snapshot + no payload renders only the app-not-running notice', () => {
+    const out = render({ payload: null, snapshot: null, branch: null, compactions: null });
+    assert.equal(out, 'clauge: app not running');
+  });
+
+  test('no snapshot still renders the stdin-sourced line 1, then the notice', () => {
+    const out = render({ snapshot: null, compactions: 1 });
+    const lines = out.split('\n');
+    assert.equal(lines[0], 'Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main');
+    assert.equal(lines[1], 'clauge: app not running');
+  });
+});
+
+describe('--max-width', () => {
+  test('caps each line at N visible characters', () => {
+    const out = render({}, { maxWidth: 40 });
+    for (const line of out.split('\n')) {
+      assert.ok([...line].length <= 40, `${line} exceeds 40 chars`);
+    }
+  });
+
+  test('truncateAnsi counts visible chars, not escape bytes, and re-arms reset', () => {
+    const colored = `${GREEN}▓▓▓▓▓${'\x1b[0m'} rest of the line`;
+    const cut = truncateAnsi(colored, 5);
+    assert.ok(cut.startsWith(`${GREEN}▓▓▓▓▓`));
+    assert.ok(cut.endsWith('\x1b[0m'));
+    const visible = cut.replace(/\x1b\[[0-9;]*m/g, '');
+    assert.equal([...visible].length, 5);
+  });
+});

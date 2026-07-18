@@ -197,6 +197,19 @@ describe('/v1/usage — after a real ingest', () => {
     assert.ok(!snap.lines.some((l) => l.label === 'Weekly (Sonnet)'), 'absent window ⇒ no line');
   });
 
+  it('serves the additive ROI (30d) line alongside the frozen 7d ROI line', async () => {
+    // The tmp HOME has no session summaries, so both windows see $0 of
+    // API-equivalent value against the default $200 subscription — the
+    // point here is WIRING (both lines present, both labels), not values.
+    const res = await fetch(`http://127.0.0.1:${PORT}/v1/usage`);
+    const [snap] = await res.json();
+    const weekly = snap.lines.find((l) => l.label === 'ROI');
+    const monthly = snap.lines.find((l) => l.label === 'ROI (30d)');
+    assert.equal(weekly.type, 'text');
+    assert.equal(monthly.type, 'text');
+    assert.match(monthly.value, /x vs API$/);
+  });
+
   it('GET /v1/usage/claude returns the same single snapshot', async () => {
     const res = await fetch(`http://127.0.0.1:${PORT}/v1/usage/claude`);
     assert.equal(res.status, 200);

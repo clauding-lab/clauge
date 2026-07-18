@@ -117,6 +117,57 @@ describe('buildV1Usage — line vocabulary', () => {
   });
 });
 
+// ROI (30d) — additive line (PR-C, owner decision 2026-07-18): realized
+// last-30-days net multiple, month of value vs the monthly plan cost.
+// Additive per the frozen-contract rules (AGENTS.md landmine #47): the
+// existing 7d 'ROI' line is untouched; consumers that want the monthly
+// framing select on the new label.
+const ROI_30D = {
+  apiEquivalentSpend: 3957.0,
+  subscriptionCost: 200,
+  extraUsageSpend: 0,
+  totalSubscriptionOutlay: 200,
+  apiReplacementValue: 3757.0,
+  roiPct: 1878.5,
+};
+
+describe('buildV1Usage — ROI (30d) additive line', () => {
+  test('roi30d input adds a text line labeled ROI (30d), same x-vs-API convention', () => {
+    const [snap] = buildV1Usage({ record: record(), roi: ROI, roi30d: ROI_30D, nowMs: NOW });
+    const monthly = snap.lines.find((l) => l.label === 'ROI (30d)');
+    assert.equal(monthly.type, 'text');
+    assert.equal(monthly.value, '18.8x vs API');
+  });
+
+  test('the frozen 7d ROI line is unchanged when roi30d is also supplied', () => {
+    const [snap] = buildV1Usage({ record: record(), roi: ROI, roi30d: ROI_30D, nowMs: NOW });
+    const weekly = snap.lines.find((l) => l.label === 'ROI');
+    assert.equal(weekly.value, '2.3x vs API');
+  });
+
+  test('omitting roi30d (legacy caller) produces no ROI (30d) line', () => {
+    const [snap] = buildV1Usage({ record: record(), roi: ROI, nowMs: NOW });
+    assert.ok(!snap.lines.some((l) => l.label === 'ROI (30d)'));
+  });
+
+  test('roi30d with null roiPct is omitted (None-dropping)', () => {
+    const [snap] = buildV1Usage({
+      record: record(),
+      roi: ROI,
+      roi30d: { ...ROI_30D, roiPct: null },
+      nowMs: NOW,
+    });
+    assert.ok(!snap.lines.some((l) => l.label === 'ROI (30d)'));
+  });
+
+  test('ROI (30d) emits even when the 7d roi input is null (independent blocks)', () => {
+    const [snap] = buildV1Usage({ record: record(), roi: null, roi30d: ROI_30D, nowMs: NOW });
+    assert.ok(!snap.lines.some((l) => l.label === 'ROI'));
+    const monthly = snap.lines.find((l) => l.label === 'ROI (30d)');
+    assert.equal(monthly.value, '18.8x vs API');
+  });
+});
+
 describe('buildV1Usage — stale-but-shown', () => {
   test('fresh data carries no staleness note', () => {
     const [snap] = buildV1Usage({ record: record(), roi: ROI, nowMs: NOW });
