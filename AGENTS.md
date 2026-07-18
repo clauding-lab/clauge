@@ -74,7 +74,7 @@ Tag-driven. `git tag v0.X.Y && git push origin v0.X.Y` triggers `.github/workflo
 
 **Before tagging:** complete the macOS smoke + Windows smoke in `docs/RELEASE_CHECKLIST.md`. **Pre-fill `CHANGELOG.md` with a `## [X.Y.Z] — YYYY-MM-DD` section** — release.yml auto-extracts it for the GitHub Release body. Missing section = empty release page.
 
-**Homebrew tap** (`clauding-lab/homebrew-tap`) **auto-bumps on stable `v*` tag pushes** via the `dispatch-homebrew` job in release.yml, which POSTs `repository_dispatch` (`event_type: clauge-release`) to the tap. The tap's `auto-update.yml` workflow then downloads the new DMG, computes its SHA256, and commits the updated `Casks/clauge.rb` — typically within ~30s of release publication.
+**Homebrew tap** (`clauding-lab/homebrew-tap`) **auto-bumps on stable `v*` tag pushes** via the `dispatch-homebrew` job in release.yml, which POSTs `repository_dispatch` (`event_type: clauge-release`) to the tap. The tap's `auto-update.yml` workflow then downloads the new DMG, computes its SHA256, and commits the updated `Casks/clauge.rb` — typically within ~30s of release publication. Since 2026-07-18 the same workflow ALSO bumps `Formula/clauge-cli.rb` (the standalone CLI for MAS users — extracts the sidecar from `Clauge_universal.app.tar.gz`; version/url/sha256 sed'd in lockstep with the cask). If you rename release assets, both the cask (DMG name) and the formula (app.tar.gz name) break together — fix the tap workflow in the same change.
 
 **Prereleases skip the dispatch** — the tap only carries the latest stable cask (the `if: !contains(github.ref_name, '-')` guard handles this).
 
