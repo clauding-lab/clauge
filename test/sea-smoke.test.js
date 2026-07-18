@@ -30,6 +30,27 @@ describe('SEA sidecar smoke', { skip: SKIP_REASON }, () => {
     }
   });
 
+  it('`status` verb survives the SEA bundle (dynamic import + exit 0)', async () => {
+    // CLAUGE_HOME sandbox: no port file, no cache — deepest degrade rung.
+    // Proves esbuild carried lib/cli/status*.js into the SEA bundle and the
+    // render mode keeps its exit-0 contract from the shipped binary.
+    const out = await new Promise((resolve, reject) => {
+      const child = spawn(SIDECAR, ['status'], {
+        env: { ...process.env, CLAUGE_HOME: '/nonexistent-clauge-home' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (b) => { stdout += b.toString(); });
+      child.stderr.on('data', (b) => { stderr += b.toString(); });
+      const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('status timeout')); }, 10_000);
+      child.on('exit', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+      child.on('error', reject);
+    });
+    assert.equal(out.code, 0, `exit 0 always; stderr: ${out.stderr}`);
+    assert.match(out.stdout, /clauge: app not running/);
+  });
+
   it('binary is executable and starts within 2s', async () => {
     const child = spawn(SIDECAR, [], {
       env: { ...process.env, PORT: '3520', NO_OPEN: '1' },

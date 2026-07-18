@@ -37,7 +37,7 @@ import {
 import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
-import { createV1App, buildV1Usage, V1_ROI_PERIOD } from './lib/api-v1.js';
+import { createV1App, buildV1Usage, V1_ROI_PERIOD, V1_ROI_MONTHLY_PERIOD } from './lib/api-v1.js';
 import { ConfigStore } from './lib/config-store.js';
 import { AlertState } from './lib/alert-state.js';
 import { UsageHistory } from './lib/usage-history.js';
@@ -869,13 +869,22 @@ app.route(
       const record = await usageStore.load();
       if (!record) return [];
       const all = await store.loadAllSummaries();
-      const sessions = filterSessions(all, { period: V1_ROI_PERIOD, project: '' });
-      const roi = apiReplacementValue({
-        apiEquivalentSpend: sumSessionCosts(sessions),
-        subscriptionCost: await configStore.effectiveSubscriptionCost(),
-        extraUsageSpend: 0,
+      const subscriptionCost = await configStore.effectiveSubscriptionCost();
+      const now = new Date();
+      const roiFor = (period) =>
+        apiReplacementValue({
+          apiEquivalentSpend: sumSessionCosts(
+            filterSessions(all, { period, project: '', now })
+          ),
+          subscriptionCost,
+          extraUsageSpend: 0,
+        });
+      return buildV1Usage({
+        record,
+        roi: roiFor(V1_ROI_PERIOD),
+        roi30d: roiFor(V1_ROI_MONTHLY_PERIOD),
+        nowMs: now.getTime(),
       });
-      return buildV1Usage({ record, roi, nowMs: Date.now() });
     },
   })
 );

@@ -136,6 +136,24 @@ clauge --help    |    clauge --version
 
 The Mac App bundle ships the CLI at `Contents/Resources/clauge-cli`; symlink it onto your `PATH`, or let the dashboard install the symlink for you. Homebrew installs put `clauge` on `PATH` automatically. `set-api-key` only accepts the key via stdin (never on the command line) and is macOS-only for now.
 
+## Clauge Widget (`clauge status`)
+
+Your whole Claude Code statusline, rendered by Clauge — no third-party statusline tool in the loop:
+
+```bash
+clauge status --install   # wire into ~/.claude/settings.json (backs up first; --force to replace an existing statusline)
+clauge status             # the three-line render (exit 0 always — statusline-safe)
+clauge status --json      # the /v1/usage envelope for scripts (non-zero exit when the app is down)
+```
+
+```text
+Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main
+Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)
+$664 this window · ROI 17.3× vs API · Context Used 46% · Compactions 0
+```
+
+Line 1 is the working context from Claude Code's own session payload (model · path · lines added/removed · runtime · git branch). Line 2 is your quota, each gauge coloring independently (green < 75%, orange ≥ 75%, red ≥ 90%). Line 3 is the money — spend this window and ROI, the realized last-30-days API-equivalent value against your plan cost — plus session hygiene (Context Used on the same gauge scale; Compactions on its own: green 0, orange 1, red 2+). When the app is briefly down, the last-known data is served from `~/.clauge/statusline-cache.json` with an age tag. `--plain` or `NO_COLOR` strips colors; `--max-width <n>` truncates.
+
 ## Local API (`/v1/usage`)
 
 While Clauge is running, other local tools (statuslines, scripts, dashboards) can read your usage without parsing any logs themselves — a stable, versioned, **loopback-only** JSON API:
