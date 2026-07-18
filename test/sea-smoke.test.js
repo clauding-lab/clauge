@@ -51,6 +51,26 @@ describe('SEA sidecar smoke', { skip: SKIP_REASON }, () => {
     assert.match(out.stdout, /clauge: app not running/);
   });
 
+  it('`--version` works from the SEA bundle (v1.3.4 artifact-smoke regression)', async () => {
+    // Caught 2026-07-18 on the PUBLISHED v1.3.4 DMG: readVersion() resolved
+    // ../../package.json from the bundle's __dirname, walking out of the SEA
+    // extraction dir → ENOENT stack trace + exit 1. Latent since the CLI
+    // landed; unreachable until PR-A revived the wrapper. Only the SEA
+    // layout reproduces it — dev runs resolve the repo's package.json fine.
+    const out = await new Promise((resolve, reject) => {
+      const child = spawn(SIDECAR, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (b) => { stdout += b.toString(); });
+      child.stderr.on('data', (b) => { stderr += b.toString(); });
+      const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('--version timeout')); }, 10_000);
+      child.on('exit', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+      child.on('error', reject);
+    });
+    assert.equal(out.code, 0, `exit 0; stderr: ${out.stderr}`);
+    assert.match(out.stdout, /clauge \d+\.\d+\.\d+/);
+  });
+
   it('binary is executable and starts within 2s', async () => {
     const child = spawn(SIDECAR, [], {
       env: { ...process.env, PORT: '3520', NO_OPEN: '1' },
