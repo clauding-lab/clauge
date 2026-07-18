@@ -117,6 +117,119 @@ describe('buildV1Usage — line vocabulary', () => {
   });
 });
 
+// scoped-limit progress lines (v1.3.6, Task 2) — additive per the frozen
+// /v1 contract (AGENTS.md landmine #47): `normalized.scopedWindows` from
+// Task 1's parser becomes "Weekly (<label>)" / "Session (<label>)" progress
+// lines, deduped against the legacy per-model emitters above.
+function scopedWindow(over = {}) {
+  return {
+    label: 'Fable',
+    pct: 65,
+    resetsAt: '2026-07-22T22:59:59Z',
+    isActive: false,
+    group: 'weekly',
+    source: 'model',
+    ...over,
+  };
+}
+
+describe('buildV1Usage — scoped-limit lines (v1.3.6)', () => {
+  test('a weekly scoped window becomes "Weekly (<label>)", after legacy window lines and before ROI/Note', () => {
+    const [snap] = buildV1Usage({
+      record: record({ normalized: { scopedWindows: [scopedWindow()] } }),
+      roi: ROI,
+      nowMs: NOW,
+    });
+    const fable = snap.lines.find((l) => l.label === 'Weekly (Fable)');
+    assert.deepEqual(fable, {
+      type: 'progress',
+      label: 'Weekly (Fable)',
+      used: 65,
+      limit: 100,
+      format: { kind: 'percent' },
+      resets_at: '2026-07-22T22:59:59Z',
+    });
+    const labels = snap.lines.map((l) => l.label);
+    assert.ok(labels.indexOf('Session') < labels.indexOf('Weekly (Fable)'));
+    assert.ok(labels.indexOf('Weekly') < labels.indexOf('Weekly (Fable)'));
+    assert.ok(labels.indexOf('Weekly (Fable)') < labels.indexOf('Spend'));
+  });
+
+  test('a session-group scoped window becomes "Session (<label>)"', () => {
+    const [snap] = buildV1Usage({
+      record: record({
+        normalized: {
+          scopedWindows: [scopedWindow({ label: 'Cowork', group: 'session', pct: 30 })],
+        },
+      }),
+      roi: ROI,
+      nowMs: NOW,
+    });
+    const line = snap.lines.find((l) => l.label === 'Session (Cowork)');
+    assert.equal(line.type, 'progress');
+    assert.equal(line.used, 30);
+  });
+
+  test('dedupes against the legacy Weekly (Sonnet) emitter: exactly one line survives', () => {
+    const [snap] = buildV1Usage({
+      record: record({
+        normalized: {
+          sevenDaySonnet: { pct: 12, resetsAt: '2026-07-23T12:00:00Z' },
+          scopedWindows: [scopedWindow({ label: 'Sonnet', pct: 99 })],
+        },
+      }),
+      roi: ROI,
+      nowMs: NOW,
+    });
+    const sonnetLines = snap.lines.filter((l) => l.label === 'Weekly (Sonnet)');
+    assert.equal(sonnetLines.length, 1);
+    assert.equal(sonnetLines[0].used, 12); // legacy emitter wins; scoped duplicate dropped
+  });
+
+  test('a record without scopedWindows (old record) produces byte-identical lines to before this change', () => {
+    const oldRecord = {
+      ingestedAt: FRESH_AT,
+      normalized: {
+        fiveHour: { pct: 20, resetsAt: '2026-07-18T14:00:00Z' },
+        sevenDay: { pct: 9, resetsAt: '2026-07-23T12:00:00Z' },
+        sevenDaySonnet: null,
+        sevenDayOpus: null,
+      },
+    };
+    const [snap] = buildV1Usage({ record: oldRecord, roi: ROI, nowMs: NOW });
+    assert.deepEqual(snap.lines, [
+      {
+        type: 'progress',
+        label: 'Session',
+        used: 20,
+        limit: 100,
+        format: { kind: 'percent' },
+        resets_at: '2026-07-18T14:00:00Z',
+      },
+      {
+        type: 'progress',
+        label: 'Weekly',
+        used: 9,
+        limit: 100,
+        format: { kind: 'percent' },
+        resets_at: '2026-07-23T12:00:00Z',
+      },
+      { type: 'text', label: 'Spend', value: '$664 this window' },
+      { type: 'text', label: 'ROI', value: '2.3x vs API' },
+    ]);
+  });
+
+  test('a scoped entry with resetsAt: null omits resets_at (None-dropping)', () => {
+    const [snap] = buildV1Usage({
+      record: record({ normalized: { scopedWindows: [scopedWindow({ resetsAt: null })] } }),
+      roi: ROI,
+      nowMs: NOW,
+    });
+    const fable = snap.lines.find((l) => l.label === 'Weekly (Fable)');
+    assert.ok(!('resets_at' in fable));
+  });
+});
+
 // ROI (30d) — additive line (PR-C, owner decision 2026-07-18): realized
 // last-30-days net multiple, month of value vs the monthly plan cost.
 // Additive per the frozen-contract rules (AGENTS.md landmine #47): the
