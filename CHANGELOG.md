@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.6] — 2026-07-19
+
+### Fixed
+
+- **Model-scoped usage is back — and future-proof.** claude.ai recently moved model-specific weekly limits (the bucket it currently labels "Fable") into a new generic format, which left Clauge's "Sonnet" ring on the dashboard, the popover's "Sonnet only" bar, and the local API's model lines silently empty. Clauge now reads the new format the way claude.ai itself does: every model- or surface-scoped limit renders under the name claude.ai sends, so the ring and bar track whatever bucket Anthropic ships next without waiting for an app update. Old data keeps rendering, and buckets that don't exist hide instead of showing an empty 0%.
+- **Usage alerts and pace forecasts work again on migrated accounts.** Session and weekly readings now also fall back to the new limits format, so accounts claude.ai has already migrated get their alerts and forecasts back.
+
+### Added
+
+- **Local API: scoped-limit lines.** `GET /v1/usage` now emits one additional progress line per scoped limit — e.g. `Weekly (Fable)` — alongside the existing lines. Additive only; existing consumers and the frozen line format are unaffected.
+
+---
+
 ## [1.3.5] — 2026-07-18
 
 ### Fixed
