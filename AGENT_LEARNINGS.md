@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-07-18 — v1.3.4 | Post-release artifact smoke caught `--version` broken from the SEA bundle — a fixed gate exposed a latent bug behind it
+
+**Trigger:** the v1.3.4 post-release smoke on the PUBLISHED DMG (download → mount → run every verb from the shipped bundle). `clauge --version` via the (newly working) wrapper printed an ENOENT stack trace and exited 1; every other verb passed.
+
+**What went wrong:** `readVersion()` in `lib/cli/index.js` resolved `join(__dirname, '..', '..', 'package.json')`. Correct in the repo tree, but esbuild inlines the dispatcher into `server.bundle.mjs`, so under SEA `__dirname` is the extraction temp dir and `../../` walks OUT of it. The bug was latent since the CLI dispatcher landed — unreachable because the v1.3.3 wrapper was dead (nobody could run the bundled CLI at all). PR-A fixed the wrapper; v1.3.4 shipped, and the revived path exposed the bug one call deeper. Every gate missed it because none of them ran `--version` under SEA: unit tests run in the repo layout (path resolves fine), and the SEA smoke only spawned the server and `status`.
+
+**Lesson:** fixing a broken gate makes everything BEHIND it reachable for the first time — after such a fix, smoke every verb/route through the revived path from the real artifact, not just the ones the fix touched.
+
+**Prevention:** (1) `test/sea-smoke.test.js` now pins `--version` under SEA (exit 0 + semver output) alongside `status`; add the same one-liner for any new verb. (2) The release flow gained a post-publish artifact smoke: download the published DMG, run EVERY dispatcher verb + exit-code contract from the bundle copy. (3) `readVersion` now tries both layouts and never throws (`0.0.0-unknown` fallback, mirroring `server.js`'s `APP_VERSION` catch — which already knew about this exact SEA asset layout; the dispatcher just never copied the defense).
+
+**Hotfix:** `fix/sea-version-path` — candidate-path + never-throw `readVersion`, SEA smoke test. Code is on main; v1.3.4 as published carries the defect in `--version` only (all other verbs verified working from the artifact). Re-release decision (v1.3.5 now vs. ride the next release) is Adnan's.
+
+**Cross-references:** AGENTS.md landmine #45 (repo tree ≠ installed bundle — this is its runtime-path corollary: `__dirname` under SEA ≠ `__dirname` in the repo); global rulebook 2026-07-18 entry; auto-memory `project_handoff_docs_rev3_verified`.
+
 ## 2026-07-17 — v1.3.3 | Pre-implementation adversarial review caught THREE gaps in the already-twice-verified PR-A fix recipe
 
 **Trigger:** Owner asked to re-check the two 2026-07-16 handoff specs before implementing. A 4-lane verification (2 citation passes, 2 live-bundle passes, 2 independent adversarial design reviews, plus fresh clones of aiusage + ccstatusline) confirmed every citation (44+34, 0 wrong) — but the design reviews found the §5.1 fix recipe would have shipped incomplete.
