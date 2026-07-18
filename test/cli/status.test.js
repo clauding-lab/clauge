@@ -203,6 +203,21 @@ describe('stale cache — write-through on success, serve on failure', () => {
     assert.match(stdout, /· 5m old/);
   });
 
+  test('an empty live array never clobbers a good cache (review P3, 2026-07-18)', async () => {
+    await stagePortFile(34567);
+    const mod = await freshModule();
+    await capture(() => mod.run(parsed(), baseDeps()));
+    const emptyFetch = async () =>
+      new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    const { code, stdout } = await capture(() =>
+      mod.run(parsed(), baseDeps({ fetchImpl: emptyFetch })),
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /no data for provider/, 'honest never-ingested render, not stale data');
+    const cache = JSON.parse(await readFile(cacheFilePath(), 'utf8'));
+    assert.equal(cache.snapshots.length, 1, 'good cache survives the [] response');
+  });
+
   test('a corrupt cache falls back to the notice — guarded read, exit 0', async () => {
     await mkdir(dirname(cacheFilePath()), { recursive: true });
     await writeFile(cacheFilePath(), '{ torn write', 'utf8');

@@ -278,6 +278,51 @@ describe('degraded states', () => {
   });
 });
 
+describe('terminal-escape injection — externally-sourced text is sanitized', () => {
+  // Security review 2026-07-18 (P1): model.display_name, the working dir,
+  // and cache/v1 text values are attacker-influenceable (hostile repo dir
+  // names may contain ESC on Unix; the cache is a same-user file). OSC52
+  // clipboard writes, title-set, clear-screen, and forged newlines must
+  // never reach the host terminal.
+  test('a hostile directory name cannot smuggle OSC/CSI sequences or forge lines', () => {
+    const p = payload();
+    p.workspace.current_dir = '/tmp/evil\x1b]52;c;cGxhbnQ=\x07dir\nFORGED LINE';
+    const out = render({ payload: p }, { ansi: true, orange256: true });
+    assert.ok(!out.includes('\x1b]'), 'no OSC sequence survives');
+    assert.ok(!out.includes('\x07'), 'no BEL survives');
+    assert.equal(out.split('\n').length, 3, 'no forged extra line');
+  });
+
+  test('a hostile model display_name cannot clear the screen', () => {
+    const p = payload();
+    p.model.display_name = 'Opus\x1b[2J 4.8';
+    const out = render({ payload: p }, { ansi: true, orange256: true });
+    assert.ok(!out.includes('\x1b[2J'), 'the ESC byte must be stripped');
+    // Stripping the ESC defangs the sequence; the remainder is inert text.
+    assert.match(out, /Opus\[2J 4\.8/);
+  });
+
+  test('a poisoned cache Spend/ROI value cannot set the terminal title', () => {
+    const snap = snapshot();
+    snap.lines = snap.lines.map((l) =>
+      l.type === 'text' ? { ...l, value: `${l.value}\x1b]0;pwned\x07` } : l,
+    );
+    const out = render({ snapshot: snap }, { ansi: true, orange256: true });
+    assert.ok(!out.includes('\x1b]0;'));
+    assert.ok(!out.includes('pwned\x07'));
+  });
+
+  test('plain mode emits ZERO escape bytes even under hostile inputs', () => {
+    const p = payload();
+    p.model.display_name = 'X\x1b[31m';
+    p.workspace.current_dir = '/a\x1b]0;t\x07b';
+    const snap = snapshot();
+    snap.lines[3] = { type: 'text', label: 'ROI', value: '2.3x vs\x1b[5m API' };
+    const out = render({ payload: p, snapshot: snap, branch: 'b\x1b[0mr' });
+    assert.ok(!out.includes('\x1b'), `escape byte leaked: ${JSON.stringify(out)}`);
+  });
+});
+
 describe('--max-width', () => {
   test('caps each line at N visible characters', () => {
     const out = render({}, { maxWidth: 40 });
