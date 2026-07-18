@@ -66,20 +66,9 @@
       </div>
     </section>
 
-    <!-- ── Sonnet only ────────────────────────────────────────── -->
-    <section class="sect">
-      <h2 class="sect-label">Sonnet only</h2>
-      <div class="simple-bar">
-        <div class="simple-bar-fill" id="sonnet-fill"></div>
-      </div>
-      <div class="bar-meta">
-        <span class="bar-meta-pct mono" id="sonnet-pct">— used</span>
-        <span class="mono" id="sonnet-reset">resets —</span>
-      </div>
-      <div class="bar-meta bar-meta-sub">
-        <span></span>
-        <span class="mono reset-clock" id="sonnet-reset-clock"></span>
-      </div>
+    <!-- ── Scoped limits (model/surface, e.g. "Fable") — dynamic; hidden when none ── -->
+    <section class="sect" id="scoped-section" hidden>
+      <div id="scoped-bars"></div>
     </section>
 
     <!-- ── Claude Design (hidden when Anthropic doesn't return the bucket) ── -->

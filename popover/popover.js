@@ -447,15 +447,84 @@ function renderWeekly(plan, nowMs) {
   document.getElementById('weekly-reset-clock').textContent = fmtResetClock(resetsAt, nowMs);
 }
 
-function renderSonnet(plan, nowMs) {
-  const sonnet = plan?.sevenDaySonnet;
-  const pct = sonnet?.pct ?? 0;
-  renderSimpleBar({ fillId: 'sonnet-fill', usagePct: pct });
-  document.getElementById('sonnet-pct').textContent = t('sonnet.percentUsed', { percent: Math.round(pct) });
-  document.getElementById('sonnet-reset').textContent = sonnet?.resetsAt
-    ? t('session.resetsIn', { duration: fmtRelative(sonnet.resetsAt, nowMs) })
+/**
+ * Build one scoped-limit bar (label, simple-bar fill, percent/reset meta rows)
+ * reusing the same classes as the old static Sonnet-only markup so existing
+ * CSS applies unchanged. Wire-sourced label text goes in via textContent only
+ * — never innerHTML — per the wire-data discipline for this payload.
+ */
+function buildScopedWindowEl(win, nowMs) {
+  const pct = Math.max(0, Number.isFinite(win?.pct) ? win.pct : 0);
+  const qualifier = win?.group === 'session' ? t('scoped.windowSession') : t('scoped.windowWeekly');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'scoped-window';
+
+  const labelEl = document.createElement('h2');
+  labelEl.className = 'sect-label';
+  labelEl.textContent = `${win?.label ?? ''} · ${qualifier}`;
+  wrap.appendChild(labelEl);
+
+  const bar = document.createElement('div');
+  bar.className = 'simple-bar';
+  const fill = document.createElement('div');
+  fill.className = 'simple-bar-fill';
+  fill.style.width = `${pct.toFixed(1)}%`;
+  bar.appendChild(fill);
+  wrap.appendChild(bar);
+
+  const meta = document.createElement('div');
+  meta.className = 'bar-meta';
+  const pctEl = document.createElement('span');
+  pctEl.className = 'bar-meta-pct mono';
+  pctEl.textContent = t('sonnet.percentUsed', { percent: Math.round(pct) });
+  meta.appendChild(pctEl);
+  const resetEl = document.createElement('span');
+  resetEl.className = 'mono';
+  resetEl.textContent = win?.resetsAt
+    ? t('session.resetsIn', { duration: fmtRelative(win.resetsAt, nowMs) })
     : '';
-  document.getElementById('sonnet-reset-clock').textContent = fmtResetClock(sonnet?.resetsAt, nowMs);
+  meta.appendChild(resetEl);
+  wrap.appendChild(meta);
+
+  const metaSub = document.createElement('div');
+  metaSub.className = 'bar-meta bar-meta-sub';
+  metaSub.appendChild(document.createElement('span'));
+  const clockEl = document.createElement('span');
+  clockEl.className = 'mono reset-clock';
+  clockEl.textContent = fmtResetClock(win?.resetsAt, nowMs);
+  metaSub.appendChild(clockEl);
+  wrap.appendChild(metaSub);
+
+  return wrap;
+}
+
+function renderScoped(plan, nowMs) {
+  const section = document.getElementById('scoped-section');
+  const container = document.getElementById('scoped-bars');
+  if (!section || !container) return;
+
+  // Preferred: the normalized scopedWindows list (labels from the wire).
+  // Legacy fallback: synthesize a single weekly window from sevenDaySonnet so
+  // old stored/cached records (ingested before this release) still render
+  // something instead of going blank.
+  const sonnet = plan?.sevenDaySonnet;
+  const windows = Array.isArray(plan?.scopedWindows) && plan.scopedWindows.length > 0
+    ? plan.scopedWindows
+    : (sonnet?.pct != null
+      ? [{ label: t('sonnet.label'), pct: sonnet.pct, resetsAt: sonnet.resetsAt, group: 'weekly' }]
+      : []);
+
+  // Mirror renderDesign's gate style: hide the whole section when the list is
+  // empty instead of showing a phantom bar.
+  section.hidden = windows.length === 0;
+
+  // Rebuild children every tick — no long-lived CSS-animated children live
+  // inside #scoped-bars (landmine #22 documented exception for the popover).
+  container.textContent = '';
+  for (const win of windows) {
+    container.appendChild(buildScopedWindowEl(win, nowMs));
+  }
 }
 
 function renderDesign(plan, nowMs) {
@@ -772,7 +841,7 @@ async function refresh() {
     renderSession(plan, nowMs);
     renderWeekly(plan, nowMs);
     renderProjection(pickedProjection.usage, nowMs);
-    renderSonnet(plan, nowMs);
+    renderScoped(plan, nowMs);
     renderDesign(plan, nowMs);
     renderRoutines(plan, nowMs);
     renderExtra(plan, nowMs);

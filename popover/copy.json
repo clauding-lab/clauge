@@ -40,6 +40,10 @@
     "percentUsed": "{percent}% used",
     "resets": "resets {when}"
   },
+  "scoped": {
+    "windowWeekly": "7d",
+    "windowSession": "5h"
+  },
   "design": {
     "label": "Claude Design"
   },
