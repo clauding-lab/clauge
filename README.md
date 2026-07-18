@@ -136,6 +136,21 @@ clauge --help    |    clauge --version
 
 The Mac App bundle ships the CLI at `Contents/Resources/clauge-cli`; symlink it onto your `PATH`, or let the dashboard install the symlink for you. Homebrew installs put `clauge` on `PATH` automatically. `set-api-key` only accepts the key via stdin (never on the command line) and is macOS-only for now.
 
+## Local API (`/v1/usage`)
+
+While Clauge is running, other local tools (statuslines, scripts, dashboards) can read your usage without parsing any logs themselves — a stable, versioned, **loopback-only** JSON API:
+
+```bash
+# 1. Find the live port (never hardcode 3456 — it can shift to 3457-3460)
+PORT=$(cat ~/Library/Caches/Clauge/active-port)   # Windows: %LOCALAPPDATA%\Clauge\active-port
+
+# 2. Read the snapshot
+curl http://127.0.0.1:$PORT/v1/usage          # array of provider snapshots
+curl http://127.0.0.1:$PORT/v1/usage/claude   # single snapshot (204 = no data yet)
+```
+
+Each snapshot carries `apiVersion`, `providerId`, and a `lines[]` array of typed entries — `progress` lines (Session/Weekly %, with `resets_at`) and `text` lines (Spend, ROI) — so consumers render on `type` + `label` and new lines never break them. The schema is wire-compatible with [aiusage](https://github.com/ahsanhabibakik/aiusage) consumers. Loopback-only by design: the server binds `127.0.0.1` and rejects any request whose `Host` header isn't a loopback name.
+
 ## Configuration
 
 Optional `.env` (copy from `.env.example`):

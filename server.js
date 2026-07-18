@@ -37,6 +37,7 @@ import {
 import { aggregateUsage } from './lib/cache-analyzer.js';
 import { apiReplacementValue, sumSessionCosts } from './lib/roi-calculator.js';
 import { buildSnapshot } from './lib/snapshot.js';
+import { createV1App, buildV1Usage, V1_ROI_PERIOD } from './lib/api-v1.js';
 import { ConfigStore } from './lib/config-store.js';
 import { AlertState } from './lib/alert-state.js';
 import { UsageHistory } from './lib/usage-history.js';
@@ -853,6 +854,31 @@ app.get('/api/export', async (c) => {
   }
   return c.json({ error: `unsupported format: ${format}` }, 400);
 });
+
+// /v1 — the PUBLIC, versioned loopback API for external local consumers
+// (Clauge Widget `clauge status`, Mission Control, scripts). The contract +
+// Host check live in lib/api-v1.js; this block only wires the stores and the
+// clock (Date.now() stays in server.js — house rule). Deliberately NOT in
+// READ_ONLY_API_PATHS: scripted no-Origin GETs need no CORS, and because CORS
+// never engages, the module's Host check is the mandatory anti-DNS-rebinding
+// control. Mounted BEFORE the static catch-all below.
+app.route(
+  '/v1',
+  createV1App({
+    getSnapshots: async () => {
+      const record = await usageStore.load();
+      if (!record) return [];
+      const all = await store.loadAllSummaries();
+      const sessions = filterSessions(all, { period: V1_ROI_PERIOD, project: '' });
+      const roi = apiReplacementValue({
+        apiEquivalentSpend: sumSessionCosts(sessions),
+        subscriptionCost: await configStore.effectiveSubscriptionCost(),
+        extraUsageSpend: 0,
+      });
+      return buildV1Usage({ record, roi, nowMs: Date.now() });
+    },
+  })
+);
 
 app.use('/*', serveStatic({ root: join(__dirname, 'public') }));
 
