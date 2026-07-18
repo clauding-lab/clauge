@@ -6,7 +6,8 @@
 
 <p align="center">
   <strong>Know what your Claude subscription is actually worth.</strong><br/>
-  A native macOS menu-bar app (and Windows desktop app) that turns your local Claude&nbsp;Code logs and claude.ai plan usage into one glanceable dashboard — cost, plan limits, cache savings, and subscription ROI.
+  A native macOS menu-bar app (and Windows desktop app) that turns your local Claude&nbsp;Code logs and claude.ai plan usage into one glanceable dashboard — cost, plan limits, cache savings, and subscription ROI.<br/>
+  Plus the <strong>Clauge Widget</strong>: your entire Claude&nbsp;Code statusline — quota gauges, spend, ROI, session hygiene — rendered by <code>clauge status</code>.
 </p>
 
 <p align="center">
@@ -24,7 +25,7 @@
 Clauge reads usage data your own tools have already written to your machine and presents it as analytics. There is **no login screen, no API key field, and no telemetry** — it is a local reader, closer to Activity Monitor than to a SaaS app. Your usage data never leaves your computer.
 
 - **Claude Code** — token usage, cost, cache savings, models, tools, and projects, parsed from the local session logs at `~/.claude/projects/`.
-- **claude.ai** — plan limits (session / weekly / Sonnet), prepaid balance, and overage spend, synced from your signed-in browser tab by the optional [Clauge Sync](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) extension.
+- **claude.ai** — plan limits (session / weekly / model-scoped buckets like the current "Fable"), prepaid balance, and overage spend, synced from your signed-in browser tab by the optional [Clauge Sync](https://chromewebstore.google.com/detail/clauge-sync/ailfbgegpplecgcadlkplkllobepfcga) extension. Bucket names come straight from claude.ai, so when Anthropic renames or adds one, Clauge follows without an update.
 
 ## Install
 
@@ -42,7 +43,7 @@ Clauge lives in your menu bar. **Left-click** for the glanceable popover; **righ
   <img src="docs/screenshots/v1.0.0/popover.png" alt="Clauge menu-bar popover" width="300" />
 </p>
 
-The popover shows paired **Session** + **Weekly** gauges (each with its local reset time), the **Sonnet** weekly limit, daily routine runs, month-to-date overage and prepaid balance, a 30-day spend chart, and a 180-day activity heatmap.
+The popover shows paired **Session** + **Weekly** gauges (each with its local reset time), a bar per **model-scoped limit** (currently claude.ai's "Fable" weekly bucket — labeled live from the wire), daily routine runs, month-to-date overage and prepaid balance, a 30-day spend chart, and a 180-day activity heatmap.
 
 > **First launch.** A short Welcome wizard explains the one permission Clauge needs on macOS: read access to the OAuth credential Claude&nbsp;Code already stored in your Keychain. macOS will prompt *"Clauge wants to use … 'Claude Code-credentials' …"* — click **Always Allow**. Clauge never sees your Anthropic password, API key, or session token; it reads only the credential blob Claude&nbsp;Code itself wrote. You can skip this and grant it later from **Settings → Connections → ↻ Refresh**.
 
@@ -68,12 +69,36 @@ Clauge is open source and reproducible from each tagged release, so you can audi
 ### Linux / headless
 
 ```bash
-npx clauge   # serves the dashboard at http://localhost:3456
+git clone https://github.com/clauding-lab/clauge.git
+cd clauge && npm install
+node server.js   # serves the dashboard at http://localhost:3456
 ```
 
-The npm package is a legacy browser-dashboard build (no menu bar, no native popover, no auto-updater). Use it for headless or Linux setups; prefer the native apps elsewhere.
+Runs the same server the native apps embed, as a plain browser dashboard (no menu bar, no native popover, no auto-updater). The old `npx clauge` route is retired — the npm package is stale and no longer maintained.
 
 > Claude&nbsp;Code analytics need **no sign-in** on any platform — the data is already on disk. If you've used Claude&nbsp;Code on this machine, the dashboard populates on first open.
+
+## The Clauge Widget (`clauge status`)
+
+Your **entire Claude Code statusline, rendered by Clauge** — no third-party statusline tool in the loop. One command wires it in:
+
+```bash
+clauge status --install   # wire into ~/.claude/settings.json (backs up first; --force to replace an existing statusline)
+clauge status             # the three-line render (exit 0 always — statusline-safe)
+clauge status --json      # the /v1/usage envelope for scripts (non-zero exit when the app is down)
+```
+
+```text
+Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main
+Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d) · Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d)
+$664 this window · ROI 17.3× vs API · Context Used 46% · Compactions 0
+```
+
+- **Line 1 — working context**, from Claude Code's own session payload: model · path · lines added/removed · runtime · git branch.
+- **Line 2 — your quota.** Session and Weekly gauges color independently (green < 75%, orange ≥ 75%, red ≥ 90%). Model-scoped buckets — like claude.ai's current **"Fable"** weekly limit — get their own gauge, named live from the wire and rendered in **blue** so they read apart from the warning colors. When Anthropic renames or adds a bucket, the widget follows automatically.
+- **Line 3 — the money and the hygiene:** spend this window, ROI (the realized last-30-days API-equivalent value against your plan cost), Context Used, and a compaction counter (green 0, orange 1, red 2+).
+
+If the app is briefly down, the widget serves last-known data from `~/.clauge/statusline-cache.json` with an age tag — it never blanks and never breaks your prompt. `--plain` or `NO_COLOR` strips colors; `--max-width <n>` truncates.
 
 ## Browser extension (for claude.ai data)
 
@@ -92,7 +117,7 @@ Clauge holds **no account, no Anthropic credentials, and no session tokens** —
 | Source | Covers | Comes from | Auth |
 |---|---|---|---|
 | Claude&nbsp;Code logs | Per-session tokens, cost, models, tools, projects | `~/.claude/projects/**/*.jsonl` (written by Claude&nbsp;Code) | None — local file read |
-| claude.ai plan data | Session/weekly/Sonnet limits, balance, overage | Clauge Sync, riding your browser session | Your normal claude.ai login |
+| claude.ai plan data | Session/weekly/model-scoped limits, balance, overage | Clauge Sync, riding your browser session | Your normal claude.ai login |
 
 Anthropic sees a request from *your* browser; Clauge sees a local HTTP POST to its own port. No telemetry, no phone-home — Clauding-Lab doesn't know you exist. The full policy is in [PRIVACY.md](PRIVACY.md).
 
@@ -117,7 +142,7 @@ The dashboard (⌘D, or right-click → Open Dashboard) is the full view — pla
 
 **claude.ai plan tracking** (via the extension)
 
-- Live **plan gauges** — Session (5h), Weekly (7d), and Sonnet (7d) — color-coded by usage, each with the **local reset time** beneath its countdown
+- Live **plan gauges** — Session (5h), Weekly (7d), and every model-scoped bucket claude.ai reports (currently "Fable", 7d) — color-coded by usage, labeled from the wire, each with the **local reset time** beneath its countdown
 - Prepaid **balance** and **month-to-date overage** against your cap
 - Refreshes about once a minute and updates in place
 
@@ -136,24 +161,6 @@ clauge --help    |    clauge --version
 
 The Mac app bundle ships the CLI wrapper at `Contents/Resources/Resources/clauge-cli` (working from v1.3.4 — earlier builds shipped it broken); symlink it onto your `PATH`, or let the dashboard install the symlink for you. Homebrew installs put `clauge` on `PATH` automatically (cask v1.3.4+). **Mac App Store installs:** the sandbox blocks terminal use of the bundled CLI — install the standalone one instead: `brew install clauding-lab/tap/clauge-cli` (same verbs, talks to your running MAS app). `set-api-key` only accepts the key via stdin (never on the command line) and is macOS-only for now.
 
-## Clauge Widget (`clauge status`)
-
-Your whole Claude Code statusline, rendered by Clauge — no third-party statusline tool in the loop:
-
-```bash
-clauge status --install   # wire into ~/.claude/settings.json (backs up first; --force to replace an existing statusline)
-clauge status             # the three-line render (exit 0 always — statusline-safe)
-clauge status --json      # the /v1/usage envelope for scripts (non-zero exit when the app is down)
-```
-
-```text
-Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main
-Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)
-$664 this window · ROI 17.3× vs API · Context Used 46% · Compactions 0
-```
-
-Line 1 is the working context from Claude Code's own session payload (model · path · lines added/removed · runtime · git branch). Line 2 is your quota, each gauge coloring independently (green < 75%, orange ≥ 75%, red ≥ 90%). Line 3 is the money — spend this window and ROI, the realized last-30-days API-equivalent value against your plan cost — plus session hygiene (Context Used on the same gauge scale; Compactions on its own: green 0, orange 1, red 2+). When the app is briefly down, the last-known data is served from `~/.clauge/statusline-cache.json` with an age tag. `--plain` or `NO_COLOR` strips colors; `--max-width <n>` truncates.
-
 ## Local API (`/v1/usage`)
 
 While Clauge is running, other local tools (statuslines, scripts, dashboards) can read your usage without parsing any logs themselves — a stable, versioned, **loopback-only** JSON API:
@@ -167,7 +174,7 @@ curl http://127.0.0.1:$PORT/v1/usage          # array of provider snapshots
 curl http://127.0.0.1:$PORT/v1/usage/claude   # single snapshot (204 = no data yet)
 ```
 
-Each snapshot carries `apiVersion`, `providerId`, and a `lines[]` array of typed entries — `progress` lines (Session/Weekly %, with `resets_at`) and `text` lines (Spend, ROI) — so consumers render on `type` + `label` and new lines never break them. The schema is wire-compatible with [aiusage](https://github.com/ahsanhabibakik/aiusage) consumers. Loopback-only by design: the server binds `127.0.0.1` and rejects any request whose `Host` header isn't a loopback name.
+Each snapshot carries `apiVersion`, `providerId`, and a `lines[]` array of typed entries — `progress` lines (Session/Weekly %, plus one per scoped bucket, e.g. `Weekly (Fable)`, with `resets_at`) and `text` lines (Spend, ROI) — so consumers render on `type` + `label` and new lines never break them. The schema is wire-compatible with [aiusage](https://github.com/ahsanhabibakik/aiusage) consumers. Loopback-only by design: the server binds `127.0.0.1` and rejects any request whose `Host` header isn't a loopback name.
 
 ## Configuration
 
@@ -224,7 +231,7 @@ The native shell is [Tauri 2](https://tauri.app) (`src-tauri/`); the dashboard/p
 - **Code signing** — DMG notarization (macOS) and Authenticode (Windows) to remove the unidentified-developer / SmartScreen warnings on the direct-download builds.
 - **claude.ai sign-in on Windows** — native OAuth parity with macOS (Windows currently relies on the extension for plan data).
 - **Linux build** — needs a dedicated menu-bar / tray surface design.
-- **Pace projections** — reset-aware guidance (approaching cap, session reset imminent, weekly-vs-Sonnet routing).
+- **Pace projections** — reset-aware guidance (approaching cap, session reset imminent, weekly-vs-scoped-bucket routing).
 
 ## Why Clauge
 

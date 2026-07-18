@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.3.6] — 2026-07-19
+
+Anthropic changed how claude.ai reports model-specific quota — the bucket it currently labels **"Fable"** — and Clauge's model-scoped surfaces had gone silently blank as a result. v1.3.6 makes every surface read the new format generically: **the bucket's name comes from claude.ai itself**, so when Anthropic renames or adds buckets, Clauge follows automatically, no update required.
+
+### Fixed
+
+- **Model-scoped usage is back — everywhere, and future-proof.** The dashboard's third ring, the popover's model bar, and the local API's model lines had gone empty when claude.ai moved model-specific weekly limits into its new generic format. All three now render every model- or surface-scoped limit under the name claude.ai sends (today: "Fable"). Old data keeps rendering, and buckets that don't exist hide instead of showing a phantom 0%.
+- **Usage alerts and pace forecasts work again on migrated accounts.** Session and weekly readings now also fall back to the new limits format, so accounts claude.ai has already migrated get their alerts and forecasts back.
+
+### Added
+
+- **The Clauge Widget shows your model quota.** `clauge status` line 2 now carries a gauge per scoped bucket — e.g. `Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d)` — beside Session and Weekly. Scoped gauges render in **blue**, visually distinct from the hero gauges' green/orange/red warning colors, and their labels come straight from the wire (up to two, to protect line width).
+- **Local API: scoped-limit lines.** `GET /v1/usage` now emits one additional progress line per scoped limit — e.g. `Weekly (Fable)` — alongside the existing lines. Additive only; existing consumers and the frozen line format are unaffected.
+
+### Changed
+
+- **README refreshed.** The Clauge Widget now features prominently with the current three-line render, and the retired `npx clauge` install route is gone (the npm package is stale and unmaintained — Linux/headless users run the server from source).
+
+---
+
 ## [1.3.5] — 2026-07-18
 
 ### Fixed
