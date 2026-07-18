@@ -37,6 +37,21 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-07-19 — v1.3.6 | Editor-tool payloads decode backslash-u escapes into raw control bytes — three hits in two days
+
+**Trigger:** writing the fable plan doc (Write tool) and the scopedWindows control-char regex (subagent Edit) both produced files with literal NUL/C0 bytes; `file` reported `data` instead of text. A third hit occurred the prior day (Edit on the widget sanitize()).
+
+**What went wrong:** the JSON envelope carrying Edit/Write payloads decodes escape sequences of the form backslash-u-0000, so what the author intends as SOURCE TEXT arrives on disk as the actual control byte. Any file "containing a regex character class for control chars" is the natural trap.
+
+**Lesson:** never place escape-form control characters in tool-written content — construct them programmatically (JS `String.fromCharCode`, Swift `CharacterSet.controlCharacters`) or spell ranges as `U+0000-U+001F` in prose.
+
+**Prevention:** after any write involving escape-bearing content, byte-scan: `python3 -c "b=open(F,'rb').read(); print([hex(c) for c in b if (c<0x20 and c not in (9,10,13)) or c==0x7f])"` must print `[]`. Implementer briefs that touch sanitization code MUST carry this check verbatim (the 2026-07-19 brief did, and it caught the subagent's hit immediately). Repairs via python byte-replace, never another Edit.
+
+**Hotfix:** plan doc byte-repaired in place; `lib/usage-store.js` regex rebuilt via `String.fromCharCode`; iOS used `CharacterSet` from the start.
+
+**Cross-references:** AGENTS.md landmine #49; auto-memory `project_fable_v136_shipped`; same class as the 2026-07-18 session-note incident.
+
+
 ## 2026-07-18 — v1.3.4 | Post-release artifact smoke caught `--version` broken from the SEA bundle — a fixed gate exposed a latent bug behind it
 
 **Trigger:** the v1.3.4 post-release smoke on the PUBLISHED DMG (download → mount → run every verb from the shipped bundle). `clauge --version` via the (newly working) wrapper printed an ENOENT stack trace and exited 1; every other verb passed.
