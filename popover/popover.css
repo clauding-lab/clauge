@@ -404,6 +404,9 @@ html, body {
 /* Drop the whole sub-row when there's no reset clock (e.g. a null bucket). */
 .bar-meta-sub:has(.reset-clock:empty) { display: none; }
 
+/* ── Scoped limits (model/surface, e.g. "Fable") — stacked dynamic bars ── */
+.scoped-window + .scoped-window { margin-top: 14px; }
+
 /* ── 2x2 stats grid ────────────────────────────────────────── */
 .sect-stats { padding-top: 16px; }
 .stats-grid {
