@@ -96,6 +96,7 @@ const ORANGE = '\x1b[38;5;208m';
 const YELLOW = '\x1b[33m';
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
+const BLUE = '\x1b[34m';
 
 describe('locked three-line render (colors stripped)', () => {
   test('renders the §4 golden output exactly', () => {
@@ -320,6 +321,110 @@ describe('terminal-escape injection — externally-sourced text is sanitized', (
     snap.lines[3] = { type: 'text', label: 'ROI', value: '2.3x vs\x1b[5m API' };
     const out = render({ payload: p, snapshot: snap, branch: 'b\x1b[0mr' });
     assert.ok(!out.includes('\x1b'), `escape byte leaked: ${JSON.stringify(out)}`);
+  });
+});
+
+describe('scoped-limit gauges — rev 5 (2026-07-19 owner request)', () => {
+  // /v1 progress lines shaped `Weekly (<label>)` / `Session (<label>)` (e.g.
+  // Fable) render as additional line-2 gauges, after the two hero gauges,
+  // same bar/percent/resets format, capped at SCOPED_GAUGES_MAX = 2.
+
+  test('a scoped progress line renders as a third gauge after Weekly', () => {
+    const snap = snapshot();
+    snap.lines.splice(2, 0, {
+      type: 'progress',
+      label: 'Weekly (Fable)',
+      used: 68,
+      limit: 100,
+      format: { kind: 'percent' },
+      resets_at: new Date(NOW + 4 * 24 * 3600_000).toISOString(),
+    });
+    const line2 = render({ snapshot: snap }).split('\n')[1];
+    assert.equal(
+      line2,
+      'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d) · Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d)',
+    );
+  });
+
+  test('no scoped lines leaves line 2 byte-identical to the hero-only golden (regression pin)', () => {
+    const line2 = render().split('\n')[1];
+    assert.equal(
+      line2,
+      'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)',
+    );
+  });
+
+  test('caps scoped gauges at 2, wire order wins', () => {
+    const snap = snapshot();
+    snap.lines.splice(
+      2,
+      0,
+      { type: 'progress', label: 'Weekly (Fable)', used: 10, resets_at: null },
+      { type: 'progress', label: 'Session (Sonnet)', used: 20, resets_at: null },
+      { type: 'progress', label: 'Weekly (Opus)', used: 30, resets_at: null },
+    );
+    const line2 = render({ snapshot: snap }).split('\n')[1];
+    assert.ok(line2.includes('Fable'), 'first scoped line renders');
+    assert.ok(line2.includes('Sonnet'), 'second scoped line renders');
+    assert.ok(!line2.includes('Opus'), 'third scoped line is dropped by the cap');
+  });
+
+  test('a hostile scoped label cannot smuggle an ANSI escape into line 2', () => {
+    const snap = snapshot();
+    snap.lines.push({
+      type: 'progress',
+      label: 'Weekly (Fa\x1b[31mble)',
+      used: 50,
+      resets_at: null,
+    });
+    const out = render({ snapshot: snap }, { ansi: true, orange256: true });
+    assert.ok(!out.includes('\x1b[31mble'), 'no raw ESC byte survives in the rendered line');
+    assert.match(out.split('\n')[1], /Fa\[31mble/);
+  });
+
+  test('a Session (X) shaped label renders a gauge labeled X — prefix does not matter', () => {
+    const snap = snapshot();
+    snap.lines.push({ type: 'progress', label: 'Session (Haiku)', used: 15, resets_at: null });
+    const line2 = render({ snapshot: snap }).split('\n')[1];
+    assert.match(line2, /Haiku ▓▓░░░░░░░░ 15%/);
+  });
+
+  test('a scoped line without resets_at omits the resets suffix on that gauge', () => {
+    const snap = snapshot();
+    snap.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 40 });
+    const line2 = render({ snapshot: snap }).split('\n')[1];
+    assert.ok(line2.endsWith('Fable ▓▓▓▓░░░░░░ 40%'), 'no (resets …) suffix follows');
+  });
+
+  test('scoped gauges render blue always (owner decision), never the warning thresholds', () => {
+    // Rev 5.1: scoped gauges ignore the 75/90 threshold ladder entirely —
+    // blue at 80% (would be orange for a hero gauge) AND blue at 95%
+    // (would be red for a hero gauge).
+    // Assert against line 2 only — line 1's `-0` lines-removed segment is
+    // unconditionally red (git-churn color, unrelated to gauge thresholds),
+    // so checking the whole render would false-positive on "never red".
+    const snap80 = snapshot();
+    snap80.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 80, resets_at: null });
+    const line2At80 = render({ snapshot: snap80 }, { ansi: true, orange256: true }).split('\n')[1];
+    assert.ok(line2At80.includes(`${BLUE}▓▓▓▓▓▓▓▓░░`), 'scoped bar at 80% is blue');
+    assert.ok(line2At80.includes(`${BLUE}80%`), 'scoped pct at 80% is blue');
+    assert.ok(!line2At80.includes(ORANGE), 'scoped gauge never emits orange');
+    assert.ok(!line2At80.includes(RED), 'scoped gauge never emits red');
+
+    const snap95 = snapshot();
+    snap95.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 95, resets_at: null });
+    const line2At95 = render({ snapshot: snap95 }, { ansi: true, orange256: true }).split('\n')[1];
+    assert.ok(line2At95.includes(`${BLUE}▓▓▓▓▓▓▓▓▓▓`), 'scoped bar at 95% is blue');
+    assert.ok(line2At95.includes(`${BLUE}95%`), 'scoped pct at 95% is blue');
+    assert.ok(!line2At95.includes(ORANGE), 'scoped gauge never emits orange');
+    assert.ok(!line2At95.includes(RED), 'scoped gauge never emits red');
+  });
+
+  test('a text-type line shaped like a scoped label is not rendered as a gauge', () => {
+    const snap = snapshot();
+    snap.lines.push({ type: 'text', label: 'Weekly (Fake)', value: 'nope' });
+    const line2 = render({ snapshot: snap }).split('\n')[1];
+    assert.ok(!line2.includes('Fake'));
   });
 });
 
