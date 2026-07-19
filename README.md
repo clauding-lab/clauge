@@ -100,6 +100,8 @@ Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d) · Context Used 46% · Comp
 
 If the app is briefly down, the widget serves last-known data from `~/.clauge/statusline-cache.json` with an age tag — it never blanks and never breaks your prompt. `--plain` or `NO_COLOR` strips colors; `--max-width <n>` truncates.
 
+**Updating the widget:** `brew upgrade clauge-cli` is the whole update — nothing else to run. `--install` wires the statusline to Homebrew's version-stable path (`/opt/homebrew/opt/clauge-cli/bin/clauge`), which always tracks the current version, and Claude Code re-runs that command on every render — so open terminals show the new widget on their next redraw, with no reinstall and no restart. If the widget ever looks frozen after an upgrade, run the exact command stored in `~/.claude/settings.json` by hand: three lines out means the widget is healthy (the terminal just hasn't redrawn); an error means the command path is broken — re-run `clauge status --install --force` to rewire it. (Statuslines installed by v1.3.7 or earlier pinned a versioned path that breaks on upgrade — one `clauge status --install --force` after upgrading moves you to the stable path for good.)
+
 ## Browser extension (for claude.ai data)
 
 The Claude&nbsp;Code metrics work on their own. To also see your **claude.ai plan usage and balance**, install **Clauge Sync** — it runs in your already-authenticated claude.ai tab and posts a usage snapshot to your local Clauge once a minute.

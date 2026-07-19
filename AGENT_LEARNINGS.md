@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-07-19 — v1.3.7 | `status --install` pins the versioned Homebrew keg path — every `brew upgrade` silently kills the widget
+
+**Trigger:** Adnan ran `brew upgrade clauge-cli` (1.3.5 → 1.3.7) after the rev-6 release and still saw the old statusline. Investigation: `~/.claude/settings.json` invoked `/opt/homebrew/Cellar/clauge-cli/1.3.6/bin/clauge` — a keg brew's post-upgrade cleanup had already deleted, so the statusline command was dead and Claude Code was showing a stale last-successful render (which also explains "old layout" rather than "blank").
+
+**What went wrong:** `lib/cli/status-install.js:37` builds the installed command from `process.execPath`, which resolves the `/opt/homebrew/bin/clauge` symlink through to the versioned Cellar path. Correct for the app bundle (its path is stable), wrong for Homebrew, where the keg path changes (and is deleted) on every upgrade. Nobody caught it because the v1.3.6 session verified `--install` from the app bundle, never through a brew upgrade cycle.
+
+**Lesson:** never persist a resolved `process.execPath` into user config when the binary is version-addressed — persist the stable alias (for brew: `/opt/homebrew/opt/<formula>/bin/<name>`, which always tracks the current keg).
+
+**Prevention:** (a) product fix: `installCommand()` should detect `/Cellar/<formula>/<version>/` in `execPath` and rewrite to `/opt/<formula>/` (both `/opt/homebrew` and `/usr/local` prefixes), with a test; (b) release smoke: after any brew-shipped release, run the EXACT command string stored in `settings.json`, not `clauge status` from PATH — the two can diverge; (c) upgrade-cycle test whenever `--install` output format changes.
+
+**Hotfix:** settings.json repointed by hand to `'/opt/homebrew/opt/clauge-cli/bin/clauge' status` (backup at `~/.claude/settings.json.backup-rev6fix`); live render byte-verified rev-6. Product fix: `stabilizeBrewPath()` in status-install.js (committed alongside this entry) — keg→opt rewrite for both brew prefixes, helper tests + a wiring-guard test that fails if the stabilization call is ever removed (mutation-verified).
+
+**Cross-references:** auto-memory `project_widget_rev6_merged.md`; global rulebook entry same date; candidate AGENTS.md landmine once the product fix lands.
+
 ## 2026-07-19 — v1.3.6 | Editor-tool payloads decode backslash-u escapes into raw control bytes — three hits in two days
 
 **Trigger:** writing the fable plan doc (Write tool) and the scopedWindows control-char regex (subagent Edit) both produced files with literal NUL/C0 bytes; `file` reported `data` instead of text. A third hit occurred the prior day (Edit on the widget sanitize()).
