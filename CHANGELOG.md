@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.7] — 2026-07-19
+
+A Clauge Widget layout refresh, by owner request: your model quota takes the money's place on line 3.
+
+### Changed
+
+- **The widget's third line now leads with your model buckets.** The scoped gauges — e.g. `Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d)`, named live from the wire, blue as before — moved from line 2 to the front of line 3. Line 2 is back to the two hero gauges, `Session · Weekly`.
+- **Spend and ROI left the widget.** The statusline now focuses on quota and session hygiene; your spend and ROI still live in the menu-bar popover, the dashboard, and the local API. (`GET /v1/usage` is unchanged — its `Spend` and `ROI` lines keep flowing for scripts and other consumers.)
+- **Context Used and Compactions recolored.** The hygiene pair now renders in yellow, switching to red when context hits 90% or compactions reach 2 — the point where a save-and-fresh-session is due. Session and Weekly keep their green/orange/red thresholds.
+
+---
+
 ## [1.3.6] — 2026-07-19
 
 Anthropic changed how claude.ai reports model-specific quota — the bucket it currently labels **"Fable"** — and Clauge's model-scoped surfaces had gone silently blank as a result. v1.3.6 makes every surface read the new format generically: **the bucket's name comes from claude.ai itself**, so when Anthropic renames or adds buckets, Clauge follows automatically, no update required.
