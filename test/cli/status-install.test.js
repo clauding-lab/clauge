@@ -192,8 +192,11 @@ describe('install wiring — the stabilized path is what actually gets persisted
       const { code } = await capture(() => mod.run(parsed(), deps()));
       assert.equal(code, 0);
       const settings = JSON.parse(await readFile(settingsPath(), 'utf8'));
-      assert.ok(
-        settings.statusLine.command.startsWith(`'/opt/homebrew/opt/clauge-cli/bin/clauge'`),
+      // shellQuote is platform-split: single quotes on POSIX, double on
+      // Windows — accept either; the invariant under guard is the PATH.
+      assert.match(
+        settings.statusLine.command,
+        /^["']\/opt\/homebrew\/opt\/clauge-cli\/bin\/clauge["']/,
         `persisted command must lead with the opt alias, got: ${settings.statusLine.command}`,
       );
       assert.ok(!settings.statusLine.command.includes('Cellar'), 'no keg path may be persisted');
