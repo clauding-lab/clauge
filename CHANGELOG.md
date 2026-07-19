@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.8] — 2026-07-19
+
+A fix for Homebrew widget installs going stale after upgrades.
+
+### Fixed
+
+- **`clauge status --install` now survives `brew upgrade`.** The installer used to store the versioned Homebrew keg path (`…/Cellar/clauge-cli/<version>/…`) in Claude Code's settings; brew deletes that folder on every upgrade, silently freezing the widget on its last render. The installer now stores Homebrew's version-stable path (`…/opt/clauge-cli/…`), which always follows the current version. **If your statusline was installed by v1.3.7 or earlier, run `clauge status --install --force` once** — from then on, `brew upgrade clauge-cli` is the whole update.
+
+### Changed
+
+- **README: new "Updating the widget" section** — the upgrade flow, why open terminals pick the new version up on their next redraw, and the one-time rewire for older installs.
+
+---
+
 ## [1.3.7] — 2026-07-19
 
 A Clauge Widget layout refresh, by owner request: your model quota takes the money's place on line 3.
