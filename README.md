@@ -7,7 +7,7 @@
 <p align="center">
   <strong>Know what your Claude subscription is actually worth.</strong><br/>
   A native macOS menu-bar app (and Windows desktop app) that turns your local Claude&nbsp;Code logs and claude.ai plan usage into one glanceable dashboard — cost, plan limits, cache savings, and subscription ROI.<br/>
-  Plus the <strong>Clauge Widget</strong>: your entire Claude&nbsp;Code statusline — quota gauges, spend, ROI, session hygiene — rendered by <code>clauge status</code>.
+  Plus the <strong>Clauge Widget</strong>: your entire Claude&nbsp;Code statusline — quota gauges, model buckets, session hygiene — rendered by <code>clauge status</code>.
 </p>
 
 <p align="center">
@@ -90,13 +90,13 @@ clauge status --json      # the /v1/usage envelope for scripts (non-zero exit wh
 
 ```text
 Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main
-Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d) · Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d)
-$664 this window · ROI 17.3× vs API · Context Used 46% · Compactions 0
+Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)
+Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d) · Context Used 46% · Compactions 0
 ```
 
 - **Line 1 — working context**, from Claude Code's own session payload: model · path · lines added/removed · runtime · git branch.
-- **Line 2 — your quota.** Session and Weekly gauges color independently (green < 75%, orange ≥ 75%, red ≥ 90%). Model-scoped buckets — like claude.ai's current **"Fable"** weekly limit — get their own gauge, named live from the wire and rendered in **blue** so they read apart from the warning colors. When Anthropic renames or adds a bucket, the widget follows automatically.
-- **Line 3 — the money and the hygiene:** spend this window, ROI (the realized last-30-days API-equivalent value against your plan cost), Context Used, and a compaction counter (green 0, orange 1, red 2+).
+- **Line 2 — your quota.** Session and Weekly gauges color independently (green < 75%, orange ≥ 75%, red ≥ 90%).
+- **Line 3 — model buckets and hygiene.** Model-scoped buckets — like claude.ai's current **"Fable"** weekly limit — get their own gauge, named live from the wire and rendered in **blue** so they read apart from the warning colors; when Anthropic renames or adds a bucket, the widget follows automatically. Then Context Used and a compaction counter, in yellow — red when context hits 90% or compactions hit 2. (Spend and ROI live in the popover, dashboard, and `/v1` API.)
 
 If the app is briefly down, the widget serves last-known data from `~/.clauge/statusline-cache.json` with an age tag — it never blanks and never breaks your prompt. `--plain` or `NO_COLOR` strips colors; `--max-width <n>` truncates.
 
