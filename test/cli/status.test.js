@@ -64,6 +64,14 @@ const SNAPSHOT = {
       format: { kind: 'percent' },
       resets_at: new Date(NOW + 2 * 3600_000).toISOString(),
     },
+    {
+      type: 'progress',
+      label: 'Weekly (Fable)',
+      used: 68,
+      limit: 100,
+      format: { kind: 'percent' },
+      resets_at: new Date(NOW + 4 * 24 * 3600_000).toISOString(),
+    },
     { type: 'text', label: 'Spend', value: '$664 this window' },
     { type: 'text', label: 'ROI (30d)', value: '17.3x vs API' },
   ],
@@ -117,13 +125,15 @@ describe('degrade ladder — exit 0 on every rung', () => {
   beforeEach(withCleanTmpHome);
   afterEach(restoreHome);
 
-  test('sidecar live: renders quota + money lines and exits 0', async () => {
+  test('sidecar live: renders quota + scoped + hygiene lines and exits 0', async () => {
     await stagePortFile(34567);
     const mod = await freshModule();
     const { code, stdout } = await capture(() => mod.run(parsed(), baseDeps()));
     assert.equal(code, 0);
     assert.match(stdout, /Session .*20%/);
-    assert.match(stdout, /\$664 this window · ROI 17\.3× vs API/);
+    assert.match(stdout, /Fable ▓▓▓▓▓▓▓░░░ 68%/);
+    assert.ok(!stdout.includes('$664'), 'money left the widget in rev 6');
+    assert.ok(!stdout.includes('ROI'), 'ROI left the widget in rev 6');
   });
 
   test('no port file and no cache: dim notice, exit 0', async () => {
@@ -185,7 +195,7 @@ describe('stale cache — write-through on success, serve on failure', () => {
       mod.run(parsed(), baseDeps({ fetchImpl: deadFetch, nowMs: NOW + 12 * 60_000 })),
     );
     assert.equal(code, 0);
-    assert.match(stdout, /\$664 this window/);
+    assert.match(stdout, /Fable ▓▓▓▓▓▓▓░░░ 68%/, 'cached scoped gauge rendered, not just the notice');
     assert.match(stdout, /· 12m old/);
   });
 
@@ -199,7 +209,7 @@ describe('stale cache — write-through on success, serve on failure', () => {
       mod.run(parsed(), baseDeps({ fetchImpl: deadFetch, nowMs: NOW + 5 * 60_000 })),
     );
     assert.equal(code, 0);
-    assert.match(stdout, /\$664 this window/);
+    assert.match(stdout, /Fable ▓▓▓▓▓▓▓░░░ 68%/, 'cached scoped gauge rendered, not just the notice');
     assert.match(stdout, /· 5m old/);
   });
 
@@ -260,7 +270,7 @@ describe('stdin payload — load-bearing but never required', () => {
     );
     assert.equal(code, 0);
     assert.ok(!stdout.includes('Opus'));
-    assert.match(stdout, /\$664 this window/);
+    assert.match(stdout, /Session .*20%/, 'API-sourced data still rendered');
   });
 
   test('git branch from the payload cwd lands in line 1', async () => {
@@ -398,7 +408,7 @@ describe('flags', () => {
     const mod = await freshModule();
     const ok = await capture(() => mod.run(parsed({ provider: 'claude' }), baseDeps()));
     assert.equal(ok.code, 0);
-    assert.match(ok.stdout, /\$664/);
+    assert.match(ok.stdout, /Session .*20%/);
     const unknown = await capture(() => mod.run(parsed({ provider: 'openai' }), baseDeps()));
     assert.equal(unknown.code, 0);
     assert.match(unknown.stdout, /openai/);

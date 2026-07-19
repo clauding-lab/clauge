@@ -99,26 +99,21 @@ const GREEN = '\x1b[32m';
 const BLUE = '\x1b[34m';
 
 describe('locked three-line render (colors stripped)', () => {
-  test('renders the §4 golden output exactly', () => {
+  test('renders the §4 golden output exactly (rev 6: line 3 = hygiene, no money)', () => {
     assert.equal(
       render(),
       [
         'Opus 4.8 · ~/Projects/clauge · +267/-0 · ⧗ 42m · main',
         'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)',
-        '$664 this window · ROI 17.3× vs API · Context Used 46% · Compactions 0',
+        'Context Used 46% · Compactions 0',
       ].join('\n'),
     );
   });
 
-  test('ROI segment prefers the ROI (30d) line over the frozen 7d ROI line', () => {
-    assert.match(render(), /ROI 17\.3× vs API/);
-    assert.ok(!render().includes('2.3×'));
-  });
-
-  test('ROI segment falls back to the 7d ROI line when no ROI (30d) exists', () => {
-    const snap = snapshot();
-    snap.lines = snap.lines.filter((l) => l.label !== 'ROI (30d)');
-    assert.match(render({ snapshot: snap }), /ROI 2\.3× vs API/);
+  test('Spend and ROI wire lines are ignored — money left the widget (rev 6)', () => {
+    const out = render();
+    assert.ok(!out.includes('$664'), 'Spend line must not render');
+    assert.ok(!out.includes('ROI'), 'ROI lines must not render');
   });
 
   test('runtime over an hour renders as Xh Ym', () => {
@@ -183,27 +178,33 @@ describe('threshold color grammar (ANSI on)', () => {
     assert.ok(!out.includes(ORANGE));
   });
 
-  test('Context Used obeys the same 75/90 scale', () => {
-    const p = payload();
-    p.context_window.used_percentage = 95;
-    const out = render({ payload: p }, { ansi: true, orange256: true });
-    assert.ok(out.includes(`${RED}95%`));
+  test('Context Used is yellow below 90 and red at 90+ — no orange tier (rev 6)', () => {
+    const at = (pct) => {
+      const p = payload();
+      p.context_window.used_percentage = pct;
+      return render({ payload: p }, { ansi: true, orange256: true });
+    };
+    assert.ok(at(46).includes(`${YELLOW}46%`), 'calm value is yellow');
+    assert.ok(at(78).includes(`${YELLOW}78%`), '78% stays yellow — orange is hero-only now');
+    assert.ok(!at(78).includes(ORANGE), 'no orange anywhere at 78% context');
+    assert.ok(at(95).includes(`${RED}95%`), 'red emergency tier survives');
   });
 
-  test('Compactions has its own scale: 0 green, 1 orange, 2+ red', () => {
-    const at = (n, opts) => render({ compactions: n }, { ansi: true, orange256: true, ...opts });
-    assert.ok(at(0).includes(`${GREEN}0`));
-    assert.ok(at(1).includes(`${ORANGE}1`));
+  test('Compactions is yellow at 0–1 and red at 2+ (rev 6)', () => {
+    const at = (n) => render({ compactions: n }, { ansi: true, orange256: true });
+    assert.ok(at(0).includes(`${YELLOW}0`));
+    assert.ok(at(1).includes(`${YELLOW}1`));
+    assert.ok(!at(1).includes(ORANGE), 'the orange 1-compaction tier is retired');
     assert.ok(at(2).includes(`${RED}2`));
     assert.ok(at(5).includes(`${RED}5`));
   });
 
-  test('yellow is reserved for money: $ and ROI yellow, never orange', () => {
+  test('yellow is the hygiene base — line 3 has yellow values and zero orange (rev 6)', () => {
     const out = render({}, { ansi: true, orange256: true });
     const line3 = out.split('\n')[2];
-    assert.ok(line3.includes(`${YELLOW}$664`));
-    assert.ok(line3.includes(`${YELLOW}17.3×`));
-    assert.ok(!line3.includes(ORANGE));
+    assert.ok(line3.includes(`${YELLOW}46%`), 'Context Used value is yellow');
+    assert.ok(line3.includes(`${YELLOW}0`), 'Compactions value is yellow');
+    assert.ok(!line3.includes(ORANGE), 'orange never appears on line 3');
   });
 
   test('ansi:false emits zero escape sequences', () => {
@@ -214,12 +215,20 @@ describe('threshold color grammar (ANSI on)', () => {
 });
 
 describe('segment omission — parse defensively, never crash', () => {
-  test('null payload drops line 1 and the stdin-sourced line-3 segments', () => {
+  test('null payload drops line 1 and the whole line 3 when nothing scoped exists', () => {
     const out = render({ payload: null, branch: null, compactions: null });
     const lines = out.split('\n');
-    assert.equal(lines.length, 2);
+    assert.equal(lines.length, 1, 'only the hero gauge line remains');
     assert.match(lines[0], /^Session /);
-    assert.equal(lines[1], '$664 this window · ROI 17.3× vs API');
+  });
+
+  test('null payload with a scoped line still renders the scoped gauge as the last line', () => {
+    const snap = snapshot();
+    snap.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 68, resets_at: null });
+    const out = render({ payload: null, branch: null, compactions: null, snapshot: snap });
+    const lines = out.split('\n');
+    assert.equal(lines.length, 2);
+    assert.equal(lines[1], 'Fable ▓▓▓▓▓▓▓░░░ 68%');
   });
 
   test('missing model drops only the model segment', () => {
@@ -251,12 +260,12 @@ describe('segment omission — parse defensively, never crash', () => {
     assert.ok(!render({ compactions: null }).includes('Compactions'));
   });
 
-  test('snapshot without Session/Weekly still renders spend + ROI', () => {
+  test('snapshot without progress lines still renders the hygiene pair on its own line', () => {
     const snap = snapshot();
     snap.lines = snap.lines.filter((l) => l.type !== 'progress');
     const out = render({ snapshot: snap });
     assert.ok(!out.includes('Session'));
-    assert.match(out, /\$664 this window · ROI 17\.3× vs API/);
+    assert.equal(out.split('\n')[1], 'Context Used 46% · Compactions 0');
   });
 });
 
@@ -303,6 +312,9 @@ describe('terminal-escape injection — externally-sourced text is sanitized', (
     assert.match(out, /Opus\[2J 4\.8/);
   });
 
+  // Rev 6: the widget no longer reads any text lines, so this is a
+  // reintroduction guard — if Spend/ROI rendering ever comes back, hostile
+  // cache values must still never reach the host terminal.
   test('a poisoned cache Spend/ROI value cannot set the terminal title', () => {
     const snap = snapshot();
     snap.lines = snap.lines.map((l) =>
@@ -324,12 +336,12 @@ describe('terminal-escape injection — externally-sourced text is sanitized', (
   });
 });
 
-describe('scoped-limit gauges — rev 5 (2026-07-19 owner request)', () => {
+describe('scoped-limit gauges — rev 5 shape, rev 6 placement (line 3)', () => {
   // /v1 progress lines shaped `Weekly (<label>)` / `Session (<label>)` (e.g.
-  // Fable) render as additional line-2 gauges, after the two hero gauges,
-  // same bar/percent/resets format, capped at SCOPED_GAUGES_MAX = 2.
+  // Fable) render as gauges, wire order, capped at SCOPED_GAUGES_MAX = 2.
+  // Rev 6 moved them from line 2 to the leading position of line 3.
 
-  test('a scoped progress line renders as a third gauge after Weekly', () => {
+  test('a scoped progress line leads line 3, before the hygiene pair', () => {
     const snap = snapshot();
     snap.lines.splice(2, 0, {
       type: 'progress',
@@ -339,19 +351,14 @@ describe('scoped-limit gauges — rev 5 (2026-07-19 owner request)', () => {
       format: { kind: 'percent' },
       resets_at: new Date(NOW + 4 * 24 * 3600_000).toISOString(),
     });
-    const line2 = render({ snapshot: snap }).split('\n')[1];
-    assert.equal(
-      line2,
-      'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d) · Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d)',
-    );
+    const line3 = render({ snapshot: snap }).split('\n')[2];
+    assert.equal(line3, 'Fable ▓▓▓▓▓▓▓░░░ 68% (resets 4d) · Context Used 46% · Compactions 0');
   });
 
-  test('no scoped lines leaves line 2 byte-identical to the hero-only golden (regression pin)', () => {
-    const line2 = render().split('\n')[1];
-    assert.equal(
-      line2,
-      'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)',
-    );
+  test('no scoped lines leaves line 2 hero-only and line 3 hygiene-only (regression pin)', () => {
+    const lines = render().split('\n');
+    assert.equal(lines[1], 'Session ▓▓░░░░░░░░ 20% (resets 2h) · Weekly ▓░░░░░░░░░ 9% (resets 5d)');
+    assert.equal(lines[2], 'Context Used 46% · Compactions 0');
   });
 
   test('caps scoped gauges at 2, wire order wins', () => {
@@ -363,13 +370,13 @@ describe('scoped-limit gauges — rev 5 (2026-07-19 owner request)', () => {
       { type: 'progress', label: 'Session (Sonnet)', used: 20, resets_at: null },
       { type: 'progress', label: 'Weekly (Opus)', used: 30, resets_at: null },
     );
-    const line2 = render({ snapshot: snap }).split('\n')[1];
-    assert.ok(line2.includes('Fable'), 'first scoped line renders');
-    assert.ok(line2.includes('Sonnet'), 'second scoped line renders');
-    assert.ok(!line2.includes('Opus'), 'third scoped line is dropped by the cap');
+    const line3 = render({ snapshot: snap }).split('\n')[2];
+    assert.ok(line3.includes('Fable'), 'first scoped line renders');
+    assert.ok(line3.includes('Sonnet'), 'second scoped line renders');
+    assert.ok(!line3.includes('Opus'), 'third scoped line is dropped by the cap');
   });
 
-  test('a hostile scoped label cannot smuggle an ANSI escape into line 2', () => {
+  test('a hostile scoped label cannot smuggle an ANSI escape into line 3', () => {
     const snap = snapshot();
     snap.lines.push({
       type: 'progress',
@@ -379,52 +386,49 @@ describe('scoped-limit gauges — rev 5 (2026-07-19 owner request)', () => {
     });
     const out = render({ snapshot: snap }, { ansi: true, orange256: true });
     assert.ok(!out.includes('\x1b[31mble'), 'no raw ESC byte survives in the rendered line');
-    assert.match(out.split('\n')[1], /Fa\[31mble/);
+    assert.match(out.split('\n')[2], /Fa\[31mble/);
   });
 
   test('a Session (X) shaped label renders a gauge labeled X — prefix does not matter', () => {
     const snap = snapshot();
     snap.lines.push({ type: 'progress', label: 'Session (Haiku)', used: 15, resets_at: null });
-    const line2 = render({ snapshot: snap }).split('\n')[1];
-    assert.match(line2, /Haiku ▓▓░░░░░░░░ 15%/);
+    const line3 = render({ snapshot: snap }).split('\n')[2];
+    assert.match(line3, /Haiku ▓▓░░░░░░░░ 15%/);
   });
 
   test('a scoped line without resets_at omits the resets suffix on that gauge', () => {
     const snap = snapshot();
     snap.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 40 });
-    const line2 = render({ snapshot: snap }).split('\n')[1];
-    assert.ok(line2.endsWith('Fable ▓▓▓▓░░░░░░ 40%'), 'no (resets …) suffix follows');
+    const line3 = render({ snapshot: snap }).split('\n')[2];
+    assert.ok(line3.startsWith('Fable ▓▓▓▓░░░░░░ 40% ·'), 'no (resets …) suffix before the separator');
   });
 
   test('scoped gauges render blue always (owner decision), never the warning thresholds', () => {
-    // Rev 5.1: scoped gauges ignore the 75/90 threshold ladder entirely —
-    // blue at 80% (would be orange for a hero gauge) AND blue at 95%
-    // (would be red for a hero gauge).
-    // Assert against line 2 only — line 1's `-0` lines-removed segment is
-    // unconditionally red (git-churn color, unrelated to gauge thresholds),
-    // so checking the whole render would false-positive on "never red".
+    // Rev 5.1: scoped gauges ignore the 75/90 ladder entirely — blue at 80%
+    // (hero-orange territory) AND at 95% (hero-red territory). Assert against
+    // line 3 only; with default fixture values (context 46, compactions 0)
+    // the hygiene pair is yellow, so "no red" holds for the whole line.
     const snap80 = snapshot();
     snap80.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 80, resets_at: null });
-    const line2At80 = render({ snapshot: snap80 }, { ansi: true, orange256: true }).split('\n')[1];
-    assert.ok(line2At80.includes(`${BLUE}▓▓▓▓▓▓▓▓░░`), 'scoped bar at 80% is blue');
-    assert.ok(line2At80.includes(`${BLUE}80%`), 'scoped pct at 80% is blue');
-    assert.ok(!line2At80.includes(ORANGE), 'scoped gauge never emits orange');
-    assert.ok(!line2At80.includes(RED), 'scoped gauge never emits red');
+    const line3At80 = render({ snapshot: snap80 }, { ansi: true, orange256: true }).split('\n')[2];
+    assert.ok(line3At80.includes(`${BLUE}▓▓▓▓▓▓▓▓░░`), 'scoped bar at 80% is blue');
+    assert.ok(line3At80.includes(`${BLUE}80%`), 'scoped pct at 80% is blue');
+    assert.ok(!line3At80.includes(ORANGE), 'scoped gauge never emits orange');
+    assert.ok(!line3At80.includes(RED), 'scoped gauge never emits red');
 
     const snap95 = snapshot();
     snap95.lines.push({ type: 'progress', label: 'Weekly (Fable)', used: 95, resets_at: null });
-    const line2At95 = render({ snapshot: snap95 }, { ansi: true, orange256: true }).split('\n')[1];
-    assert.ok(line2At95.includes(`${BLUE}▓▓▓▓▓▓▓▓▓▓`), 'scoped bar at 95% is blue');
-    assert.ok(line2At95.includes(`${BLUE}95%`), 'scoped pct at 95% is blue');
-    assert.ok(!line2At95.includes(ORANGE), 'scoped gauge never emits orange');
-    assert.ok(!line2At95.includes(RED), 'scoped gauge never emits red');
+    const line3At95 = render({ snapshot: snap95 }, { ansi: true, orange256: true }).split('\n')[2];
+    assert.ok(line3At95.includes(`${BLUE}▓▓▓▓▓▓▓▓▓▓`), 'scoped bar at 95% is blue');
+    assert.ok(line3At95.includes(`${BLUE}95%`), 'scoped pct at 95% is blue');
+    assert.ok(!line3At95.includes(ORANGE), 'scoped gauge never emits orange');
+    assert.ok(!line3At95.includes(RED), 'scoped gauge never emits red');
   });
 
   test('a text-type line shaped like a scoped label is not rendered as a gauge', () => {
     const snap = snapshot();
     snap.lines.push({ type: 'text', label: 'Weekly (Fake)', value: 'nope' });
-    const line2 = render({ snapshot: snap }).split('\n')[1];
-    assert.ok(!line2.includes('Fake'));
+    assert.ok(!render({ snapshot: snap }).includes('Fake'));
   });
 });
 
