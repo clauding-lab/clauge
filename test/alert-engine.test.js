@@ -22,6 +22,12 @@ const FIVE_RESET = '2026-06-12T14:20:00+00:00'; // ~4h20m out
 const SEVEN_RESET = '2026-06-14T12:24:00+00:00'; // ~2d out
 const PAST_RESET = '2026-06-12T05:00:00+00:00'; // already reset
 
+// resets_at micro-drift fixtures for the same fiveHour window instance.
+// FIVE_RESET is the base T; DRIFT_3MIN is within SAME_WINDOW_TOLERANCE_MS
+// (5 min) so it is the SAME window; DRIFT_20MIN is a genuinely new window.
+const DRIFT_3MIN = '2026-06-12T14:23:00+00:00'; // T + 3 min (same window)
+const DRIFT_20MIN = '2026-06-12T14:40:00+00:00'; // T + 20 min (new window)
+
 const ALL_ON = {
   alertsEnabled: true,
   types: { approaching: true, willHit: true, limitReached: true },
@@ -156,20 +162,24 @@ describe('limitReached — pct >= 100 (inclusive), not state===exhausted', () =>
     ].sort());
   });
 
-  it('past-resetsAt at 100 still fires limitReached via the pct clause (projection state unavailable)', () => {
+  it('past-resetsAt at 100 does NOT fire — the window already reset (dead-window skip, #05)', () => {
+    // Behavior change: previously limitReached fired here off the pct clause,
+    // which was defect #05 (the reset-boundary notification storm — a window
+    // whose resetsAt has passed is dead data and must never alert). The window
+    // is now skipped entirely regardless of freshness; the NEXT real window
+    // (fresh future resetsAt) alerts normally.
     const usage = { fiveHour: { pct: 100, resetsAt: PAST_RESET } };
     const projection = freshProjection(usage);
-    // projection.windows.fiveHour.state is 'unavailable' (resetsAt <= nowMs),
-    // NOT 'exhausted' — limitReached must still fire off the pct clause.
     assert.equal(projection.windows.fiveHour.state, 'unavailable');
-    const { due } = evaluate({
+    const { due, retire } = evaluate({
       usage,
       projection,
       prefs: ALL_ON,
       fired: new Set(),
       nowMs: NOW_MS,
     });
-    assert.deepEqual(ids(due), [`limitReached:fiveHour:${PAST_RESET}`]);
+    assert.deepEqual(due, []);
+    assert.deepEqual(retire, []);
   });
 });
 
@@ -403,6 +413,127 @@ describe('null / missing window -> skipped', () => {
     const { due } = evalWith({ usage });
     // Only sevenDay present (fiveHour absent → skipped); 82% mid-week → will_hit.
     assert.deepEqual(ids(due), [`willHit:sevenDay:${SEVEN_RESET}`]);
+  });
+});
+
+describe('#05 dead-window storm — past/unparseable resetsAt never alerts', () => {
+  it('fresh projection, pct 100, past resetsAt, empty fired -> nothing due (stable on repeat)', () => {
+    // The storm: after liveKeys prunes the fired key at the reset instant, the
+    // still-fresh snapshot shows the OLD window at 100% with a now-past
+    // resetsAt. A dead window must never alert, and the 30s poller re-calling
+    // with the same snapshot must stay silent.
+    const usage = { fiveHour: { pct: 100, resetsAt: PAST_RESET } };
+    const projection = freshProjection(usage);
+    assert.equal(projection.freshness.stale, false);
+    const args = { usage, projection, prefs: ALL_ON, fired: new Set(), nowMs: NOW_MS };
+    const r1 = evaluate(args);
+    assert.deepEqual(r1.due, []);
+    assert.deepEqual(r1.retire, []);
+    const r2 = evaluate({ ...args, fired: new Set() });
+    assert.deepEqual(r2.due, []);
+    assert.deepEqual(r2.retire, []);
+  });
+
+  it('past-reset approaching (pct 85, fresh, not stale) -> nothing', () => {
+    const usage = { fiveHour: { pct: 85, resetsAt: PAST_RESET } };
+    const { due, retire } = evalWith({ usage });
+    assert.deepEqual(due, []);
+    assert.deepEqual(retire, []);
+  });
+
+  it('unparseable resetsAt -> window skipped entirely', () => {
+    const usage = { fiveHour: { pct: 100, resetsAt: 'not-a-date' } };
+    const projection = {
+      windows: { fiveHour: { state: 'unavailable' } },
+      freshness: { stale: false },
+    };
+    const { due, retire } = evaluate({
+      usage,
+      projection,
+      prefs: ALL_ON,
+      fired: new Set(),
+      nowMs: NOW_MS,
+    });
+    assert.deepEqual(due, []);
+    assert.deepEqual(retire, []);
+  });
+
+  it('the NEXT real window (future resetsAt, pct >= 80) still fires normally', () => {
+    // The fix must not suppress real alerts once a fresh future window arrives.
+    const usage = { fiveHour: { pct: 85, resetsAt: FIVE_RESET } };
+    const { due } = evalWith({ usage });
+    assert.deepEqual(ids(due), [`approaching:fiveHour:80:${FIVE_RESET}`]);
+  });
+});
+
+describe('#08 resets_at micro-drift — tolerant fired-match', () => {
+  it('approaching:80 fired at T; candidate at T+3min (pct 85) is NOT re-due', () => {
+    const usage = { fiveHour: { pct: 85, resetsAt: DRIFT_3MIN } };
+    const fired = new Set([`approaching:fiveHour:80:${FIVE_RESET}`]);
+    const { due, retire } = evalWith({ usage, fired });
+    assert.deepEqual(due, []);
+    assert.deepEqual(retire, []);
+  });
+
+  it('approaching:80 fired at T; candidate at T+20min (a new window) IS due', () => {
+    const usage = { fiveHour: { pct: 85, resetsAt: DRIFT_20MIN } };
+    const fired = new Set([`approaching:fiveHour:80:${FIVE_RESET}`]);
+    const { due } = evalWith({ usage, fired });
+    assert.deepEqual(ids(due), [`approaching:fiveHour:80:${DRIFT_20MIN}`]);
+  });
+
+  it('limitReached drift: full prior-tick fired set at T; candidate all at T+3min -> silent', () => {
+    const usage = { fiveHour: { pct: 100, resetsAt: DRIFT_3MIN } };
+    const fired = new Set([
+      `limitReached:fiveHour:${FIVE_RESET}`,
+      `willHit:fiveHour:${FIVE_RESET}`,
+      `approaching:fiveHour:95:${FIVE_RESET}`,
+      `approaching:fiveHour:80:${FIVE_RESET}`,
+    ]);
+    const { due, retire } = evalWith({ usage, fired });
+    assert.deepEqual(due, []);
+    assert.deepEqual(retire, []);
+  });
+
+  it('limitReached drift: candidate at T+20min re-arms and fires', () => {
+    const usage = { fiveHour: { pct: 100, resetsAt: DRIFT_20MIN } };
+    const fired = new Set([`limitReached:fiveHour:${FIVE_RESET}`]);
+    const { due } = evalWith({ usage, fired });
+    assert.deepEqual(ids(due), [`limitReached:fiveHour:${DRIFT_20MIN}`]);
+  });
+
+  it('willHit drift: fired willHit at T; candidate at T+3min (will_hit) -> silent', () => {
+    const usage = { fiveHour: { pct: 90, resetsAt: DRIFT_3MIN } };
+    const projection = freshProjection(usage, steepHistory(usage));
+    assert.equal(projection.windows.fiveHour.state, 'will_hit');
+    const fired = new Set([
+      `willHit:fiveHour:${FIVE_RESET}`,
+      `approaching:fiveHour:95:${FIVE_RESET}`,
+      `approaching:fiveHour:80:${FIVE_RESET}`,
+    ]);
+    const { due, retire } = evaluate({
+      usage,
+      projection,
+      prefs: ALL_ON,
+      fired,
+      nowMs: NOW_MS,
+    });
+    assert.deepEqual(due, []);
+    assert.deepEqual(retire, []);
+  });
+
+  it('retire loop: a lower key fired at T is NOT re-retired for a drifted (T+3min) higher fire', () => {
+    // limitReached fires fresh at T+3min; approaching:80 was already fired at T
+    // (drift-equivalent) so it must NOT reappear in retire, while the still-
+    // unfired willHit + approaching:95 do get retired at the drifted resetsAt.
+    const usage = { fiveHour: { pct: 100, resetsAt: DRIFT_3MIN } };
+    const fired = new Set([`approaching:fiveHour:80:${FIVE_RESET}`]);
+    const { due, retire } = evalWith({ usage, fired });
+    assert.deepEqual(ids(due), [`limitReached:fiveHour:${DRIFT_3MIN}`]);
+    assert.deepEqual(retire.sort(), [
+      `willHit:fiveHour:${DRIFT_3MIN}`,
+      `approaching:fiveHour:95:${DRIFT_3MIN}`,
+    ].sort());
   });
 });
 

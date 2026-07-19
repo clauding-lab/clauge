@@ -20,6 +20,15 @@ const FUTURE_KEY = `approaching:fiveHour:80:${FUTURE}`;
 const PAST_KEY = `approaching:fiveHour:80:${PAST}`;
 const FUTURE_LIMIT_KEY = `limitReached:sevenDay:${FUTURE}`;
 
+// #08 grace: a fired key must outlive its exact reset instant by
+// SAME_WINDOW_TOLERANCE_MS (5 min) so a drift-later twin still has a
+// predecessor to match. GRACE_RESET == NOW_MS, so load/markFired at NOW+4min
+// (inside grace) must keep it and NOW+6min (past grace) must drop it.
+const GRACE_RESET = '2026-06-12T10:00:00+00:00'; // == NOW_MS
+const GRACE_KEY = `approaching:fiveHour:80:${GRACE_RESET}`;
+const FOUR_MIN = 4 * 60000;
+const SIX_MIN = 6 * 60000;
+
 let dir;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'clauge-alert-state-'));
@@ -75,6 +84,38 @@ describe('load — prune by embedded resetsAt', () => {
     assert.ok(fired.has(FUTURE_KEY));
     assert.ok(!fired.has(bad));
     assert.equal(fired.size, 1);
+  });
+});
+
+describe('load — reset-drift grace window (#08)', () => {
+  it('keeps a key 4 min past its resetsAt (inside the 5-min grace)', async () => {
+    await writeRaw(JSON.stringify({ v: 1, fired: [GRACE_KEY] }));
+    const fired = await makeState().load(NOW_MS + FOUR_MIN);
+    assert.ok(fired.has(GRACE_KEY));
+  });
+
+  it('drops the key 6 min past its resetsAt (beyond the grace)', async () => {
+    await writeRaw(JSON.stringify({ v: 1, fired: [GRACE_KEY] }));
+    const fired = await makeState().load(NOW_MS + SIX_MIN);
+    assert.ok(!fired.has(GRACE_KEY));
+  });
+});
+
+describe('markFired — on-write prune honours the grace window (#08)', () => {
+  it('persists a key still inside the grace window', async () => {
+    await makeState().markFired([GRACE_KEY], NOW_MS + FOUR_MIN);
+    const onDisk = JSON.parse(
+      await readFile(join(dir, 'alert-state.json'), 'utf8')
+    );
+    assert.ok(onDisk.fired.includes(GRACE_KEY));
+  });
+
+  it('prunes a key once it is past the grace window', async () => {
+    await makeState().markFired([GRACE_KEY], NOW_MS + SIX_MIN);
+    const onDisk = JSON.parse(
+      await readFile(join(dir, 'alert-state.json'), 'utf8')
+    );
+    assert.ok(!onDisk.fired.includes(GRACE_KEY));
   });
 });
 
