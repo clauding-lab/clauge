@@ -476,9 +476,9 @@ d = open('/tmp/rev6-live.out','rb').read()
 esc = bytes([27])
 lines = d.split(b'\n')
 assert b'$' not in d and b'ROI' not in d, 'money must be gone'
-fable_line = [l for l in lines if b'Fable ' in l and esc + b'[34m' in l]
-assert fable_line, 'scoped gauge must render blue'
-assert b'Context Used' in fable_line[0], 'scoped gauge and hygiene share line 3'
+line3 = [l for l in lines if b'Context Used' in l]
+assert line3, 'hygiene pair must render'
+assert b'Fable ' in line3[0] and esc + b'[34m' in line3[0], 'scoped gauge renders blue on line 3 with the hygiene pair'
 assert esc + b'[33m46%' in d, 'Context Used 46% must be yellow'
 print('LIVE RENDER VERIFIED')
 EOF
