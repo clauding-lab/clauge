@@ -13,9 +13,10 @@ A fix for the macOS password box that kept coming back.
 
 - **First-run wizard, README and privacy page no longer tell DMG users to click "Always Allow"** — that box doesn't appear any more. The Mac App Store notes now say plainly that its prompt can come back.
 
-### Known limitation
+### Known limitations
 
-- **The Mac App Store build can still show this prompt.** App Store apps run in a sandbox that cannot use Apple's `security` tool, so that build still reads the Keychain directly. If the prompt bothers you, the DMG / Homebrew build is the way around it for now.
+- **You will still see ONE Keychain prompt right after each app update** — a different one, for Clauge's own item (`com.clauding.clauge.claude-ai-session`). Click "Always Allow" and it stays quiet until the next update. It appears because each new build has a new code fingerprint; it goes away for good once Clauge ships with Apple Developer signing.
+- **The Mac App Store build can still show the `Claude Code-credentials` prompt.** App Store apps run in a sandbox that cannot use Apple's `security` tool, so that build still reads the Keychain directly. If the prompt bothers you, the DMG / Homebrew build is the way around it for now.
 
 ---
 
