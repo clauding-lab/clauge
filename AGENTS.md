@@ -191,9 +191,16 @@ Renaming either breaks the v0.10.0 grandfather-detection logic (planned for `cla
 
 `tauri-build`'s allowlist check walks `[dependencies]` only — not per-target blocks. The `macos-private-api` feature must be on the base `tauri = { ... }` line, not gated by `cfg(target_os = "macos")`. Tauri's own internal cfg-gates handle the actual macOS-only usage; declaring the feature on non-Apple targets is harmless.
 
-### 6. Subagent dispatches always use Opus
+### 6. Subagent model routing follows Adnan's global table — Sonnet implements, Opus reasons and reviews
 
-Every `Agent` tool call in this repo uses `model: "opus"` — no exceptions, regardless of task size or skill guidance. Adnan's standing rule.
+Superseded 2026-09-18 (was: "every `Agent` call uses `model: "opus"`, no exceptions"). The canonical table lives in `~/.claude/CLAUDE.md` → Agent Management → Model routing and **wins on any conflict with this summary**:
+
+- **Opus** — architecture, debugging, algorithm design, and **ALL security + bug review regardless of task size**. Never route review to Sonnet or Haiku, and never to the Fable orchestrator (its cyber-content safety classifiers can false-positive-refuse benign, authorized security work).
+- **Sonnet** — well-specified mechanical work: implementing an approved plan, tests, boilerplate, refactors, formatting, simple edits. Not for reasoning or review.
+- **Haiku** — graphify chunk extraction only; not a general-purpose tier here.
+- **Orchestrator (the main session)** — decomposes, delegates, monitors, synthesizes.
+
+In practice since 2026-07-18: **Sonnet implementers + Opus reviewers.** Set `model` explicitly on every `Agent` / `Workflow` dispatch — an omitted model inherits the orchestrator's tier, which is the most expensive one.
 
 ### 7. Tray icon is currently NOT a template image
 
