@@ -25,8 +25,11 @@ Clauge reads two categories of data, both of which are placed on your Mac by Ant
 1. **Your Claude Code OAuth token.** Stored by Anthropic's CLI in macOS Keychain Services under the service name `Claude Code-credentials` (Mac) or in `%USERPROFILE%\.claude\.credentials.json` (Windows). Clauge reads this token to authenticate API calls to `api.anthropic.com` on your behalf.
 2. **Your per-session JSONL files** at `~/.claude/projects/*.jsonl` (Mac) or `%USERPROFILE%\.claude\projects\*.jsonl` (Windows). These files are written by Claude Code during normal use and contain prompt counts, model identifiers, and timing data. Clauge parses them locally to compute per-session and aggregate usage statistics.
 
+On the direct-download (DMG / Homebrew) version of Clauge:
+- Clauge reads the token by running Apple's built-in `/usr/bin/security` tool — the same tool Claude Code itself uses to manage that Keychain item — so macOS shows no prompt. The token is held in memory only; Clauge never writes a copy of it anywhere.
+
 On the Mac App Store version of Clauge (sandboxed):
-- The Keychain read triggers a standard macOS prompt the first time, with "Always Allow / Allow / Deny" buttons. Clicking "Always Allow" persists the consent.
+- The Keychain read triggers a standard macOS prompt with "Always Allow / Allow / Deny" buttons. macOS may show it again later: when Claude Code updates that Keychain item (for example when it refreshes its sign-in), the permission you granted is reset.
 - Access to `~/.claude/` requires the user to grant the folder once via a folder picker during the first-launch wizard. The folder grant is persisted as a security-scoped bookmark inside Clauge's sandbox container.
 
 ---
