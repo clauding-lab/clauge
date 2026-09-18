@@ -643,9 +643,13 @@ pub async fn get_connection_status(
 /// Force a fresh keychain read, replacing the cached creds. Used by the
 /// Refresh button in Connections panel.
 ///
-/// On macOS, triggers a Keychain prompt (or, if the app is unsigned/ad-hoc,
-/// the user sees the dialog again). Cache is updated on success.
-/// Emits `connections-updated` so dashboard listeners re-render.
+/// On the MAS flavor, triggers a Keychain prompt — that's an in-process
+/// Keychain Services read (AGENTS.md landmine #51), and a prior "Always
+/// Allow" grant is not durable: Claude Code's own token-rotation rewrites
+/// reset the item's ACL partition list, so the dialog can reappear. The DMG
+/// flavor reads via `/usr/bin/security` and shows no dialog at all. Cache
+/// is updated on success. Emits `connections-updated` so dashboard
+/// listeners re-render.
 #[tauri::command]
 pub async fn refresh_credentials(
     state: State<'_, AppState>,
@@ -661,8 +665,10 @@ pub async fn refresh_credentials(
     }
 }
 
-/// Wizard "Connect" — mark onboarding complete, force a keychain read
-/// (triggers macOS prompt), close wizard window, and surface the dashboard.
+/// Wizard "Connect" — mark onboarding complete, force a keychain read (may
+/// trigger a macOS prompt on the MAS flavor only — the DMG flavor's
+/// `/usr/bin/security` read never prompts, AGENTS.md landmine #51), close
+/// wizard window, and surface the dashboard.
 #[tauri::command]
 pub async fn wizard_complete(
     state: State<'_, AppState>,
@@ -677,15 +683,21 @@ pub async fn wizard_complete(
     }
 
     // Surface the dashboard FIRST so the app activation policy flips to
-    // Regular and gets a Dock icon. macOS suppresses Keychain prompts for
-    // Accessory-mode apps without a foreground window, so cache.refresh()
-    // below would have its prompt silently dropped if we called it while
-    // still in Accessory mode (the state set in lib.rs::setup).
+    // Regular and gets a Dock icon. This ordering matters for the MAS
+    // flavor: macOS suppresses Keychain prompts for Accessory-mode apps
+    // without a foreground window, so cache.refresh() below would have its
+    // in-process Keychain prompt silently dropped if we called it while
+    // still in Accessory mode (the state set in lib.rs::setup). The DMG
+    // flavor's `/usr/bin/security` read never prompts, so this ordering is
+    // a no-op for it — but keeping it uniform is harmless.
     crate::tray::show_dashboard(&app);
 
-    // Trigger credential read. On macOS this is where the Keychain prompt
-    // fires (and may be denied by the user). On Windows the read is silent
-    // (reads %USERPROFILE%\.claude\.credentials.json — no prompt).
+    // Trigger credential read. On the MAS flavor this is where the
+    // in-process Keychain prompt fires (and may be denied by the user);
+    // see AGENTS.md landmine #51 — a prior "Always Allow" grant there is
+    // not durable. The DMG flavor's `/usr/bin/security` read is silent, no
+    // dialog. On Windows the read is silent too (reads
+    // %USERPROFILE%\.claude\.credentials.json — no prompt).
     {
         use tauri::Emitter;
         match state.keychain_cache.refresh() {

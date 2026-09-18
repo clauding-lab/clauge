@@ -91,55 +91,6 @@ body {
   margin-top: 20px !important;
 }
 
-.dialog-mock {
-  background: #fff;
-  border: 1px solid #d0d0d0;
-  border-radius: 12px;
-  padding: 20px;
-  margin: 16px 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.dialog-title {
-  font-size: 13px !important;
-  color: #1a1a1a !important;
-  margin: 0 0 16px !important;
-}
-
-.dialog-buttons {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin: 0;
-}
-
-.mock-btn {
-  padding: 6px 16px;
-  border-radius: 6px;
-  border: 1px solid #c0c0c0;
-  background: #fff;
-  font-size: 13px;
-  cursor: default;
-  color: #1a1a1a;
-}
-
-.mock-btn.highlighted {
-  background: #0070f3;
-  color: #fff;
-  border-color: #0070f3;
-  font-weight: 500;
-  position: relative;
-}
-
-.dialog-arrow {
-  text-align: right;
-  font-size: 12px !important;
-  color: #0070f3 !important;
-  font-weight: 600;
-  margin-top: 4px !important;
-  padding-right: 18px;
-}
-
 .permission-list {
   list-style: none;
   padding: 0;
@@ -209,9 +160,6 @@ body {
   body { background: #1a1a1a; color: #f0f0f0; }
   .wizard-step h1 { color: #fff; }
   .wizard-step p { color: #ccc; }
-  .dialog-mock { background: #2a2a2a; border-color: #444; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
-  .dialog-title { color: #f0f0f0 !important; }
-  .mock-btn { background: #3a3a3a; color: #f0f0f0; border-color: #555; }
   .note { background: #3a2e00; border-color: #8a6800; color: #ffd54f !important; }
   .wizard-btn { background: #2a2a2a; color: #f0f0f0; border-color: #555; }
   .wizard-btn:hover { background: #3a3a3a; }
@@ -256,7 +204,8 @@ body.is-flavor-mas .flavor-mas { display: block; }
   cursor: pointer;
 }
 
-/* Windows credentials path mock — visual analog to the Mac dialog-mock. */
+/* Credentials source mock — the Windows file path, or (since v1.3.9) the
+   Mac DMG Keychain item name. */
 .path-mock {
   background: #f4f4f5;
   border: 1px solid #e4e4e7;

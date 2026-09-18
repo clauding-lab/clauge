@@ -45,7 +45,7 @@ Clauge lives in your menu bar. **Left-click** for the glanceable popover; **righ
 
 The popover shows paired **Session** + **Weekly** gauges (each with its local reset time), a bar per **model-scoped limit** (currently claude.ai's "Fable" weekly bucket — labeled live from the wire), daily routine runs, month-to-date overage and prepaid balance, a 30-day spend chart, and a 180-day activity heatmap.
 
-> **First launch.** A short Welcome wizard explains the one permission Clauge needs on macOS: read access to the OAuth credential Claude&nbsp;Code already stored in your Keychain. macOS will prompt *"Clauge wants to use … 'Claude Code-credentials' …"* — click **Always Allow**. Clauge never sees your Anthropic password, API key, or session token; it reads only the credential blob Claude&nbsp;Code itself wrote. You can skip this and grant it later from **Settings → Connections → ↻ Refresh**.
+> **First launch.** A short Welcome wizard explains the one thing Clauge needs on macOS: read access to the OAuth credential Claude&nbsp;Code already stored in your Keychain. On the DMG / Homebrew build there is nothing to approve — Clauge reads it through Apple's built-in `security` tool, the same one Claude&nbsp;Code itself uses, so macOS shows no prompt. (The Mac App Store build is sandboxed and reads the Keychain directly, so macOS may ask *"Clauge wants to use … 'Claude Code-credentials' …"* — and may ask again later, because Claude&nbsp;Code's own updates to that item reset the permission.) Clauge never sees your Anthropic password, API key, or session token; it reads only the credential blob Claude&nbsp;Code itself wrote. You can skip this and connect later from **Settings → Connections → ↻ Refresh**.
 
 ### iOS
 
