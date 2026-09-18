@@ -3,9 +3,13 @@
 //! v0.7.2 lever for the keychain-prompt-every-launch problem. The cache holds
 //! the most-recently-read `ClaudeCodeCreds` in memory; `get_or_load` returns
 //! the cached value on hit and triggers a fresh keychain read on miss. The
-//! Mutex serializes concurrent callers so only ONE keychain read (and one
-//! macOS prompt) fires per cache miss, regardless of how many dashboard
-//! polls land simultaneously.
+//! Mutex serializes concurrent callers so only ONE keychain read fires per
+//! cache miss, regardless of how many dashboard polls land simultaneously.
+//! Whether that read can prompt depends on the flavor: the DMG reader
+//! (`/usr/bin/security`, AGENTS.md landmine #51) never prompts; the MAS
+//! reader (in-process Keychain Services) still can, on any cache miss —
+//! this cache reduces how OFTEN that reader runs, it doesn't make its
+//! prompts stop.
 //!
 //! Cache lifecycle:
 //! - Empty at app start
@@ -46,9 +50,11 @@ impl KeychainCache {
     }
 
     /// Returns cached creds if present; else reads + caches and returns.
-    /// First caller on a cold cache reads (triggers macOS prompt if uncached);
-    /// subsequent concurrent callers block briefly on the Mutex and return
-    /// the cached value once the first caller completes.
+    /// First caller on a cold cache reads — on the MAS flavor this may
+    /// trigger a macOS prompt; the DMG flavor's `/usr/bin/security` read
+    /// never prompts (AGENTS.md landmine #51). Subsequent concurrent
+    /// callers block briefly on the Mutex and return the cached value once
+    /// the first caller completes.
     /// Expired hits re-read once (see module doc).
     pub fn get_or_load(&self) -> Result<ClaudeCodeCreds, KeychainError> {
         let mut guard = self.inner.lock().map_err(|e| KeychainError::Framework {
@@ -61,9 +67,13 @@ impl KeychainCache {
                 // Cached creds are past expires_at. Claude Code rotates the
                 // token in the Keychain on its own cadence — re-read once so
                 // the Connections panel self-heals without the manual ↻
-                // (v1.2.0). Prompt-safe: fires only while the cached creds
-                // are genuinely expired (the same read ↻ performs), and
-                // post-"Always Allow" reads are silent.
+                // (v1.2.0). This re-read fires only while the cached creds
+                // are genuinely expired (the same read ↻ performs). On the
+                // DMG flavor that's silent either way (AGENTS.md landmine
+                // #51 — the `/usr/bin/security` read never prompts). On the
+                // MAS flavor it can still prompt: "Always Allow" does not
+                // survive Claude Code's own token-rotation rewrites, which
+                // reset the item's ACL partition list.
                 match (self.reader)() {
                     Ok(fresh) => {
                         *guard = Some(fresh.clone());
@@ -87,7 +97,9 @@ impl KeychainCache {
     }
 
     /// Force a fresh read, replacing the cached value.
-    /// Triggers macOS prompt. Used by the Refresh button + wizard Connect.
+    /// On the MAS flavor this may trigger a macOS prompt; the DMG flavor's
+    /// `/usr/bin/security` read never prompts (AGENTS.md landmine #51).
+    /// Used by the Refresh button + wizard Connect.
     pub fn refresh(&self) -> Result<ClaudeCodeCreds, KeychainError> {
         let creds = (self.reader)()?;
         match self.inner.lock() {
@@ -268,7 +280,10 @@ mod tests {
         let _ = cache.get_or_load().unwrap(); // expired hit → re-read 2
         let _ = cache.get_or_load().unwrap(); // expired hit → re-read 3
                                               // One read per call while genuinely expired — the 30s dashboard
-                                              // poll cadence makes this the manual-↻ read rate, prompt-safe.
+                                              // poll cadence makes this the manual-↻ read rate. On the DMG
+                                              // flavor that rate never prompts (AGENTS.md landmine #51); on
+                                              // the MAS flavor it still can, since "Always Allow" doesn't
+                                              // survive Claude Code's own token-rotation rewrites.
         assert_eq!(count.load(Ordering::SeqCst), 3);
     }
 }
