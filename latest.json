@@ -1,31 +1,31 @@
 {
-  "version": "1.3.8",
-  "notes": "A fix for Homebrew widget installs going stale after upgrades.\n\n### Fixed\n\n- **`clauge status --install` now survives `brew upgrade`.** The installer used to store the versioned Homebrew keg path (`…/Cellar/clauge-cli/<version>/…`) in Claude Code's settings; brew deletes that folder on every upgrade, silently freezing the widget on its last render. The installer now stores Homebrew's version-stable path (`…/opt/clauge-cli/…`), which always follows the current version. **If your statusline was installed by v1.3.7 or earlier, run `clauge status --install --force` once** — from then on, `brew upgrade clauge-cli` is the whole update.\n\n### Changed\n\n- **README: new \"Updating the widget\" section** — the upgrade flow, why open terminals pick the new version up on their next redraw, and the one-time rewire for older installs.\n\n---",
-  "pub_date": "2026-07-19T17:08:27.267Z",
+  "version": "1.3.9",
+  "notes": "A fix for the macOS password box that kept coming back.\n\n### Fixed\n\n- **The \"Clauge wants to use your confidential information stored in 'Claude Code-credentials'\" password box is gone on the DMG / Homebrew build.** Clicking \"Always Allow\" used to work for only a few hours: Claude Code manages that Keychain item through Apple's built-in `security` tool, and every time it updated its sign-in, macOS forgot that Clauge had been allowed. Clauge now reads the token through that same Apple tool — the one identity the item always trusts — so there is nothing to approve and nothing to forget. No new copy of your token is stored anywhere, and nothing about it is logged.\n- **A malformed credentials blob can no longer leak into an error message.** If the stored sign-in data ever had an unexpected shape, the JSON parser's error text could have included part of it — and that text is logged and shown in the app. Parse errors on every platform now carry only the error type and its line/column.\n\n### Changed\n\n- **First-run wizard, README and privacy page no longer tell DMG users to click \"Always Allow\"** — that box doesn't appear any more. The Mac App Store notes now say plainly that its prompt can come back.\n\n### Known limitation\n\n- **The Mac App Store build can still show this prompt.** App Store apps run in a sandbox that cannot use Apple's `security` tool, so that build still reads the Keychain directly. If the prompt bothers you, the DMG / Homebrew build is the way around it for now.\n\n---",
+  "pub_date": "2026-09-18T16:52:16.214Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUNINDdGQWdaT2MzUlN2L293U1kwY1dVUGlnVTVaZ1hMaVl3NCtUbkFEVlI1WUdhZW50WGdQaHJFU2tiZjVHRzcwc1hJRnBtMWNZQ2NwNUJvYWxQbndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NDgwODk3CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKNU5vQlZCek5DWlBGTWt5Z0ttUnV1eWw4M2NRcFZZT0RrQTBLbVlIR1ZqNTBLeGJMWXlUbi9ra3V3bHZOb3JZVUFIV3loZkJUb0VEdXAxZHR6OU8xQkE9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.8/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUV1cmswME9CdytuQzl2QlVFNkJoSU5ZdzJXbTFkWDU5NWI4TmlwbUxtSG0yaG9Fdk5nQTlMUS8ydDBZeDJ3WnNjYTAzc3lHUW5EbW5HOE5SSzY5cUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUwMzI2CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKeVkrOVlOOFQvSlIyRzRUaFM4Z1FsVWRWcFMzZkZKYWU5UWtyVXIzTmVQUGlDNm5wRmZ0Ym5PS2wxRUhIQTlJYit5Q0lXVEtONUtValNDclQ1Mnd2QWc9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.9/Clauge_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUNINDdGQWdaT2MzUlN2L293U1kwY1dVUGlnVTVaZ1hMaVl3NCtUbkFEVlI1WUdhZW50WGdQaHJFU2tiZjVHRzcwc1hJRnBtMWNZQ2NwNUJvYWxQbndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NDgwODk3CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKNU5vQlZCek5DWlBGTWt5Z0ttUnV1eWw4M2NRcFZZT0RrQTBLbVlIR1ZqNTBLeGJMWXlUbi9ra3V3bHZOb3JZVUFIV3loZkJUb0VEdXAxZHR6OU8xQkE9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.8/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUV1cmswME9CdytuQzl2QlVFNkJoSU5ZdzJXbTFkWDU5NWI4TmlwbUxtSG0yaG9Fdk5nQTlMUS8ydDBZeDJ3WnNjYTAzc3lHUW5EbW5HOE5SSzY5cUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUwMzI2CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKeVkrOVlOOFQvSlIyRzRUaFM4Z1FsVWRWcFMzZkZKYWU5UWtyVXIzTmVQUGlDNm5wRmZ0Ym5PS2wxRUhIQTlJYit5Q0lXVEtONUtValNDclQ1Mnd2QWc9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.9/Clauge_universal.app.tar.gz"
     },
     "darwin-aarch64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUNINDdGQWdaT2MzUlN2L293U1kwY1dVUGlnVTVaZ1hMaVl3NCtUbkFEVlI1WUdhZW50WGdQaHJFU2tiZjVHRzcwc1hJRnBtMWNZQ2NwNUJvYWxQbndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NDgwODk3CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKNU5vQlZCek5DWlBGTWt5Z0ttUnV1eWw4M2NRcFZZT0RrQTBLbVlIR1ZqNTBLeGJMWXlUbi9ra3V3bHZOb3JZVUFIV3loZkJUb0VEdXAxZHR6OU8xQkE9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.8/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUV1cmswME9CdytuQzl2QlVFNkJoSU5ZdzJXbTFkWDU5NWI4TmlwbUxtSG0yaG9Fdk5nQTlMUS8ydDBZeDJ3WnNjYTAzc3lHUW5EbW5HOE5SSzY5cUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUwMzI2CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKeVkrOVlOOFQvSlIyRzRUaFM4Z1FsVWRWcFMzZkZKYWU5UWtyVXIzTmVQUGlDNm5wRmZ0Ym5PS2wxRUhIQTlJYit5Q0lXVEtONUtValNDclQ1Mnd2QWc9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.9/Clauge_universal.app.tar.gz"
     },
     "darwin-x86_64-app": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUNINDdGQWdaT2MzUlN2L293U1kwY1dVUGlnVTVaZ1hMaVl3NCtUbkFEVlI1WUdhZW50WGdQaHJFU2tiZjVHRzcwc1hJRnBtMWNZQ2NwNUJvYWxQbndRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NDgwODk3CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKNU5vQlZCek5DWlBGTWt5Z0ttUnV1eWw4M2NRcFZZT0RrQTBLbVlIR1ZqNTBLeGJMWXlUbi9ra3V3bHZOb3JZVUFIV3loZkJUb0VEdXAxZHR6OU8xQkE9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.8/Clauge_universal.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUV1cmswME9CdytuQzl2QlVFNkJoSU5ZdzJXbTFkWDU5NWI4TmlwbUxtSG0yaG9Fdk5nQTlMUS8ydDBZeDJ3WnNjYTAzc3lHUW5EbW5HOE5SSzY5cUFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUwMzI2CWZpbGU6Q2xhdWdlLmFwcC50YXIuZ3oKeVkrOVlOOFQvSlIyRzRUaFM4Z1FsVWRWcFMzZkZKYWU5UWtyVXIzTmVQUGlDNm5wRmZ0Ym5PS2wxRUhIQTlJYit5Q0lXVEtONUtValNDclQ1Mnd2QWc9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.9/Clauge_universal.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU5zSzNtVmlpNE1sbncwSXNoOWhtbkMyV05LSzIwU1ljbWZLby9CZ2hMd0p6MVJKQTNvQnpZMFEyZEFVRmpYQldZcEpaL1ZzaWJwbTUySmFCTzBFL2dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NDgxMDQ5CWZpbGU6Q2xhdWdlXzEuMy44X3g2NC1zZXR1cC5leGUKdnJ4ZGZmWUJWbHFsSzdjVUwwaHA5cXVkYlVxenVkZlB3K2dQZktjZW9oVWNWM1JEYmlrYXc3UmxmeFd0d2RpMnMrdnVjdmRuVTRVN1pKaTVTajBIREE9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.8/Clauge_1.3.8_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUc5ZkFabzh5WUdxeEJ4d1Bodk9BOWw5eHJGUURWdk5LRUJYc3UwcTVIV2dNcmxFWWFSNzg1WTNERm9ud05RZlo4ay9Wd1VKME5meDNqRVp4UE9VVFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUxMzk2CWZpbGU6Q2xhdWdlXzEuMy45X3g2NC1zZXR1cC5leGUKOUhCSlJwa2xuVXhxVUxGN2JhcVJGeFM1akNqc0pHZVFTU05IK25qalR4c1FSd0NtQnV1NHNVckdMdGx1QkZLemR3c25WalhXSGNrck8wdEluZnp0REE9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.9/Clauge_1.3.9_x64-setup.exe"
     },
     "windows-x86_64-nsis": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OU5zSzNtVmlpNE1sbncwSXNoOWhtbkMyV05LSzIwU1ljbWZLby9CZ2hMd0p6MVJKQTNvQnpZMFEyZEFVRmpYQldZcEpaL1ZzaWJwbTUySmFCTzBFL2dVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg0NDgxMDQ5CWZpbGU6Q2xhdWdlXzEuMy44X3g2NC1zZXR1cC5leGUKdnJ4ZGZmWUJWbHFsSzdjVUwwaHA5cXVkYlVxenVkZlB3K2dQZktjZW9oVWNWM1JEYmlrYXc3UmxmeFd0d2RpMnMrdnVjdmRuVTRVN1pKaTVTajBIREE9PQo=",
-      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.8/Clauge_1.3.8_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTT1Y1YzBTcGp1OUc5ZkFabzh5WUdxeEJ4d1Bodk9BOWw5eHJGUURWdk5LRUJYc3UwcTVIV2dNcmxFWWFSNzg1WTNERm9ud05RZlo4ay9Wd1VKME5meDNqRVp4UE9VVFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NzUxMzk2CWZpbGU6Q2xhdWdlXzEuMy45X3g2NC1zZXR1cC5leGUKOUhCSlJwa2xuVXhxVUxGN2JhcVJGeFM1akNqc0pHZVFTU05IK25qalR4c1FSd0NtQnV1NHNVckdMdGx1QkZLemR3c25WalhXSGNrck8wdEluZnp0REE9PQo=",
+      "url": "https://github.com/clauding-lab/clauge/releases/download/v1.3.9/Clauge_1.3.9_x64-setup.exe"
     }
   }
 }
