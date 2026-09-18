@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.9] — 2026-09-18
+
+A fix for the macOS password box that kept coming back.
+
+### Fixed
+
+- **The "Clauge wants to use your confidential information stored in 'Claude Code-credentials'" password box is gone on the DMG / Homebrew build.** Clicking "Always Allow" used to work for only a few hours: Claude Code manages that Keychain item through Apple's built-in `security` tool, and every time it updated its sign-in, macOS forgot that Clauge had been allowed. Clauge now reads the token through that same Apple tool — the one identity the item always trusts — so there is nothing to approve and nothing to forget. No new copy of your token is stored anywhere, and nothing about it is logged.
+- **A malformed credentials blob can no longer leak into an error message.** If the stored sign-in data ever had an unexpected shape, the JSON parser's error text could have included part of it — and that text is logged and shown in the app. Parse errors on every platform now carry only the error type and its line/column.
+
+### Changed
+
+- **First-run wizard, README and privacy page no longer tell DMG users to click "Always Allow"** — that box doesn't appear any more. The Mac App Store notes now say plainly that its prompt can come back.
+
+### Known limitation
+
+- **The Mac App Store build can still show this prompt.** App Store apps run in a sandbox that cannot use Apple's `security` tool, so that build still reads the Keychain directly. If the prompt bothers you, the DMG / Homebrew build is the way around it for now.
+
+---
+
 ## [1.3.8] — 2026-07-19
 
 A fix for Homebrew widget installs going stale after upgrades.
