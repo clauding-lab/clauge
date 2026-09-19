@@ -37,6 +37,20 @@ When something ships broken, when a methodology gap is exposed, or when a smoke 
 
 ## Entries (most recent first)
 
+## 2026-09-18 — v1.3.9 | The release run went red, then green — and "green" still had not delivered to Homebrew: two silent pipeline gaps in one night
+
+**Trigger:** tagging v1.3.9. The first release run FAILED on "Build Windows x64"; after a re-run went fully green, the Homebrew tap was still on 1.3.8.
+
+**What went wrong:** (1) Both matrix jobs upload an asset named `latest.json` to the same Release; `release.yml`'s own comment calls the collision "last-writer-wins… harmless". This time the Windows job's replace hit the macOS job's copy mid-flight, GitHub answered `Not Found` on update-a-release-asset, and the Windows job failed AFTER the Release was already public with 5 of 6 assets; `mirror-updater` and `dispatch-homebrew` were skipped. The Windows Rust gate had passed — the failure had nothing to do with the code. (2) After `gh run rerun --failed` went green, "Dispatch Homebrew tap bump" reported success but no tap run existed: GitHub had auto-disabled the tap's `auto-update.yml` (`disabled_inactivity`) at 14:59 BDT that same day — 61 days after the tap's last commit — and a disabled workflow swallows `repository_dispatch` while the POST still returns 204. (3) Found on the way: PR CI's Windows job runs JS tests only, so Windows Rust is first compiled at tag time. Separately, the orchestrator announced "my Windows-risk call was wrong" the moment the run went red — before reading the log, which showed the Windows Rust tests had PASSED.
+
+**Lesson:** a CI job's colour is a claim about the job, not about delivery — verify every delivery channel's actual artifact; and read the failing log before attributing a failure, even to yourself.
+
+**Prevention:** AGENTS.md landmine #52's release-done checklist (both platform jobs green · 6 assets · feed signatures byte-equal to the uploaded `.sig` files · feed URLs 200 · CDN copy current · tap cask + formula bumped with `sha256` equal to the asset digests · owner's installed app on the new version). Pre-tag: `gh api repos/clauding-lab/homebrew-tap/actions/workflows/auto-update.yml -q .state` must print `active`. Recovery recipes: `gh run rerun <id> --failed` (no retag) for the upload race; `gh workflow enable` + `gh workflow run … -f version=` for the disabled tap. Durable cures (serialize or rename the per-platform `latest.json` upload; a keep-alive or an enable-before-dispatch step for the tap; a Windows `cargo check` in PR CI) are `release.yml` / `check.yml` edits → VISION.md "Needs Sign-Off" — proposed to Adnan, not applied.
+
+**Hotfix:** re-ran the failed job (attempt 2 green, 6 assets, signatures verified equal); re-enabled the tap workflow and triggered it by hand (cask + formula 1.3.9, checksums equal to the release digests).
+
+**Cross-references:** AGENTS.md landmine #52; auto-memory `reference_release_pipeline_silent_gaps.md`; global rulebook entry same date.
+
 ## 2026-09-18 — v1.3.7 | The keychain password box was never "first launch only" — Claude Code's rewrites wipe the "Always Allow" grant within hours, and three plausible fixes would not have worked
 
 **Trigger:** Adnan reported "the prompt to enter password happens in every login" and confirmed the dialog names Clauge + `Claude Code-credentials` with Always Allow / Deny / Allow. The code had called this a one-time prompt since v0.7.2 ("user clicks Always Allow once, subsequent reads are silent").
